@@ -1,0 +1,134 @@
+package com.risaina.app.core.datastore
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.risaina.app.core.model.Profile
+import com.risaina.app.core.model.Session
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import java.time.Instant
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
+
+private val Context.sessionDataStore: DataStore<Preferences> by preferencesDataStore(name = "session")
+
+/**
+ * Holds the signed-in session. Lives in app-private storage and is excluded from cloud backup
+ * and device transfer (res/xml/backup_rules.xml). Keystore-backed encryption is tracked as
+ * open item O-03 in docs/COUNCIL_DECISIONS.md.
+ */
+@Singleton
+class SessionStore @Inject constructor(@ApplicationContext private val context: Context) {
+    private object Keys {
+        val userId = stringPreferencesKey("user_id")
+        val access = stringPreferencesKey("access_token")
+        val accessExp = longPreferencesKey("access_expires_at")
+        val refresh = stringPreferencesKey("refresh_token")
+        val refreshExp = longPreferencesKey("refresh_expires_at")
+        val deviceId = stringPreferencesKey("device_id")
+        val lastEventSeq = longPreferencesKey("last_event_seq")
+        val activeCoupleId = stringPreferencesKey("active_couple_id")
+        val lastPingSentAt = longPreferencesKey("last_ping_sent_at")
+        val displayName = stringPreferencesKey("display_name")
+        val avatarMediaId = stringPreferencesKey("avatar_media_id")
+        val prefsDirty = stringPreferencesKey("prefs_dirty")
+    }
+
+    val session: Flow<Session?> = context.sessionDataStore.data.map { p ->
+        val userId = p[Keys.userId] ?: return@map null
+        val access = p[Keys.access] ?: return@map null
+        val refresh = p[Keys.refresh] ?: return@map null
+        Session(
+            userId = userId,
+            accessToken = access,
+            accessExpiresAt = Instant.ofEpochMilli(p[Keys.accessExp] ?: 0L),
+            refreshToken = refresh,
+            refreshExpiresAt = Instant.ofEpochMilli(p[Keys.refreshExp] ?: 0L),
+            deviceId = p[Keys.deviceId] ?: "",
+        )
+    }
+
+    val lastEventSeq: Flow<Long> = context.sessionDataStore.data.map { it[Keys.lastEventSeq] ?: 0L }
+    val activeCoupleId: Flow<String?> = context.sessionDataStore.data.map { it[Keys.activeCoupleId] }
+    val lastPingSentAt: Flow<Instant?> = context.sessionDataStore.data.map { p -> p[Keys.lastPingSentAt]?.let(Instant::ofEpochMilli) }
+
+    val profile: Flow<Profile?> = context.sessionDataStore.data.map { p ->
+        val userId = p[Keys.userId] ?: return@map null
+        Profile(userId, p[Keys.displayName] ?: "", p[Keys.avatarMediaId])
+    }
+    val prefsDirty: Flow<Boolean> = context.sessionDataStore.data.map { it[Keys.prefsDirty] == "1" }
+
+    suspend fun current(): Session? = session.first()
+
+    suspend fun saveProfile(displayName: String, avatarMediaId: String?) {
+        context.sessionDataStore.edit { p ->
+            p[Keys.displayName] = displayName
+            if (avatarMediaId == null) p.remove(Keys.avatarMediaId) else p[Keys.avatarMediaId] = avatarMediaId
+        }
+    }
+
+    suspend fun setPrefsDirty(dirty: Boolean) {
+        context.sessionDataStore.edit { p -> if (dirty) p[Keys.prefsDirty] = "1" else p.remove(Keys.prefsDirty) }
+    }
+
+    /** Stable per-install device identifier used for push token and session bookkeeping. */
+    suspend fun deviceId(): String {
+        val existing = context.sessionDataStore.data.first()[Keys.deviceId]
+        if (existing != null) return existing
+        val fresh = UUID.randomUUID().toString()
+        context.sessionDataStore.edit { it[Keys.deviceId] = fresh }
+        return fresh
+    }
+
+    suspend fun save(session: Session) {
+        context.sessionDataStore.edit { p ->
+            p[Keys.userId] = session.userId
+            p[Keys.access] = session.accessToken
+            p[Keys.accessExp] = session.accessExpiresAt.toEpochMilli()
+            p[Keys.refresh] = session.refreshToken
+            p[Keys.refreshExp] = session.refreshExpiresAt.toEpochMilli()
+            p[Keys.deviceId] = session.deviceId
+        }
+    }
+
+    suspend fun updateTokens(access: String, accessExp: Instant, refresh: String, refreshExp: Instant) {
+        context.sessionDataStore.edit { p ->
+            p[Keys.access] = access
+            p[Keys.accessExp] = accessExp.toEpochMilli()
+            p[Keys.refresh] = refresh
+            p[Keys.refreshExp] = refreshExp.toEpochMilli()
+        }
+    }
+
+    suspend fun setLastEventSeq(seq: Long) {
+        context.sessionDataStore.edit { p ->
+            val current = p[Keys.lastEventSeq] ?: 0L
+            if (seq > current) p[Keys.lastEventSeq] = seq
+        }
+    }
+
+    suspend fun setActiveCoupleId(id: String?) {
+        context.sessionDataStore.edit { p -> if (id == null) p.remove(Keys.activeCoupleId) else p[Keys.activeCoupleId] = id }
+    }
+
+    suspend fun setLastPingSentAt(at: Instant) {
+        context.sessionDataStore.edit { it[Keys.lastPingSentAt] = at.toEpochMilli() }
+    }
+
+    /** Clears everything except the device id, which stays stable across sign-ins. */
+    suspend fun clear() {
+        context.sessionDataStore.edit { p ->
+            val device = p[Keys.deviceId]
+            p.clear()
+            if (device != null) p[Keys.deviceId] = device
+        }
+    }
+}

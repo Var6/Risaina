@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Platform theme that hosts the Compose hierarchy. Visual styling lives in Compose. -->
+    <style name="Theme.Risaina" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/warm_ivory</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.Risaina.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/midnight_plum</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_mark</item>
+        <item name="windowSplashScreenAnimationDuration">400</item>
+        <item name="postSplashScreenTheme">@style/Theme.Risaina</item>
+    </style>
+</resources>

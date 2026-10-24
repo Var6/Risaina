@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Session tokens and cached private media must never leave the device via cloud backup. -->
+<full-backup-content>
+    <exclude domain="file" path="datastore/session.preferences_pb" />
+    <exclude domain="file" path="datastore/" />
+    <exclude domain="database" />
+    <exclude domain="sharedpref" />
+    <exclude domain="file" path="media_cache/" />
+</full-backup-content>

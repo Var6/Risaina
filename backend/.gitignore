@@ -1,0 +1,4 @@
+# backend-local ignores (root .gitignore already excludes .env, node_modules, dist)
+.data/
+coverage/
+*.tsbuildinfo

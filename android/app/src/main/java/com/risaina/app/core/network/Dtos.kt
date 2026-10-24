@@ -1,0 +1,165 @@
+package com.risaina.app.core.network
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+
+// Wire shapes exactly as in docs/API.md. Nullable fields are nullable here; optional fields default.
+
+@Serializable data class ErrorBody(val error: ErrorDetail)
+@Serializable data class ErrorDetail(val code: String, val message: String, val details: JsonElement? = null)
+
+@Serializable data class UserDto(val id: String, val displayName: String, val avatarMediaId: String? = null, val createdAt: String)
+@Serializable data class PartnerDto(val id: String, val displayName: String, val avatarMediaId: String? = null)
+@Serializable data class CoupleDto(
+    val id: String,
+    val status: String,
+    val memberIds: List<String>,
+    val relationshipStartDate: String? = null,
+    val nextMeetingDate: String? = null,
+    val nextMeetingLabel: String? = null,
+    val sharedPreferences: JsonObject? = null,
+    val createdAt: String,
+)
+@Serializable data class TokensDto(val accessToken: String, val accessExpiresAt: String, val refreshToken: String, val refreshExpiresAt: String)
+
+@Serializable data class QuietHoursDto(val enabled: Boolean, val start: String, val end: String, val timeZone: String)
+@Serializable data class WidgetPrivacyDto(val showPhoto: Boolean = true, val showNoteText: Boolean = true, val showEmoji: Boolean = true)
+@Serializable data class PreferencesDto(
+    val notificationsEnabled: Boolean = true,
+    val previewInNotifications: Boolean = true,
+    val quietHours: QuietHoursDto? = null,
+    val allowPushInQuietHours: Boolean = false,
+    val pingCooldownSeconds: Int = 15,
+    val widgetPrivacy: WidgetPrivacyDto? = null,
+    val reducedMotion: Boolean = false,
+)
+
+@Serializable data class RegisterRequest(val email: String, val password: String, val displayName: String)
+@Serializable data class LoginRequest(val email: String, val password: String)
+@Serializable data class RefreshRequest(val refreshToken: String)
+@Serializable data class LogoutRequest(val refreshToken: String, val deviceId: String? = null)
+@Serializable data class ForgotRequest(val email: String)
+@Serializable data class ResetRequest(val token: String, val newPassword: String)
+@Serializable data class AuthResponse(val user: UserDto, val tokens: TokensDto)
+@Serializable data class TokensResponse(val tokens: TokensDto)
+
+@Serializable data class MeResponse(val user: UserDto, val couple: CoupleDto? = null, val partner: PartnerDto? = null, val preferences: PreferencesDto)
+@Serializable data class PatchMeRequest(val displayName: String? = null, val avatarMediaId: String? = null)
+@Serializable data class UserResponse(val user: UserDto)
+@Serializable data class PreferencesResponse(val preferences: PreferencesDto)
+@Serializable data class DeleteMeRequest(val password: String)
+
+@Serializable data class InvitationCreatedDto(val id: String, val code: String, val expiresAt: String)
+@Serializable data class InvitationCreatedResponse(val invitation: InvitationCreatedDto)
+@Serializable data class InvitationSummaryDto(val id: String, val expiresAt: String, val createdAt: String)
+@Serializable data class InvitationCurrentResponse(val invitation: InvitationSummaryDto? = null)
+@Serializable data class AcceptInvitationRequest(val code: String)
+@Serializable data class CoupleResponse(val couple: CoupleDto, val partner: PartnerDto? = null)
+@Serializable data class CoupleOnlyResponse(val couple: CoupleDto)
+@Serializable data class PatchCoupleRequest(
+    val relationshipStartDate: String? = null,
+    val nextMeetingDate: String? = null,
+    val nextMeetingLabel: String? = null,
+)
+@Serializable data class UnlinkRequest(val confirm: Boolean = true)
+
+@Serializable data class DeviceRequest(val deviceId: String, val platform: String = "android", val token: String, val appVersion: String, val model: String? = null)
+
+@Serializable data class PingDto(
+    val id: String,
+    val coupleId: String,
+    val senderId: String,
+    val recipientId: String,
+    val type: String,
+    val emoji: String,
+    val message: String? = null,
+    val status: String,
+    val createdAt: String,
+    val deliveredAt: String? = null,
+    val seenAt: String? = null,
+    val idempotencyKey: String,
+)
+@Serializable data class CreatePingRequest(val type: String, val emoji: String, val message: String? = null, val idempotencyKey: String)
+@Serializable data class PingResponse(val ping: PingDto)
+@Serializable data class PingPage(val items: List<PingDto>, val nextCursor: String? = null)
+
+@Serializable data class MessageDto(
+    val id: String,
+    val coupleId: String,
+    val senderId: String,
+    val recipientId: String,
+    val type: String,
+    val text: String? = null,
+    val mediaId: String? = null,
+    val createdAt: String,
+    val editedAt: String? = null,
+    val deletedAt: String? = null,
+    val readAt: String? = null,
+    val idempotencyKey: String,
+)
+@Serializable data class CreateMessageRequest(val type: String, val text: String? = null, val mediaId: String? = null, val idempotencyKey: String)
+@Serializable data class MessageResponse(val message: MessageDto)
+@Serializable data class MessagePage(val items: List<MessageDto>, val nextCursor: String? = null)
+
+@Serializable data class MediaDto(
+    val id: String,
+    val coupleId: String,
+    val ownerId: String,
+    val category: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val durationMs: Long? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val status: String,
+    val createdAt: String,
+)
+@Serializable data class CreateUploadRequest(val category: String, val mimeType: String, val sizeBytes: Long, val durationMs: Long? = null, val width: Int? = null, val height: Int? = null)
+@Serializable data class UploadInstructionsDto(val url: String, val method: String = "PUT", val headers: Map<String, String> = emptyMap(), val expiresAt: String)
+@Serializable data class CreateUploadResponse(val media: MediaDto, val upload: UploadInstructionsDto)
+@Serializable data class MediaResponse(val media: MediaDto)
+@Serializable data class MediaUrlResponse(val url: String, val expiresAt: String)
+
+@Serializable data class MemoryDto(
+    val id: String, val coupleId: String, val createdBy: String, val mediaId: String,
+    val caption: String? = null, val takenAt: String? = null, val pinned: Boolean = false,
+    val createdAt: String, val deletedAt: String? = null,
+)
+@Serializable data class CreateMemoryRequest(val mediaId: String, val caption: String? = null, val takenAt: String? = null)
+@Serializable data class PatchMemoryRequest(val caption: String? = null, val pinned: Boolean? = null)
+@Serializable data class MemoryResponse(val memory: MemoryDto)
+@Serializable data class MemoryPage(val items: List<MemoryDto>, val nextCursor: String? = null)
+
+@Serializable data class MilestoneDto(val id: String, val coupleId: String, val createdBy: String, val title: String, val date: String, val kind: String, val createdAt: String)
+@Serializable data class CreateMilestoneRequest(val title: String, val date: String, val kind: String)
+@Serializable data class PatchMilestoneRequest(val title: String? = null, val date: String? = null, val kind: String? = null)
+@Serializable data class MilestoneResponse(val milestone: MilestoneDto)
+@Serializable data class MilestoneList(val items: List<MilestoneDto>)
+
+@Serializable data class EventDto(
+    val id: String,
+    val coupleId: String,
+    val seq: Long,
+    val type: String,
+    val actorId: String,
+    val payload: JsonObject,
+    val createdAt: String,
+)
+@Serializable data class EventsResponse(val items: List<EventDto>, val latestSeq: Long)
+
+// WebSocket frames
+@Serializable data class WsAuth(val type: String = "auth", val token: String)
+@Serializable data class WsSync(val type: String = "sync", val since: Long)
+@Serializable data class WsInbound(
+    val type: String,
+    val coupleId: String? = null,
+    val latestSeq: Long? = null,
+    val event: EventDto? = null,
+    val code: String? = null,
+    val message: String? = null,
+)
+
+@Serializable data class HealthResponse(val status: String, val version: String? = null, val checks: JsonObject? = null)
+@Serializable data class ExportResponse(@SerialName("user") val user: UserDto, val couple: CoupleDto? = null)

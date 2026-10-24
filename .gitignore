@@ -1,0 +1,37 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+**/google-services.json
+**/*.keystore
+**/*.jks
+**/keystore.properties
+**/local.properties
+**/serviceAccountKey*.json
+**/firebase-service-account*.json
+
+# --- Android / Gradle ---
+*.iml
+.gradle/
+**/build/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+android/app/release/
+android/.idea/
+.idea/
+*.hprof
+.DS_Store
+
+# --- Node / backend ---
+node_modules/
+backend/dist/
+backend/coverage/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+
+# --- Misc ---
+*.log
+.cache/

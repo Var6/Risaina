@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Risaina</string>
+    <string name="app_tagline">Always a Little Closer.</string>
+    <string name="widget_photo_description">Your pinned memory</string>
+    <string name="widget_love_note_description">The latest note between you</string>
+    <string name="widget_touch_ping_description">Send a Touch Ping with one tap</string>
+    <string name="widget_emoji_description">The latest emoji you received</string>
+    <string name="widget_countdown_description">Days until you are together</string>
+    <string name="widget_voice_note_description">The latest voice note</string>
+</resources>

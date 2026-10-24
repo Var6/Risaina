@@ -1,0 +1,55 @@
+{
+  "name": "risaina-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Risaina API — Fastify 5 / TypeScript / MongoDB backend for a private two-person relationship app",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.20.0",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "openapi:export": "tsx scripts/export-openapi.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1156.0",
+    "@aws-sdk/s3-request-presigner": "3.1156.0",
+    "@fastify/cors": "11.3.1",
+    "@fastify/helmet": "13.2.0",
+    "@fastify/rate-limit": "11.2.1",
+    "@fastify/sensible": "6.0.7",
+    "@fastify/swagger": "9.9.2",
+    "@fastify/swagger-ui": "6.1.2",
+    "@fastify/under-pressure": "9.2.1",
+    "@fastify/websocket": "11.3.4",
+    "argon2": "0.45.1",
+    "fastify": "5.12.7",
+    "fastify-type-provider-zod": "7.0.0",
+    "file-type": "22.2.0",
+    "firebase-admin": "14.5.0",
+    "jose": "6.2.13",
+    "mongodb": "7.7.0",
+    "pino": "10.4.0",
+    "ws": "8.22.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.3",
+    "@types/node": "26.6.5",
+    "@types/ws": "8.18.2",
+    "mongodb-memory-server": "11.3.0",
+    "pino-pretty": "13.2.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

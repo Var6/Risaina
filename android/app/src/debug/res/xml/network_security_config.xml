@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY. Permits plain HTTP so the app can talk to a locally running backend
+  (emulator alias 10.0.2.2 or a LAN IP). Release builds use the platform default: HTTPS only.
+-->
+<network-security-config xmlns:tools="http://schemas.android.com/tools" tools:ignore="InsecureBaseConfiguration">
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

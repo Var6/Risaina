@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand tokens used outside Compose (launcher icon, splash, window background). -->
+    <color name="midnight_plum">#1B111B</color>
+    <color name="aubergine">#2B1C2B</color>
+    <color name="deep_wine">#51263D</color>
+    <color name="rosewood">#844A65</color>
+    <color name="blush">#E6BFCB</color>
+    <color name="warm_ivory">#FFF8F2</color>
+    <color name="soft_champagne">#CDB38A</color>
+    <color name="ic_launcher_background">#1B111B</color>
+</resources>

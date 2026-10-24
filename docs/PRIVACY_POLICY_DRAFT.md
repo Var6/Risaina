@@ -1,0 +1,31 @@
+# Privacy policy (DRAFT — review before any public release)
+
+Risaina is a private app for two people. This draft describes how it handles data.
+
+**What we collect.** Your email address and a display name (for your account), the messages,
+pings, photos and voice notes you choose to send, optional dates you add to the timeline, your
+notification preferences, and a push-notification token for your device. No analytics, no
+advertising identifiers, no contacts, no location.
+
+**Where it lives.** On servers you (the operator) run: MongoDB for records and Cloudflare R2 for
+photos and voice notes, both access-controlled. Data in transit is encrypted with TLS. Content is
+not end-to-end encrypted; the operator of the server can technically access it.
+
+**Who can see it.** Only you and the one partner you paired with. Nothing is shared with third
+parties. Firebase Cloud Messaging is used to wake the app; the push payload contains identifiers
+only, never content.
+
+**Notifications and widgets.** You control whether previews appear in notifications and what
+widgets may show. Quiet hours stop alerts during the hours you choose.
+
+**Permissions.** Microphone (only while you record a voice note), notifications (only if you
+allow them), wallpaper (only when you explicitly apply one).
+
+**Your choices.** Export your data as JSON from Settings → Privacy. Unlink your partner at any
+time. Delete your account to remove your profile, sessions, devices, and media; the pairing ends
+for both people.
+
+**Retention.** Data is kept until you delete it or your account. Abandoned uploads are removed
+after 24 hours.
+
+**Contact.** [operator contact to be added]
