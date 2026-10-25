@@ -296,7 +296,10 @@ private fun LatestMoment(s: HomeUiState, onOpen: () -> Unit) {
     val m = s.latestMoment ?: return
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
         Spacer(Modifier.height(12.dp))
-        SectionHeader(overline = "Latest from ${s.partner?.displayName ?: "them"}", title = when (m) { is Moment.FromPing -> "A ping"; is Moment.FromMessage -> "A note" })
+        SectionHeader(overline = "Latest from ${s.partner?.displayName ?: "them"}", title = when (m) {
+            is Moment.FromPing -> if (com.risaina.app.feature.ping.Expressions.isGift(m.ping.message)) "A gift" else m.ping.type.label.takeIf { m.ping.type != com.risaina.app.core.model.PingType.CUSTOM } ?: "A ping"
+            is Moment.FromMessage -> when (m.message.type) { MessageType.PHOTO -> "A photo"; MessageType.VOICE -> "A voice note"; else -> "A note" }
+        })
         Spacer(Modifier.height(10.dp))
         RisainaCard(Modifier.fillMaxWidth(), onClick = onOpen) {
             when (m) {
@@ -304,7 +307,12 @@ private fun LatestMoment(s: HomeUiState, onOpen: () -> Unit) {
                     Text(m.ping.emoji, style = RisainaTextStyles.emojiLarge)
                     Spacer(Modifier.width(14.dp))
                     Column {
-                        Text(m.ping.message ?: m.ping.type.defaultMessage, style = RisainaTextStyles.noteSerif)
+                        val gift = com.risaina.app.feature.ping.Expressions
+                        Text(
+                            if (gift.isGift(m.ping.message)) gift.giftLine(m.ping.message)?.takeIf { it.isNotBlank() } ?: "A gift for you"
+                            else m.ping.message?.takeIf { it.isNotBlank() } ?: m.ping.type.defaultMessage,
+                            style = RisainaTextStyles.noteSerif,
+                        )
                         Text(Format.relative(m.ping.createdAt), style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted)
                     }
                 }

@@ -43,7 +43,7 @@ class RisainaApi @Inject constructor(
     suspend fun me(): MeResponse = client.get("me").body()
     suspend fun patchMe(req: PatchMeRequest): UserResponse = client.patch("me") { json(req) }.body()
     /** For patches that must send an explicit null (clearing a field). */
-    suspend fun patchMeRaw(body: kotlinx.serialization.json.JsonObject): UserResponse = client.patch("me") { json(body) }.body()
+    suspend fun patchMeRaw(body: kotlinx.serialization.json.JsonObject): UserResponse = client.patch("me") { jsonObject(body) }.body()
     suspend fun putPreferences(req: PreferencesDto): PreferencesResponse = client.put("me/preferences") { json(req) }.body()
     suspend fun deleteMe(req: DeleteMeRequest) { client.delete("me") { json(req) } }
     /** Export as raw JSON text so the user gets exactly what the server returned. */
@@ -102,12 +102,29 @@ class RisainaApi @Inject constructor(
 
     // ---- widget board: what each partner shows on the other's widgets ----
     suspend fun widgetBoard(): WidgetBoardsResponse = client.get("widget-board").body()
-    suspend fun putWidgetBoard(body: kotlinx.serialization.json.JsonObject): WidgetBoardResponse = client.put("widget-board") { json(body) }.body()
+    suspend fun putWidgetBoard(body: kotlinx.serialization.json.JsonObject): WidgetBoardResponse = client.put("widget-board") { jsonObject(body) }.body()
 
     // ---- SOS ----
     suspend fun createSos(req: CreateSosRequest): SosResponse = client.post("sos") { json(req) }.body()
     suspend fun ackSos(id: String): SosResponse = client.post("sos/$id/ack") { json(EmptyBody) }.body()
     suspend fun sosList(): SosList = client.get("sos") { parameter("limit", 10) }.body()
+
+    // ---- games (rock–paper–scissors with truth or dare) ----
+    suspend fun games(): GameList = client.get("games") { parameter("limit", 20) }.body()
+    suspend fun game(id: String): GameResponse = client.get("games/$id").body()
+    suspend fun gameSuggestions(): GameSuggestions = client.get("games/suggestions").body()
+    suspend fun createGame(): GameResponse = client.post("games") { json(CreateGameRequest()) }.body()
+    suspend fun gameMove(id: String, move: String): GameResponse = client.post("games/$id/move") { json(GameMoveRequest(move)) }.body()
+    suspend fun gameRematch(id: String): GameResponse = client.post("games/$id/rematch").body()
+    suspend fun gameChallenge(id: String, truth: String, dare: String): GameResponse = client.post("games/$id/challenge") { json(GameChallengeRequest(truth, dare)) }.body()
+    suspend fun gameChoose(id: String, kind: String): GameResponse = client.post("games/$id/choose") { json(GameChooseRequest(kind)) }.body()
+    suspend fun gameConfirm(id: String): GameResponse = client.post("games/$id/confirm").body()
+    suspend fun gameReject(id: String, note: String?): GameResponse = client.post("games/$id/reject") { json(GameRejectRequest(note)) }.body()
+    suspend fun gameComplete(id: String, answer: String?): GameResponse = client.post("games/$id/complete") { json(GameCompleteRequest(answer)) }.body()
+    suspend fun gameCancel(id: String): GameResponse = client.post("games/$id/cancel").body()
+
+    // ---- shared chat wallpaper (couple-wide) ----
+    suspend fun setChatWallpaper(body: kotlinx.serialization.json.JsonObject): CoupleOnlyResponse = client.patch("couple") { jsonObject(body) }.body()
 
     // ---- events ----
     suspend fun events(since: Long, limit: Int = 200): EventsResponse =
@@ -123,6 +140,14 @@ class RisainaApi @Inject constructor(
             setBody(bytes)
             onUpload { sent, total -> onProgress(sent, total ?: bytes.size.toLong()) }
         }
+
+    /**
+     * Hand-built JSON (used where an explicit null must be sent). It is written as text: passing a
+     * JsonObject through setBody(Any) fails at runtime ("Serializer for class 'JsonLiteral'").
+     */
+    private fun HttpRequestBuilder.jsonObject(body: kotlinx.serialization.json.JsonObject) {
+        setBody(io.ktor.http.content.TextContent(body.toString(), ContentType.Application.Json))
+    }
 
     private fun HttpRequestBuilder.json(body: Any) {
         contentType(ContentType.Application.Json)

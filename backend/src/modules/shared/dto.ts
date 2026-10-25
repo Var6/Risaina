@@ -1,6 +1,7 @@
 import type {
   CoupleDoc,
   EventDoc,
+  GameDoc,
   ListDoc,
   MediaDoc,
   MemoryDoc,
@@ -16,6 +17,8 @@ import { iso, isoOrNull } from '../../lib/time.js';
 import type {
   CoupleDto,
   EventDto,
+  GameDto,
+  GameEventViewDto,
   ListDto,
   MediaDto,
   MemoryDto,
@@ -116,7 +119,17 @@ export function toCoupleDto(c: CoupleDoc): CoupleDto {
     relationshipStartDate: c.relationshipStartDate,
     nextMeetingDate: isoOrNull(c.nextMeetingDate),
     nextMeetingLabel: c.nextMeetingLabel,
-    sharedPreferences: { ...c.sharedPreferences },
+    sharedPreferences: {
+      ...c.sharedPreferences,
+      chatWallpaper: c.chatWallpaper
+        ? {
+            style: c.chatWallpaper.style,
+            photoMediaId: c.chatWallpaper.photoMediaId ? c.chatWallpaper.photoMediaId.toHexString() : null,
+            setBy: c.chatWallpaper.setBy.toHexString(),
+            setAt: iso(c.chatWallpaper.setAt),
+          }
+        : null,
+    } as CoupleDto['sharedPreferences'], // index signature vs typed key: TS cannot express the mix
     createdAt: iso(c.createdAt),
   };
 }
@@ -234,5 +247,91 @@ export function toEventDto(e: EventDoc): EventDto {
     actorId: e.actorId.toHexString(),
     payload: e.payload,
     createdAt: iso(e.createdAt),
+  };
+}
+
+function gameCommon(g: GameDoc) {
+  return {
+    id: g._id.toHexString(),
+    coupleId: g.coupleId.toHexString(),
+    kind: g.kind,
+    createdBy: g.createdBy.toHexString(),
+    createdAt: iso(g.createdAt),
+    updatedAt: iso(g.updatedAt),
+    status: g.status,
+    winnerId: g.winnerId ? g.winnerId.toHexString() : null,
+    loserId: g.loserId ? g.loserId.toHexString() : null,
+    completedAt: isoOrNull(g.completedAt),
+    round: g.round,
+  };
+}
+
+/** A round's moves are revealed only once both players moved. */
+export function gameRevealed(g: GameDoc): boolean {
+  return g.moves.length >= 2;
+}
+
+/** Statuses in which the loser's answer is shown (to both players). */
+const ANSWER_VISIBLE: ReadonlySet<GameDoc['status']> = new Set([
+  'awaiting_confirmation',
+  'completed',
+  'cancelled', // only non-null when cancelled while awaiting confirmation (a reject clears it)
+]);
+
+/**
+ * Blind truth-or-dare: the winner always sees both texts; anyone else (the loser) sees neither
+ * until they choose, then only the chosen one — the other text is never revealed to them.
+ */
+export function toGameChallengeDto(g: GameDoc, viewerId: string): GameDto['challenge'] {
+  const c = g.challenge;
+  if (!c) return null;
+  const isWinner = g.winnerId !== null && g.winnerId.toHexString() === viewerId;
+  return {
+    // `?? null`: a game from the earlier single-challenge shape has no truth/dare fields
+    truth: isWinner || c.chosen === 'truth' ? (c.truth ?? null) : null,
+    dare: isWinner || c.chosen === 'dare' ? (c.dare ?? null) : null,
+    chosen: c.chosen ?? null,
+    by: c.by.toHexString(),
+    at: iso(c.at),
+    chosenAt: isoOrNull(c.chosenAt),
+    doneAt: isoOrNull(c.doneAt),
+    confirmedAt: isoOrNull(c.confirmedAt),
+    rejectNote: c.rejectNote ?? null,
+  };
+}
+
+/** Viewer-specific DTO: my move, whether my partner moved, and their move only once revealed. */
+export function toGameDto(g: GameDoc, viewerId: string): GameDto {
+  const mine = g.moves.find((m) => m.userId.toHexString() === viewerId);
+  const theirs = g.moves.find((m) => m.userId.toHexString() !== viewerId);
+  return {
+    ...gameCommon(g),
+    challenge: toGameChallengeDto(g, viewerId),
+    answer: ANSWER_VISIBLE.has(g.status) ? g.answer : null,
+    myMove: mine?.move ?? null,
+    partnerMoved: theirs !== undefined,
+    partnerMove: gameRevealed(g) && theirs ? theirs.move : null,
+  };
+}
+
+/**
+ * Viewer-neutral DTO for events: who moved, never which move until both moved, and never the
+ * truth/dare texts or the answer (only whether a challenge exists and its progress timestamps).
+ */
+export function toGameEventView(g: GameDoc): GameEventViewDto {
+  const c = g.challenge;
+  return {
+    ...gameCommon(g),
+    challenge: c
+      ? {
+          chosen: c.chosen ?? null,
+          hasChallenge: true,
+          chosenAt: isoOrNull(c.chosenAt),
+          doneAt: isoOrNull(c.doneAt),
+          confirmedAt: isoOrNull(c.confirmedAt),
+        }
+      : null,
+    movedBy: g.moves.map((m) => m.userId.toHexString()),
+    moves: gameRevealed(g) ? g.moves.map((m) => ({ userId: m.userId.toHexString(), move: m.move })) : null,
   };
 }

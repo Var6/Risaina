@@ -5,6 +5,7 @@ import com.google.firebase.messaging.RemoteMessage
 import com.risaina.app.core.sync.SyncWorker
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -17,6 +18,7 @@ class RisainaMessagingService : FirebaseMessagingService() {
     @Inject lateinit var notifier: RisainaNotifier
     @Inject lateinit var sosAlert: SosAlert
     @Inject lateinit var coupleDao: com.risaina.app.core.database.CoupleDao
+    @Inject lateinit var syncManager: com.risaina.app.core.sync.EventSyncManager
 
     override fun onNewToken(token: String) {
         RegisterDeviceWorker.enqueue(applicationContext)
@@ -29,6 +31,15 @@ class RisainaMessagingService : FirebaseMessagingService() {
         }
         if (message.data["type"] == "ping.created") {
             runCatching { runBlocking { notifier.notifyPingArrivedFast() } }
+        }
+        // Fetch the event right here (high-priority pushes get ~10 s) so widgets and the lock-screen
+        // card change within seconds, even if Android postpones background jobs. The worker below is
+        // the safety net; the reducer de-duplicates by seq, so nothing is applied or notified twice.
+        runCatching {
+            runBlocking {
+                val r = withTimeoutOrNull(8_000) { syncManager.syncOnce() }
+                if (r is com.risaina.app.core.common.AppResult.Success) r.value.forEach { notifier.notifyIncoming(it) }
+            }
         }
         SyncWorker.enqueueFromPush(applicationContext)
     }

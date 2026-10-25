@@ -22,6 +22,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
@@ -41,17 +42,24 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val manager = remember { context.getSystemService(AppWidgetManager::class.java) }
     val canPin = remember { manager?.isRequestPinAppWidgetSupported == true }
-    val widgets = remember {
+    // Two widgets cover everything; the single-purpose ones stay for people who like them.
+    val recommended = remember {
         listOf(
-            WidgetInfo("Gift", "The latest gift from your partner. Great on the lock screen.", "🎁", GiftWidgetReceiver::class.java),
-            WidgetInfo("Photo", "The latest photo your partner sent in chat.", "🖼", PhotoWidgetReceiver::class.java),
-            WidgetInfo("Love note", "The latest note, with who sent it and when.", "✉️", LoveNoteWidgetReceiver::class.java),
-            WidgetInfo("Touch Ping", "One tap sends “thinking of you”.", "💭", TouchPingWidgetReceiver::class.java),
+            WidgetInfo("Us · all in one", "Their latest ping, gift, note or photo, your countdown, and a button to reach them. Glows when they reach out. Resize it from small to a full photo card.", "💞", UsWidgetReceiver::class.java),
+            WidgetInfo("Touch Ping", "A small one-tap button. Shows their ping when it arrives, with \u201cSend one back\u201d.", "💭", TouchPingWidgetReceiver::class.java),
+        )
+    }
+    val more = remember {
+        listOf(
+            WidgetInfo("Gift", "The latest gift from your partner.", "🎁", GiftWidgetReceiver::class.java),
+            WidgetInfo("Photo", "The latest photo your partner sent.", "🖼", PhotoWidgetReceiver::class.java),
+            WidgetInfo("Love note", "The latest note or mood, with when.", "✉️", LoveNoteWidgetReceiver::class.java),
             WidgetInfo("Emoji", "The latest symbol you received.", "✨", EmojiWidgetReceiver::class.java),
             WidgetInfo("Countdown", "Days until you're together, or the next milestone.", "⏳", CountdownWidgetReceiver::class.java),
             WidgetInfo("Voice note", "A shortcut to the latest voice note.", "🎙", VoiceNoteWidgetReceiver::class.java),
         )
     }
+    var showMore by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -64,32 +72,74 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Text(
-                if (canPin) "Add any of these to your home screen. They update after new activity and work offline from what's already on this phone."
+                if (canPin) "One widget is enough: \u201cUs\u201d shows whatever your partner did last and lights up when they reach out. Add Touch Ping too if you want a small button."
                 else "Your launcher doesn't support adding widgets from inside apps. Long-press your home screen, choose Widgets, and look for Risaina.",
                 style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted,
             )
             Spacer(Modifier.height(16.dp))
-            widgets.forEach { w ->
-                RisainaCard(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(w.emoji, style = RisainaTextStyles.emojiLarge.copy(fontSize = MaterialTheme.typography.headlineLarge.fontSize))
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(w.title, style = MaterialTheme.typography.titleMedium)
-                            Text(w.body, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
-                        }
-                    }
-                    if (canPin) {
-                        Spacer(Modifier.height(12.dp))
-                        SecondaryButton("Add to home screen", onClick = { requestPin(context, manager, w.receiver) })
-                    }
-                }
-            }
+            recommended.forEach { w -> WidgetRow(w, canPin) { requestPin(context, manager, w.receiver) } }
             Spacer(Modifier.height(16.dp))
             LockScreenSection()
             Spacer(Modifier.height(16.dp))
+            BackgroundUpdatesCard()
+            Spacer(Modifier.height(16.dp))
+            androidx.compose.material3.TextButton(onClick = { showMore = !showMore }) {
+                Text(if (showMore) "Hide single-purpose widgets" else "More widgets (${more.size})", style = MaterialTheme.typography.titleSmall)
+            }
+            if (showMore) more.forEach { w -> WidgetRow(w, canPin) { requestPin(context, manager, w.receiver) } }
+            Spacer(Modifier.height(16.dp))
             Text("What widgets may show is controlled in Settings → Privacy. Photos and note text can be hidden there.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
             Spacer(Modifier.height(40.dp))
+        }
+    }
+}
+
+@Composable
+private fun WidgetRow(w: WidgetInfo, canPin: Boolean, onAdd: () -> Unit) {
+    RisainaCard(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(w.emoji, style = RisainaTextStyles.emojiLarge.copy(fontSize = MaterialTheme.typography.headlineLarge.fontSize))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(w.title, style = MaterialTheme.typography.titleMedium)
+                Text(w.body, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+            }
+        }
+        if (canPin) {
+            Spacer(Modifier.height(12.dp))
+            SecondaryButton("Add to home screen", onClick = onAdd)
+        }
+    }
+}
+
+/**
+ * Widgets change the moment a ping arrives only if the phone lets Risaina wake up in the
+ * background. Many phones (Realme, Oppo, Xiaomi, Vivo, some Samsung) hold that back by default.
+ */
+@Composable
+private fun BackgroundUpdatesCard() {
+    val context = LocalContext.current
+    val unrestricted = remember {
+        context.getSystemService(android.os.PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
+    }
+    RisainaCard(Modifier.fillMaxWidth()) {
+        Text("Instant updates", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (unrestricted) "Risaina may run in the background, so widgets change as soon as your partner reaches out."
+            else "Widgets update within seconds of a ping, even when Risaina is closed. Some phones delay this to save battery. On Realme, Oppo, Xiaomi or Vivo: open App info → Battery, choose \u201cAllow background activity\u201d (or \u201cNo restrictions\u201d) and turn on Auto launch.",
+            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
+        )
+        if (!unrestricted) {
+            Spacer(Modifier.height(10.dp))
+            SecondaryButton("Open App info", onClick = {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null))
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            })
         }
     }
 }

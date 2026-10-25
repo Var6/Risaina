@@ -22,6 +22,7 @@ const MAX_MESSAGE_BYTES = 8 * 1024;
  *  4. live events arrive as {type:'event'}
  *  5. server pings every 30 s; 90 s without any frame ⇒ close
  *  6. {type:'revoked'} + 4403 when the couple ends or the session is revoked
+ *  An unpaired user unlinked within 7 days gets that couple's final couple.unlinked event on sync.
  */
 export const websocketRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
   const events = new EventQueryService(ctx);
@@ -153,8 +154,13 @@ export const websocketRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) 
 
       async function handleSync(c: HubConnection, since: number): Promise<void> {
         try {
-          if (c.coupleId) {
-            for await (const event of events.replay(new ObjectId(c.coupleId), since)) {
+          // Unpaired socket: a user unlinked within the retention window still gets the final
+          // couple.unlinked event of that couple (the only one kept), e.g. after being offline.
+          const feed = c.coupleId
+            ? { coupleId: new ObjectId(c.coupleId), unlinkedOnly: false }
+            : await events.unlinkedFeedFor(new ObjectId(c.userId));
+          if (feed) {
+            for await (const event of events.replay(feed, since)) {
               if (closed) return;
               if (!ctx.hub.send(c, { type: 'event', event })) return;
             }

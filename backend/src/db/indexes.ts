@@ -101,9 +101,25 @@ export const INDEXES: Record<string, IndexDescription[]> = {
     { key: { coupleId: 1, createdAt: -1 }, name: 'coupleId_createdAt_desc' }, // GET /sos
     { key: { senderId: 1, createdAt: -1 }, name: 'senderId_createdAt_desc' }, // 3 per 10 min limit
   ],
+  [COLLECTION_NAMES.games]: [
+    { key: { coupleId: 1, createdAt: -1 }, name: 'coupleId_createdAt_desc' }, // GET /games, export
+    // at most one open game per couple (race-safe POST /games)
+    {
+      key: { coupleId: 1 },
+      unique: true,
+      name: 'coupleId_open_unique',
+      partialFilterExpression: { open: true },
+    },
+  ],
   [COLLECTION_NAMES.events]: [
     { key: { coupleId: 1, seq: 1 }, unique: true, name: 'coupleId_seq_unique' }, // sync replay, GET /events
     { key: { 'push.state': 1, 'push.leaseUntil': 1 }, name: 'push_state_leaseUntil' }, // outbox worker lease
+    // cleanup: drop an unlinked couple's final event after the 7-day retention (tiny partial index)
+    {
+      key: { createdAt: 1 },
+      name: 'unlinked_createdAt',
+      partialFilterExpression: { type: 'couple.unlinked' },
+    },
   ],
 };
 

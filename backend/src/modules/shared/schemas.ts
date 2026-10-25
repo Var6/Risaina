@@ -1,11 +1,16 @@
 import { z } from 'zod';
 import {
+  CHALLENGE_KINDS,
+  CHAT_WALLPAPER_STYLES,
   EVENT_TYPES,
+  GAME_KINDS,
+  GAME_STATUSES,
   LIST_KINDS,
   MEDIA_CATEGORIES,
   MESSAGE_TYPES,
   MILESTONE_KINDS,
   PING_TYPES,
+  RPS_MOVES,
 } from '../../db/types.js';
 import { OBJECT_ID_REGEX } from '../../lib/ids.js';
 import { parseHHmm } from '../../lib/quiet-hours.js';
@@ -127,6 +132,19 @@ export const SharedPreferences = z
   .refine((o) => Object.keys(o).length <= 20, 'at most 20 shared preference keys')
   .meta({ id: 'SharedPreferences' });
 
+export const ChatWallpaperStyle = z.enum(CHAT_WALLPAPER_STYLES);
+
+export const ChatWallpaper = z
+  .object({
+    style: ChatWallpaperStyle,
+    photoMediaId: IdString.nullable().meta({
+      description: 'Set only for PHOTO; fetch with GET /media/:id/url',
+    }),
+    setBy: IdString,
+    setAt: IsoDateTime,
+  })
+  .meta({ id: 'ChatWallpaper' });
+
 export const Couple = z
   .object({
     id: IdString,
@@ -135,7 +153,18 @@ export const Couple = z
     relationshipStartDate: CalendarDate.nullable(),
     nextMeetingDate: IsoDateTimeNullable,
     nextMeetingLabel: z.string().nullable(),
-    sharedPreferences: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+    sharedPreferences: z
+      .object({
+        chatWallpaper: ChatWallpaper.nullable().meta({
+          description: 'Shared chat wallpaper (same for both partners); null = app default',
+        }),
+      })
+      .catchall(z.union([z.string(), z.number(), z.boolean()]))
+      .meta({
+        description:
+          'Flat client keys (string|number|boolean) set with PATCH /couple { sharedPreferences } plus the typed, ' +
+          'server-managed chatWallpaper (set with PATCH /couple { chatWallpaper })',
+      }),
     createdAt: IsoDateTime,
   })
   .meta({ id: 'Couple' });
@@ -354,6 +383,89 @@ export const Sos = z
   })
   .meta({ id: 'Sos' });
 
+// --- Games ----------------------------------------------------------------------------------
+
+export const GameKind = z.enum(GAME_KINDS);
+export const RpsMove = z.enum(RPS_MOVES);
+export const GameStatus = z.enum(GAME_STATUSES);
+export const ChallengeKind = z.enum(CHALLENGE_KINDS);
+
+/**
+ * Viewer-specific challenge. The winner always sees both texts. The loser sees `truth` and `dare`
+ * as null until they choose; afterwards only the chosen text (the other stays null forever).
+ */
+export const GameChallenge = z
+  .object({
+    truth: z.string().nullable().meta({ description: 'Winner: always. Loser: only once they chose truth' }),
+    dare: z.string().nullable().meta({ description: 'Winner: always. Loser: only once they chose dare' }),
+    chosen: ChallengeKind.nullable().meta({ description: "The loser's blind pick; null until chosen" }),
+    by: IdString.meta({ description: 'The winner (who wrote both)' }),
+    at: IsoDateTime,
+    chosenAt: IsoDateTimeNullable,
+    doneAt: IsoDateTimeNullable.meta({ description: 'Loser marked it done (cleared by a reject)' }),
+    confirmedAt: IsoDateTimeNullable.meta({ description: 'Winner confirmed (status completed)' }),
+    rejectNote: z
+      .string()
+      .nullable()
+      .meta({ description: "Winner's note on the last reject; cleared by the next complete" }),
+  })
+  .meta({ id: 'GameChallenge' });
+
+/** Text-free challenge summary carried by `game.updated` events. */
+export const GameEventChallenge = z
+  .object({
+    chosen: ChallengeKind.nullable(),
+    hasChallenge: z.literal(true),
+    chosenAt: IsoDateTimeNullable,
+    doneAt: IsoDateTimeNullable,
+    confirmedAt: IsoDateTimeNullable,
+  })
+  .meta({ id: 'GameEventChallenge' });
+
+const gameCommon = {
+  id: IdString,
+  coupleId: IdString,
+  kind: GameKind,
+  createdBy: IdString,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  status: GameStatus,
+  winnerId: IdString.nullable(),
+  loserId: IdString.nullable(),
+  completedAt: IsoDateTimeNullable,
+  round: z.number().int().min(1),
+};
+
+/** Viewer-specific game (HTTP responses). The partner's move stays hidden until both moved. */
+export const Game = z
+  .object({
+    ...gameCommon,
+    challenge: GameChallenge.nullable(),
+    answer: z.string().nullable().meta({
+      description: "The loser's answer; visible to both from awaiting_confirmation on (null before)",
+    }),
+    myMove: RpsMove.nullable(),
+    partnerMoved: z.boolean(),
+    partnerMove: RpsMove.nullable().meta({ description: 'null until both players moved this round' }),
+  })
+  .meta({ id: 'Game' });
+
+/**
+ * Viewer-neutral game (game.updated event payload). Moves only appear once both moved; truth/dare
+ * texts and the answer never appear (clients re-fetch GET /games/:id for their own view).
+ */
+export const GameEventView = z
+  .object({
+    ...gameCommon,
+    challenge: GameEventChallenge.nullable(),
+    movedBy: z.array(IdString).meta({ description: 'Who has moved this round (never which move)' }),
+    moves: z
+      .array(z.object({ userId: IdString, move: RpsMove }))
+      .nullable()
+      .meta({ description: 'Both moves of this round once both moved; otherwise null' }),
+  })
+  .meta({ id: 'GameEventView' });
+
 // --- Events ---------------------------------------------------------------------------------
 
 export const EventType = z.enum(EVENT_TYPES);
@@ -385,3 +497,6 @@ export type ListDto = z.infer<typeof List>;
 export type ListItemDto = z.infer<typeof ListItem>;
 export type WidgetBoardDto = z.infer<typeof WidgetBoard>;
 export type SosDto = z.infer<typeof Sos>;
+export type ChatWallpaperDto = z.infer<typeof ChatWallpaper>;
+export type GameDto = z.infer<typeof Game>;
+export type GameEventViewDto = z.infer<typeof GameEventView>;

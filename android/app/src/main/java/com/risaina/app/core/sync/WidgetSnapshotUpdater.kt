@@ -1,6 +1,7 @@
 package com.risaina.app.core.sync
 
 import com.risaina.app.core.data.MediaRepository
+import com.risaina.app.core.data.toLocalDateOrNull
 import com.risaina.app.core.database.CoupleDao
 import com.risaina.app.core.database.MemoryDao
 import com.risaina.app.core.database.MessageDao
@@ -33,7 +34,23 @@ class WidgetSnapshotUpdater @Inject constructor(
     private val refresher: WidgetRefresher,
     private val widgetBoardRepository: com.risaina.app.core.data.WidgetBoardRepository,
     private val lockScreenCard: com.risaina.app.core.notifications.LockScreenCard,
+    private val pingRepository: com.risaina.app.core.data.PingRepository,
 ) {
+    /**
+     * The person has Risaina in front of them, or replied from a widget: whatever the partner sent
+     * until now counts as seen, so the widgets stop glowing. With [ackServer], the newest unseen
+     * ping is also marked seen on the server, which shows "Seen" on the partner's phone.
+     */
+    suspend fun markSeenAndRecompute(ackServer: Boolean) {
+        if (sessionStore.current() == null) return
+        store.markSeen(System.currentTimeMillis())
+        if (ackServer) {
+            val me = sessionStore.current()?.userId
+            pingDao.recent(50).first().firstOrNull { it.senderId != me }?.takeIf { it.seenAt == null }?.let { pingRepository.markSeen(it.id) }
+        }
+        recompute()
+    }
+
     suspend fun recompute() {
         val me = sessionStore.current()?.userId
         val prefs = preferencesStore.current()
@@ -41,8 +58,8 @@ class WidgetSnapshotUpdater @Inject constructor(
         val couple = coupleDao.couple()
         val paired = partner != null && couple?.status.equals("active", true)
 
-        // Everything on these widgets comes from the partner: first what they explicitly put on
-        // "my widget" (widget board), then the latest thing they sent, and only then a pinned memory.
+        // Everything on these widgets comes from the partner: what they put on "their widget" (the
+        // widget board) or the latest thing they sent, whichever is newer; a pinned memory last.
         val board = widgetBoardRepository.forMeNow()
         val recent = messageDao.recent(60).first().filter { it.deletedAt == null && it.senderId != me }
         val latestNote = recent.firstOrNull { it.type == "text" || it.type == "emoji" }
@@ -51,29 +68,65 @@ class WidgetSnapshotUpdater @Inject constructor(
         val latestGift = partnerPings.firstOrNull { com.risaina.app.feature.ping.Expressions.isGift(it.message) }
         val partnerPhoto = recent.firstOrNull { it.type == "photo" && !it.viewOnce && it.mediaId != null }
         val favourite = memoryDao.favourite().first()
-        val photoMediaId = board?.photoMediaId ?: partnerPhoto?.mediaId ?: favourite?.mediaId
+        val boardAt = board?.updatedAt?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() } ?: 0L
+
+        // Whatever the partner did most recently wins: a fresh ping or message replaces an older
+        // "their widget" update, and a newer widget update replaces older pings and messages.
+        val boardNote = board?.note ?: board?.mood
+        val useBoardNote = boardNote != null && (latestNote == null || boardAt >= latestNote.createdAt)
+        val noteText = if (useBoardNote) boardNote else latestNote?.text
+        val noteAt = if (useBoardNote) boardAt.takeIf { it > 0 } else latestNote?.createdAt
+
+        val boardEmoji = board?.emoji
+        val useBoardEmoji = boardEmoji != null && (latestPing == null || boardAt >= latestPing.createdAt)
+        val emoji = if (useBoardEmoji) boardEmoji else latestPing?.emoji
+        val emojiAt = if (useBoardEmoji) boardAt.takeIf { it > 0 } else latestPing?.createdAt
+        val emojiLabel = if (useBoardEmoji) board?.mood ?: "Their mood" else latestPing?.let { pingLine(it, prefs.widgetPrivacy.showNoteText) }
+
+        val boardPhoto = board?.photoMediaId
+        val useBoardPhoto = boardPhoto != null && (partnerPhoto == null || boardAt >= partnerPhoto.createdAt)
+        val photoMediaId = if (useBoardPhoto) boardPhoto else partnerPhoto?.mediaId ?: favourite?.mediaId
         val photoPath = if (prefs.widgetPrivacy.showPhoto && photoMediaId != null) {
             mediaRepository.localFile(photoMediaId)?.absolutePath
                 ?: mediaRepository.ensureCached(photoMediaId, "image/jpeg").getOrNull()?.absolutePath
         } else null
-        val boardAt = board?.updatedAt?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
-        val noteText = board?.note ?: board?.mood ?: latestNote?.text
-        val noteAt = if (board?.note != null || board?.mood != null) boardAt else latestNote?.createdAt
-        val emoji = board?.emoji ?: latestPing?.emoji
-        val emojiAt = if (board?.emoji != null) boardAt else latestPing?.createdAt
-        val emojiLabel = board?.mood ?: latestPing?.let { p -> PingType.fromWire(p.type).label }
-        val photoCaption = if (board?.photoMediaId != null) board.note ?: board.mood else if (partnerPhoto != null) null else favourite?.caption
+        val photoCaption = when {
+            useBoardPhoto -> board?.note ?: board?.mood
+            partnerPhoto != null -> null
+            else -> favourite?.caption
+        }
+
+        // "Unseen" = arrived after this phone last had Risaina open, not acknowledged, under a day old.
+        val seenUntil = store.seenUntil()
+        val now = System.currentTimeMillis()
+        fun unseen(at: Long, seenAt: Long?) = seenAt == null && at > seenUntil && now - at < 24L * 3600 * 1000
+        val pingUnseen = latestPing != null && unseen(latestPing.createdAt, latestPing.seenAt)
+        val giftUnseen = latestGift != null && unseen(latestGift.createdAt, latestGift.seenAt)
 
         val today = LocalDate.now()
-        val meeting = couple?.nextMeetingDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }?.takeIf { !it.isBefore(today) }
-        val nextMilestone = milestoneDao.all().first().mapNotNull { m -> runCatching { LocalDate.parse(m.date) }.getOrNull()?.let { it to m.title } }
+        // The server sends a full ISO timestamp ("2026-12-20T00:00:00.000Z"), so trim to the date part.
+        val meeting = couple?.nextMeetingDate.toLocalDateOrNull()?.takeIf { !it.isBefore(today) }
+        val nextMilestone = milestoneDao.all().first().mapNotNull { m -> m.date.toLocalDateOrNull()?.let { it to m.title } }
             .filter { !it.first.isBefore(today) }.minByOrNull { it.first }
         val (countdownLabel, countdownDate) = when {
-            meeting != null -> (couple.nextMeetingLabel ?: "Until we meet") to meeting.toString()
+            meeting != null -> (couple?.nextMeetingLabel ?: "Until we meet") to meeting.toString()
             nextMilestone != null -> nextMilestone.second to nextMilestone.first.toString()
             else -> null to null
         }
         val latestVoice = recent.firstOrNull { it.type == "voice" && it.mediaId != null }
+
+        // The all-in-one widget shows the single newest thing the partner did.
+        val photoAt = if (useBoardPhoto) boardAt.takeIf { it > 0 } else partnerPhoto?.createdAt
+        val newest = listOfNotNull(
+            latestPing?.let { (if (com.risaina.app.feature.ping.Expressions.isGift(it.message)) "gift" else "ping") to it.createdAt },
+            noteAt?.takeIf { noteText != null }?.let { "note" to it },
+            photoAt?.takeIf { photoMediaId != null && photoMediaId != favourite?.mediaId }?.let { "photo" to it },
+            latestVoice?.let { "voice" to it.createdAt },
+        ).maxByOrNull { it.second }
+        val latestUnseen = newest != null && when (newest.first) {
+            "ping", "gift" -> pingUnseen
+            else -> newest.second > seenUntil && now - newest.second < 24L * 3600 * 1000
+        }
 
         store.update {
             it.copy(
@@ -95,9 +148,26 @@ class WidgetSnapshotUpdater @Inject constructor(
                 latestGiftEmoji = if (prefs.widgetPrivacy.showEmoji) latestGift?.emoji else null,
                 latestGiftLine = if (prefs.widgetPrivacy.showNoteText) com.risaina.app.feature.ping.Expressions.giftLine(latestGift?.message) else null,
                 latestGiftAtMillis = latestGift?.createdAt,
+                latestPingEmoji = if (prefs.widgetPrivacy.showEmoji) latestPing?.emoji else null,
+                latestPingLine = latestPing?.let { pingLine(it, prefs.widgetPrivacy.showNoteText) },
+                latestPingAtMillis = latestPing?.createdAt,
+                pingUnseen = pingUnseen,
+                giftUnseen = giftUnseen,
+                latestKind = newest?.first,
+                latestAtMillis = newest?.second,
+                latestUnseen = latestUnseen,
             )
         }
         runCatching { refresher.refreshAll() }
         runCatching { lockScreenCard.update(store.current()) }
+    }
+
+    /** Short words for a ping: its kind ("Miss you"), a gift's line, or a custom note when allowed. */
+    private fun pingLine(p: com.risaina.app.core.database.PingEntity, showText: Boolean): String {
+        val gift = com.risaina.app.feature.ping.Expressions
+        if (gift.isGift(p.message)) return if (showText) gift.giftLine(p.message)?.takeIf { it.isNotBlank() } ?: "A gift" else "A gift"
+        val type = PingType.fromWire(p.type)
+        if (type == PingType.CUSTOM) return if (showText) p.message?.takeIf { it.isNotBlank() } ?: "A ping" else "A ping"
+        return type.label
     }
 }

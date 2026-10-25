@@ -7,7 +7,15 @@ import android.media.AudioAttributes
 import android.provider.Settings
 
 object NotificationChannels {
-    const val PINGS = "pings"
+    /**
+     * v2: a clear "heartbeat" buzz. The first channel used three 40–90 ms taps that many phones
+     * barely render, so a ping felt like nothing. Channel vibration can't change after creation,
+     * hence the new id (the old channel is deleted below).
+     */
+    const val PINGS = "pings_v2"
+    private const val OLD_PINGS = "pings"
+    /** Two heartbeats, about 0.6 s of vibration in total. */
+    val HEARTBEAT = longArrayOf(0, 160, 110, 160, 380, 160, 110, 160)
     const val PINGS_QUIET = "pings_quiet"
     const val MESSAGES = "messages"
     const val MESSAGES_QUIET = "messages_quiet"
@@ -18,11 +26,12 @@ object NotificationChannels {
     fun ensure(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
         val audio = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()
+        runCatching { nm.deleteNotificationChannel(OLD_PINGS) }
         nm.createNotificationChannel(
             NotificationChannel(PINGS, "Touch Pings", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "A small signal from your partner"
                 enableVibration(true)
-                vibrationPattern = longArrayOf(0, 40, 60, 40, 60, 90)
+                vibrationPattern = HEARTBEAT
                 setSound(Settings.System.DEFAULT_NOTIFICATION_URI, audio)
                 setShowBadge(true)
             },

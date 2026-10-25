@@ -85,6 +85,8 @@ _Last updated: 2026-10-25 (emulator journey verified against MongoDB Atlas)_
 |---|---|---|
 | 2026-10-25 | backend tests | 105 of 105 passed |
 | 2026-10-25 | android unit tests / lint | 31 of 31 passed / 0 errors |
+| 2026-10-25 (later) | backend tests | 177 of 177 passed |
+| 2026-10-25 (later) | android unit tests | 42 of 42 passed |
 
 ### More bugs found on the emulator (fixed)
 - Opening Timeline crashed (`ClassCastException` from a leftover top-level property). All such leftovers removed.
@@ -112,3 +114,23 @@ lint 0 errors. **The live server needs these backend changes deployed (user push
 - ✅ SOS in the partner profile with a warning; rings on the alarm channel even on silent until opened; optional Do Not Disturb bypass; sender sees "saw your SOS".
 - ✅ Also fixed: notification/link taps ignored when the app was already open; false "Offline" banner.
 - ❌ Not verified: SOS/ping push with the app closed on real phones (needs the deployed server + Firebase); lock-screen widgets on a real launcher.
+
+## Widgets, game and cleanup round (2026-10-25, later)
+Verified on the emulator against a local server running the new backend with push enabled, with
+the app process killed for every "closed app" check. Backend 177/177 tests; Android 42 unit tests.
+
+- ✅ **"Us" all-in-one widget** (4×2 by default, resizes 2×2 to 4×4): the partner's newest ping, gift, note/mood, photo or voice note, the countdown, and a ping button. The Widgets screen recommends "Us" plus Touch Ping; the seven single-purpose widgets moved under "More widgets" (still supported). Real preview in the system widget picker.
+- ✅ **Widgets update on a ping with the app closed**: the push handler now syncs immediately instead of waiting for a background job (about 12 s end to end on the emulator, mostly cold start). Widgets read their data live, so a second ping during a redraw is not lost.
+- ✅ **Widgets as a "they reached out" signal**: an unseen ping lights up "Us", Touch Ping and Emoji in rose with "● New"; Touch Ping turns into "Send one back". Opening Risaina or replying from the widget clears it and sends "Seen".
+- ✅ Newest wins: a fresh ping or message replaces an older "Their widget" mood/emoji/photo (it used to stay stuck on the board).
+- ✅ Countdown widget said "No date set" although a meeting was set (server sends a timestamp; the widget parsed only a date). Widgets now also refresh on every sync, so day counts stay current.
+- ✅ Lock-screen card: moved to a default-importance silent channel, because Android hides low-importance notifications on the lock screen. Shows "<partner> reached out" for unseen pings. Verified on a PIN-locked emulator.
+- ✅ **Ping vibration**: a clear two-heartbeat pattern (≈0.6 s of vibration) on a new channel; the old 40–90 ms taps were barely perceptible. Verified: 1.26 s vibration with the app open; 1.24 s notification vibration with the app closed in vibrate mode. On full silent/DND Android suppresses it by design; SOS is the one that breaks through.
+- ✅ **Realtime socket died after opening a link or notification**: a second MainActivity started, then the first one's stop cancelled the shared socket, leaving "Will sync when online" and no in-app buzz. The socket now follows the app process's foreground state. Pings that arrive by push while the app is open also buzz.
+- ✅ Every sync made 10 requests even when caught up (`return@repeat` only skips one pass). Fixed.
+- ✅ **Blind truth or dare**: winner writes a truth AND a dare; the loser sees two sealed cards and picks one; only the chosen text is revealed; the loser marks it done (truth needs an answer); the winner confirms or sends it back with a note. Verified both roles end to end, including the server never sending the hidden texts to the loser.
+- ✅ **Unlink deletes the couple's data** (server: messages, pings, memories, milestones, lists, games, widget boards, SOS, invitations, events, media files; phone: local chat, games and widgets). The phone also cleans up if it missed the unlink event.
+- ✅ Re-pairing skipped the new couple's first events (event numbers restart per couple; the phone kept the old cursor). The cursor now resets when a different couple becomes active.
+- ✅ Home shows gifts as "A gift" with their line, not "A ping"/"Custom". New game cards scroll into view; read receipts no longer mark the wrong messages when game cards are in the chat.
+- ⚠️ Atlas: the DB user cannot change an existing collection's validator (`collMod`). Production had no `games` collection, so it is created with the new rules on deploy. Grant `dbAdmin` to avoid this class of problem.
+- ❌ Not verified on real phones: OS lock-screen widgets (this emulator's launcher has them disabled; the opt-in lock-screen card works everywhere); vibration on Realme/ColorOS, which may need "Allow background activity" (the Widgets screen links to App info).

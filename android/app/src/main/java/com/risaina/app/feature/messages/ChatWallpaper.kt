@@ -40,7 +40,7 @@ object ChatWallpapers {
 }
 
 @Composable
-fun ChatBackground(style: String, photo: File?, modifier: Modifier = Modifier) {
+fun ChatBackground(style: String, photo: Any?, modifier: Modifier = Modifier) {
     val bg = MaterialTheme.colorScheme.background
     val accent = MaterialTheme.colorScheme.primaryContainer
     val primary = MaterialTheme.colorScheme.primary
@@ -79,7 +79,7 @@ fun ChatBackground(style: String, photo: File?, modifier: Modifier = Modifier) {
                     y += step * 0.8f; row++
                 }
             }
-            "PHOTO" -> if (photo != null && photo.exists()) {
+            "PHOTO" -> if (photo != null) {
                 AsyncImage(model = photo, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(bg.copy(alpha = 0.55f)))
             }
@@ -89,11 +89,11 @@ fun ChatBackground(style: String, photo: File?, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ChatWallpaperSheet(current: String, photo: File?, onPick: (String) -> Unit, onPickPhoto: () -> Unit, onDismiss: () -> Unit) {
+fun ChatWallpaperSheet(current: String, photo: Any?, onPick: (String) -> Unit, onPickPhoto: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(horizontal = 20.dp).navigationBarsPadding()) {
             Text("Chat wallpaper", style = MaterialTheme.typography.headlineMedium)
-            Text("Only on your phone. Your partner picks their own.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+            Text("Changes the chat for both of you.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
             Spacer(Modifier.height(14.dp))
             LazyVerticalGrid(columns = GridCells.Fixed(3), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(ChatWallpapers.presets) { (key, label) ->

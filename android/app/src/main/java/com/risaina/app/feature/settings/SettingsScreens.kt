@@ -328,6 +328,8 @@ fun PrivacySettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewMo
 @Composable
 fun ProfileScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
+    val snackbar = LocalSnackbar.current
+    LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
     var name by remember(s.profile?.displayName) { mutableStateOf(s.profile?.displayName ?: "") }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::updateAvatar) }
     Frame("Your profile", onBack) {
@@ -339,29 +341,13 @@ fun ProfileScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
         }
         Spacer(Modifier.height(24.dp))
         RisainaTextField(name, { name = it }, "What should your partner see?", supporting = "Shown on their home screen and widgets")
+        Spacer(Modifier.height(8.dp))
+        OutlineButton("Save name", onClick = { vm.updateName(name) }, enabled = name.trim().length >= 2 && name.trim() != s.profile?.displayName && !s.busy)
         Spacer(Modifier.height(16.dp))
-        val bday = com.risaina.app.core.domain.Birthday.parse(s.profile?.birthday)
-        var pickBirthday by remember { mutableStateOf(false) }
-        Text("Birthday", style = MaterialTheme.typography.titleSmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                bday?.let { b -> b.monthDay.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM")) + (b.year?.let { ", $it" } ?: "") } ?: "Not set",
-                style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
-            )
-            GhostButton(if (bday == null) "Add" else "Change", onClick = { pickBirthday = true })
-            if (bday != null) GhostButton("Remove", onClick = { vm.updateBirthday(null) })
-        }
-        if (bday != null) ToggleRow("Hide my birth year", "Your partner sees only the day and month", bday.year == null, { hide ->
-            // Hiding drops the year; showing it again needs the full date, so ask for it.
-            if (hide) vm.updateBirthday(com.risaina.app.core.domain.Birthday(bday.monthDay, null).wire) else pickBirthday = true
-        })
-        if (pickBirthday) com.risaina.app.feature.timeline.DateDialog(bday?.year?.let { bday.monthDay.atYear(it) }, { pickBirthday = false }) { d ->
-            if (d != null) vm.updateBirthday(d.toString())
-        }
+        BirthdayEditor(current = s.profile?.birthday, busy = s.busy, onSave = vm::updateBirthday)
         Spacer(Modifier.height(16.dp))
         CityPicker(current = s.profile?.city?.name, onSearch = vm::searchCities, onPick = vm::updateCity)
         Spacer(Modifier.height(16.dp))
-        PrimaryButton("Save", onClick = { vm.updateName(name) }, loading = s.busy, enabled = name.trim().length >= 2 && name.trim() != s.profile?.displayName, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -427,5 +413,69 @@ private fun CityPicker(current: String?, onSearch: suspend (String) -> List<com.
             },
             confirmButton = {}, dismissButton = { TextButton(onClick = { open = false }) { Text("Cancel") } },
         )
+    }
+}
+
+
+/**
+ * Birthday as Day / Month / Year (year optional) with an explicit Save. A calendar picker made
+ * people scroll back decades from today; typing three small fields is faster and clearer.
+ */
+@Composable
+private fun BirthdayEditor(current: String?, busy: Boolean, onSave: (String?) -> Unit) {
+    val parsed = com.risaina.app.core.domain.Birthday.parse(current)
+    var day by remember(current) { mutableStateOf(parsed?.monthDay?.dayOfMonth?.toString() ?: "") }
+    var month by remember(current) { mutableStateOf(parsed?.monthDay?.monthValue ?: 0) }
+    var year by remember(current) { mutableStateOf(parsed?.year?.toString() ?: "") }
+    var hideYear by remember(current) { mutableStateOf(parsed != null && parsed.year == null) }
+    var monthMenu by remember { mutableStateOf(false) }
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+    val months = remember(locale) { java.time.Month.entries.map { it.getDisplayName(java.time.format.TextStyle.FULL, locale) } }
+    val result = BirthdayInput.validate(day, month, if (hideYear) "" else year)
+    Text("Birthday", style = MaterialTheme.typography.titleSmall)
+    Text(
+        parsed?.let { b -> "Saved: " + b.monthDay.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM")) + (b.year?.let { ", $it" } ?: "") } ?: "Your partner sees it on your profile and gets a countdown",
+        style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+        RisainaTextField(day, { day = it.filter(Char::isDigit).take(2) }, "Day", modifier = Modifier.width(76.dp),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+        Column(Modifier.weight(1f)) {
+            OutlineButton(if (month in 1..12) months[month - 1] else "Month", onClick = { monthMenu = true }, modifier = Modifier.fillMaxWidth())
+            androidx.compose.material3.DropdownMenu(expanded = monthMenu, onDismissRequest = { monthMenu = false }) {
+                months.forEachIndexed { i, m -> androidx.compose.material3.DropdownMenuItem(text = { Text(m) }, onClick = { month = i + 1; monthMenu = false }) }
+            }
+        }
+        RisainaTextField(if (hideYear) "" else year, { year = it.filter(Char::isDigit).take(4) }, "Year", modifier = Modifier.width(96.dp), enabled = !hideYear,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+    }
+    ToggleRow("Keep my birth year private", "Your partner sees only the day and month", hideYear, { hideYear = it })
+    if (result is BirthdayInput.Result.Invalid && (day.isNotEmpty() || month != 0)) {
+        Text(result.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PrimaryButton("Save birthday", onClick = { (result as? BirthdayInput.Result.Ok)?.let { onSave(it.wire) } }, enabled = result is BirthdayInput.Result.Ok && !busy, loading = busy)
+        if (parsed != null) GhostButton("Remove", onClick = { onSave(null) })
+    }
+}
+
+/** Pure validation for the birthday fields (unit-tested). */
+object BirthdayInput {
+    sealed interface Result { data class Ok(val wire: String) : Result; data class Invalid(val reason: String) : Result }
+
+    fun validate(day: String, month: Int, year: String, today: java.time.LocalDate = java.time.LocalDate.now()): Result {
+        val d = day.toIntOrNull() ?: return Result.Invalid("Enter the day")
+        if (month !in 1..12) return Result.Invalid("Choose the month")
+        val y = year.takeIf { it.isNotBlank() }?.toIntOrNull()
+        if (year.isNotBlank() && (y == null || y < 1900 || y > today.year)) return Result.Invalid("Enter a year between 1900 and ${today.year}")
+        val md = runCatching { java.time.MonthDay.of(month, d) }.getOrNull() ?: return Result.Invalid("That date doesn't exist")
+        if (y != null) {
+            val date = runCatching { java.time.LocalDate.of(y, month, d) }.getOrNull() ?: return Result.Invalid("That date doesn't exist in $y")
+            if (date.isAfter(today)) return Result.Invalid("That's in the future")
+            return Result.Ok(date.toString())
+        }
+        return Result.Ok(com.risaina.app.core.domain.Birthday(md, null).wire)
     }
 }

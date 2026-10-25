@@ -37,6 +37,7 @@ sealed interface Incoming {
     /** Partner changed what my widgets show (no notification; widgets refresh). */
     data object WidgetChanged : Incoming
     data class Sos(val id: String) : Incoming
+    data class Game(val id: String, val action: String) : Incoming
 }
 
 /**
@@ -60,6 +61,7 @@ class EventReducer @Inject constructor(
     private val widgetBoardRepository: com.risaina.app.core.data.WidgetBoardRepository,
     private val sosRepository: com.risaina.app.core.data.SosRepository,
     private val sosAlert: com.risaina.app.core.notifications.SosAlert,
+    private val gameRepository: com.risaina.app.core.data.GameRepository,
 ) {
     suspend fun apply(event: EventDto): List<Incoming> {
         val me = sessionStore.current()?.userId ?: return emptyList()
@@ -134,6 +136,15 @@ class EventReducer @Inject constructor(
             "sos.acknowledged" -> {
                 val id = p.str("sosId"); val at = p.str("acknowledgedAt")
                 if (id != null && at != null) sosRepository.markAcknowledged(id, at)
+            }
+            "game.updated" -> {
+                val g = p.obj("game")
+                val id = (g?.get("id") as? kotlinx.serialization.json.JsonPrimitive)?.content
+                if (id != null) {
+                    gameRepository.refreshOne(id)
+                    val action = p.str("action")
+                    if (event.actorId != me && action != null) out += Incoming.Game(id, action)
+                }
             }
             "couple.unlinked" -> { out += Incoming.Unlinked }
         }

@@ -1,6 +1,8 @@
+import type { ObjectId } from 'mongodb';
 import type { Logger } from 'pino';
 import type { Collections } from '../db/collections.js';
 import type { Clock } from '../lib/time.js';
+import { CouplePurger, UNLINKED_EVENT_RETENTION_MS } from '../modules/couples/purge.js';
 import type { StorageService } from '../services/storage/types.js';
 
 export interface CleanupOptions {
@@ -20,20 +22,27 @@ export interface CleanupReport {
   viewOnceOpenedPurged: number;
   viewOnceUnopenedExpired: number;
   objectsDeleted: number;
+  /** Documents removed by re-running the purge of recently unlinked couples (race leftovers). */
+  unlinkedCoupleDocsPurged: number;
+  /** Final `couple.unlinked` events dropped after the retention window. */
+  unlinkedEventsPurged: number;
   sessionsPurged: number;
   passwordResetsPurged: number;
 }
 
 /**
  * Periodic housekeeping (D-06): deletes abandoned `pending` uploads older than N hours, retires
- * view-once photos (opened ones once their open URL expired, unopened ones after N days), removes
- * storage objects for media already marked `deleted` (deferred deletions), and purges long-expired
- * sessions and password-reset tokens.
+ * view-once photos (opened ones once their open URL expired, unopened ones after N days), re-runs
+ * the (idempotent) purge of couples unlinked within the last 7 days, removes storage objects for
+ * media already marked `deleted` (deferred deletions; media of a purged couple loses its document
+ * too), drops each unlinked couple's final `couple.unlinked` event after 7 days, and purges
+ * long-expired sessions and password-reset tokens.
  */
 export class CleanupWorker {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private stopped = true;
+  private readonly purger: CouplePurger;
 
   constructor(
     private readonly db: Collections,
@@ -41,7 +50,9 @@ export class CleanupWorker {
     private readonly now: Clock,
     private readonly logger: Logger,
     private readonly opts: CleanupOptions,
-  ) {}
+  ) {
+    this.purger = new CouplePurger(db, storage, logger, now);
+  }
 
   start(): void {
     this.stopped = false;
@@ -76,6 +87,8 @@ export class CleanupWorker {
       viewOnceOpenedPurged: 0,
       viewOnceUnopenedExpired: 0,
       objectsDeleted: 0,
+      unlinkedCoupleDocsPurged: 0,
+      unlinkedEventsPurged: 0,
       sessionsPurged: 0,
       passwordResetsPurged: 0,
     };
@@ -128,7 +141,35 @@ export class CleanupWorker {
       report.viewOnceUnopenedExpired++;
     }
 
-    // 2. deferred storage deletions
+    // 1d. couples unlinked within the retention window: re-run the idempotent purge (removes writes
+    // that raced the unlink; a purge interrupted by an error finishes here). Media objects are
+    // handled by step 2.
+    const retentionCutoff = new Date(now.getTime() - UNLINKED_EVENT_RETENTION_MS);
+    const unlinked = await this.db.couples
+      .find({ status: 'ended', purgedAt: { $gte: retentionCutoff } }, { projection: { memberIds: 1 } })
+      .limit(200)
+      .toArray();
+    for (const c of unlinked) {
+      report.unlinkedCoupleDocsPurged += await this.purger.purgeData(c._id, c.memberIds);
+      const gone = await this.db.media.deleteMany({ coupleId: c._id, objectDeleted: true });
+      report.unlinkedCoupleDocsPurged += gone.deletedCount;
+    }
+
+    // 2. deferred storage deletions (media of a purged couple: the document goes too)
+    const purged = new Map<string, boolean>();
+    const isPurgedCouple = async (coupleId: ObjectId): Promise<boolean> => {
+      const key = coupleId.toHexString();
+      let v = purged.get(key);
+      if (v === undefined) {
+        const c = await this.db.couples.findOne(
+          { _id: coupleId },
+          { projection: { status: 1, purgedAt: 1 } },
+        );
+        v = c?.status === 'ended' && c.purgedAt instanceof Date;
+        purged.set(key, v);
+      }
+      return v;
+    };
     const pendingDeletes = await this.db.media
       .find({ status: 'deleted', objectDeleted: false })
       .limit(200)
@@ -136,7 +177,8 @@ export class CleanupWorker {
     for (const m of pendingDeletes) {
       try {
         await this.storage.delete(m.storageKey);
-        await this.db.media.updateOne({ _id: m._id }, { $set: { objectDeleted: true } });
+        if (await isPurgedCouple(m.coupleId)) await this.db.media.deleteOne({ _id: m._id });
+        else await this.db.media.updateOne({ _id: m._id }, { $set: { objectDeleted: true } });
         report.objectsDeleted++;
       } catch (err) {
         this.logger.warn(
@@ -145,6 +187,13 @@ export class CleanupWorker {
         );
       }
     }
+
+    // 2b. an unlinked couple's final event, once the ex-partner has had 7 days to receive it
+    const unlinkedEvents = await this.db.events.deleteMany({
+      type: 'couple.unlinked',
+      createdAt: { $lt: retentionCutoff },
+    });
+    report.unlinkedEventsPurged = unlinkedEvents.deletedCount;
 
     // 3. sessions expired more than 7 days ago, 4. password resets expired more than 1 day ago
     const sessions = await this.db.sessions.deleteMany({

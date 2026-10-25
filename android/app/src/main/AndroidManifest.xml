@@ -72,6 +72,16 @@
         </receiver>
 
         <receiver
+            android:name=".feature.widgets.UsWidgetReceiver"
+            android:exported="true"
+            android:label="Us · all in one">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_us" />
+        </receiver>
+
+        <receiver
             android:name=".feature.widgets.TouchPingWidgetReceiver"
             android:exported="true"
             android:label="Touch Ping">

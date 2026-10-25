@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import type { Env } from './config/env.js';
 import type { Collections } from './db/collections.js';
 import type { AttemptLimiter } from './lib/attempt-limiter.js';
+import type { BackgroundTasks } from './lib/background.js';
 import type { Clock } from './lib/time.js';
 import type { GoogleTokenVerifier } from './modules/auth/google.js';
 import type { TokenService } from './modules/auth/tokens.js';
@@ -29,6 +30,8 @@ export interface AppContext {
   /** null when GOOGLE_CLIENT_IDS is unset: POST /auth/google answers 503 google_not_configured. */
   google: GoogleTokenVerifier | null;
   inviteLimiter: AttemptLimiter;
+  /** Work that must not block a response (e.g. storage deletes after unlink); drained on close. */
+  background: BackgroundTasks;
   now: Clock;
   logger: Logger;
   version: string;

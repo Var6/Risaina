@@ -29,7 +29,7 @@ class Haptics @Inject constructor(@ApplicationContext context: Context) {
     fun arrival() {
         val v = vibrator ?: return
         if (!v.hasVibrator()) return
-        v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 35, 70, 35, 70, 80), -1))
+        v.vibrate(VibrationEffect.createWaveform(NotificationChannels.HEARTBEAT, -1))
     }
 
     fun error() = play(VibrationEffect.EFFECT_DOUBLE_CLICK, fallbackMs = 30)

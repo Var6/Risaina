@@ -48,6 +48,8 @@ class CoupleRepository @Inject constructor(
     private val widgetSnapshotStore: WidgetSnapshotStore,
     private val db: RisainaDatabase,
     private val widgetBoardRepository: dagger.Lazy<WidgetBoardRepository>,
+    private val gameRepository: dagger.Lazy<GameRepository>,
+    private val widgetRefresher: com.risaina.app.core.sync.WidgetRefresher,
 ) {
     private val invitation = MutableStateFlow<InvitationSummary?>(null)
     private val loaded = MutableStateFlow(false)
@@ -78,8 +80,13 @@ class CoupleRepository @Inject constructor(
             sessionStore.saveExtras(me.user.birthday, me.user.hasPassword, me.user.timeZone)
             sessionStore.saveCity(me.user.city?.let { com.risaina.app.core.model.City(it.name, it.latitude, it.longitude) })
             syncTimeZone(me.user.timeZone, me.user.shareLocalTime)
+            val previous = sessionStore.activeCoupleId.first()
+            val current = me.couple?.takeIf { it.status.equals("active", true) }?.id
+            // The pairing ended (or changed) while this phone missed the event: wipe the old chat,
+            // photos and widgets here too, just as the server already did.
+            if (previous != null && previous != current) clearLocalCoupleData()
             coupleDao.replace(me.couple?.toEntity(), me.partner?.toEntity())
-            sessionStore.setActiveCoupleId(me.couple?.takeIf { it.status.equals("active", true) }?.id)
+            sessionStore.setActiveCoupleId(current)
             if (sessionStore.prefsDirty.firstValue().not()) {
                 preferencesStore.update { local -> me.preferences.toDomain(local) }
             }
@@ -160,6 +167,20 @@ class CoupleRepository @Inject constructor(
         return res.map { }
     }
 
+    /** Chat wallpaper is shared: whatever either partner picks shows in both chats. */
+    suspend fun setChatWallpaper(style: String?, photoMediaId: String? = null): AppResult<Unit> {
+        val body = kotlinx.serialization.json.buildJsonObject {
+            if (style == null) put("chatWallpaper", kotlinx.serialization.json.JsonNull)
+            else put("chatWallpaper", kotlinx.serialization.json.buildJsonObject {
+                put("style", kotlinx.serialization.json.JsonPrimitive(style))
+                if (photoMediaId != null) put("photoMediaId", kotlinx.serialization.json.JsonPrimitive(photoMediaId))
+            })
+        }
+        val res = apiCall { api.setChatWallpaper(body) }
+        if (res is AppResult.Success) coupleDao.replace(res.value.couple.toEntity(), coupleDao.partner())
+        return res.map { }
+    }
+
     suspend fun setShareLocalTime(share: Boolean): AppResult<Unit> =
         apiCall { api.patchMe(PatchMeRequest(shareLocalTime = share, timeZone = if (share) java.time.ZoneId.systemDefault().id else null)) }.map { }
 
@@ -177,12 +198,19 @@ class CoupleRepository @Inject constructor(
     }
 
     suspend fun onUnlinked() {
+        clearLocalCoupleData()
+        refreshMe()
+    }
+
+    /** Everything that belonged to the couple goes: chat, pings, memories, games, widget content. */
+    private suspend fun clearLocalCoupleData() {
         db.clearAllContent()
         widgetSnapshotStore.clear()
         widgetBoardRepository.get().clear()
+        gameRepository.get().clear()
         sessionStore.setActiveCoupleId(null)
         invitation.value = null
-        refreshMe()
+        runCatching { widgetRefresher.refreshAll() }
     }
 
     fun isActive(status: CoupleStatus) = status == CoupleStatus.ACTIVE

@@ -92,7 +92,8 @@ export const meRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
       config: { rateLimit: { max: 5, timeWindow: 15 * 60 * 1000 } },
       schema: {
         tags: [TAG],
-        summary: 'Delete the account (cascades: sessions, devices, couple ended, own media deleted)',
+        summary:
+          'Delete the account (cascades: sessions, devices, couple ended and purged, own media deleted)',
         description:
           'Accounts with a password send { password }. Google-only accounts (user.hasPassword = false) send ' +
           '{ confirm: "DELETE" }. Anything else is 401.',

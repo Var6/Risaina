@@ -30,14 +30,18 @@ class LockScreenCard @Inject constructor(
     private val preferencesStore: PreferencesStore,
 ) {
     companion object {
-        const val CHANNEL = "lock_card"
+        // v2: default importance (still no sound or vibration). Android hides *low*-importance
+        // ("silent") notifications on the lock screen by default, which hid the card where it matters.
+        const val CHANNEL = "lock_card_v2"
+        private const val OLD_CHANNEL = "lock_card"
         private const val ID = 7171
     }
 
     private fun ensureChannel() {
         val nm = context.getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(CHANNEL) != null) return
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Lock-screen card", NotificationManager.IMPORTANCE_LOW).apply {
+        runCatching { nm.deleteNotificationChannel(OLD_CHANNEL) }
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Lock-screen card", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Your partner's photo and note on your lock screen"
             setSound(null, null); enableVibration(false); setShowBadge(false)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
@@ -51,9 +55,15 @@ class LockScreenCard @Inject constructor(
         ensureChannel()
         val name = s.partnerName ?: "Your partner"
         // A gift is the star of the lock screen; otherwise their mood/note/emoji. No photos here.
+        // Order: an unseen gift, then an unseen ping ("<partner> reached out"), then a recent gift,
+        // then their mood or note. Unseen = arrived since this phone last opened Risaina.
         val giftFresh = s.latestGiftAtMillis != null && System.currentTimeMillis() - s.latestGiftAtMillis < 3L * 24 * 3600 * 1000
-        val title = if (giftFresh) "${s.latestGiftEmoji ?: "🎁"}  A gift from $name" else listOfNotNull(name, s.latestEmoji).joinToString("  ")
-        val line = if (giftFresh) s.latestGiftLine ?: "Open Risaina to see it" else s.latestNoteText ?: s.latestEmojiLabel ?: "Always a little closer"
+        val (title, line) = when {
+            s.giftUnseen -> "${s.latestGiftEmoji ?: "🎁"}  A gift from $name" to (s.latestGiftLine ?: "Open Risaina to see it")
+            s.pingUnseen -> "${s.latestPingEmoji ?: "💗"}  $name reached out" to "${s.latestPingLine ?: "Thinking of you"} · tap to send one back"
+            giftFresh -> "${s.latestGiftEmoji ?: "🎁"}  A gift from $name" to (s.latestGiftLine ?: "Open Risaina to see it")
+            else -> listOfNotNull(name, s.latestEmoji).joinToString("  ") to (s.latestNoteText ?: s.latestEmojiLabel ?: "Always a little closer")
+        }
         val open = PendingIntent.getActivity(
             context, ID,
             Intent(Intent.ACTION_VIEW, Uri.parse("risaina://app/home")).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -64,10 +74,10 @@ class LockScreenCard @Inject constructor(
             .setContentTitle(title)
             .setContentText(line)
             .setStyle(NotificationCompat.BigTextStyle().bigText(line))
-            .setOngoing(true).setOnlyAlertOnce(true).setSilent(true)
+            .setOngoing(true).setOnlyAlertOnce(true).setSound(null).setVibrate(null)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(open)
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
         try { nm.notify(ID, b.build()) } catch (_: SecurityException) {}

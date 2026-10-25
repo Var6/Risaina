@@ -198,5 +198,33 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class CreateSosRequest(val message: String? = null)
 @Serializable data class SosResponse(val sos: SosDto)
 @Serializable data class SosList(val items: List<SosDto>)
+/**
+ * The winner writes a truth *and* a dare; the loser picks one blind. Viewer-specific: the loser
+ * gets null texts until they choose, then only the chosen one. Every field is optional so a
+ * game from an older shape still loads.
+ */
+@Serializable data class GameChallengeDto(
+    val truth: String? = null, val dare: String? = null, val chosen: String? = null,
+    val by: String? = null, val at: String? = null, val chosenAt: String? = null,
+    val doneAt: String? = null, val confirmedAt: String? = null, val rejectNote: String? = null,
+) {
+    val chosenText: String? get() = when (chosen) { "truth" -> truth; "dare" -> dare; else -> null }
+}
+@Serializable data class GameDto(
+    val id: String, val coupleId: String, val kind: String = "rps", val createdBy: String,
+    val createdAt: String, val updatedAt: String, val status: String,
+    val myMove: String? = null, val partnerMoved: Boolean = false, val partnerMove: String? = null,
+    val winnerId: String? = null, val loserId: String? = null,
+    val challenge: GameChallengeDto? = null, val answer: String? = null, val completedAt: String? = null, val round: Int = 1,
+)
+@Serializable data class GameResponse(val game: GameDto)
+@Serializable data class GameList(val items: List<GameDto>)
+@Serializable data class GameSuggestions(val truths: List<String>, val dares: List<String>)
+@Serializable data class CreateGameRequest(val kind: String = "rps")
+@Serializable data class GameMoveRequest(val move: String)
+@Serializable data class GameChallengeRequest(val truth: String, val dare: String)
+@Serializable data class GameChooseRequest(val kind: String)
+@Serializable data class GameRejectRequest(val note: String? = null)
+@Serializable data class GameCompleteRequest(val answer: String? = null)
 @Serializable data class HealthResponse(val status: String, val version: String? = null, val checks: JsonObject? = null)
 @Serializable data class ExportResponse(@SerialName("user") val user: UserDto, val couple: CoupleDto? = null)

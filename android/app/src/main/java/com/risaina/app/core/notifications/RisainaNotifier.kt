@@ -87,6 +87,25 @@ class RisainaNotifier @Inject constructor(
             }
             Incoming.WidgetChanged -> Unit
             is Incoming.Sos -> Unit // SosAlert already rang
+            is Incoming.Game -> {
+                val body = when (item.action) {
+                    "created" -> "challenged you to Stone Paper Scissors Thread ✊✋✌️🧵"
+                    "moved" -> "made their move. Your turn!"
+                    "revealed", "draw" -> "The result is in. Open the chat to see"
+                    "challenged" -> "sealed a truth and a dare for you 😈 Pick one"
+                    "chosen" -> "made their pick. Now it's on them"
+                    "done" -> "says it's done. Confirm it?"
+                    "confirmed" -> "confirmed it ✓ You're off the hook"
+                    "rejected" -> "says not quite. Try again 😄"
+                    "rematch" -> "wants a rematch"
+                    else -> null
+                } ?: return
+                post(
+                    id = 5050, channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
+                    title = partner, body = if (prefs.previewInNotifications) "${partner.substringBefore(" ")} $body" else "New activity",
+                    deepLink = "risaina://app/messages", category = NotificationCompat.CATEGORY_MESSAGE, priority = NotificationCompat.PRIORITY_DEFAULT,
+                )
+            }
             Incoming.Unlinked -> post(
                 id = 9001, channel = NotificationChannels.SYSTEM, title = "Risaina",
                 body = "Your pairing has ended.", deepLink = "risaina://app/home",
@@ -131,7 +150,7 @@ class RisainaNotifier @Inject constructor(
             .setPriority(priority)
             .setAutoCancel(true)
             .setOnlyAlertOnce(onlyAlertOnce)
-            .setVibrate(if (channel == NotificationChannels.PINGS) longArrayOf(0, 40, 60, 40, 60, 90) else null)
+            .setVibrate(if (channel == NotificationChannels.PINGS) NotificationChannels.HEARTBEAT else null)
             .setContentIntent(pending)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(

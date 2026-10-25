@@ -111,7 +111,13 @@ class SettingsViewModel @Inject constructor(
     fun refreshLockCard() { viewModelScope.launch { kotlinx.coroutines.delay(300); widgetSnapshotUpdater.recompute() } }
 
     fun updateBirthday(birthday: String?) {
-        viewModelScope.launch { busy.value = true; coupleRepository.updateBirthday(birthday).onFailure { effects.trySend(it.message ?: "Couldn't save") }; busy.value = false }
+        viewModelScope.launch {
+            busy.value = true
+            coupleRepository.updateBirthday(birthday)
+                .onSuccess { effects.trySend(if (birthday == null) "Birthday removed" else "Birthday saved") }
+                .onFailure { effects.trySend(it.message ?: "Couldn't save your birthday") }
+            busy.value = false
+        }
     }
 
     /** Local preference first, then the server (which stops showing your time to your partner). */

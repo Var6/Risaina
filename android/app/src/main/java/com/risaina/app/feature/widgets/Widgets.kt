@@ -2,6 +2,7 @@ package com.risaina.app.feature.widgets
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -41,7 +42,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /*
- * Six home-screen widgets. Each reads the WidgetSnapshot (already privacy-filtered by the sync
+ * Seven home-screen widgets. Each reads the WidgetSnapshot (already privacy-filtered by the sync
  * layer), never the network, and taps through to the right screen. Updates are requested by
  * GlanceWidgetRefresher after relevant events; Android may coalesce them.
  */
@@ -65,9 +66,11 @@ private fun relative(millis: Long?): String? {
 class PhotoWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE, TALL))
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = context.widgetSnapshot()
-        val bitmap = loadWidgetBitmap(snap.photoPath)
+        val store = context.widgetEntryPoint().snapshotStore()
+        val first = store.current()
         provideContent {
+            val snap = liveSnapshot(store, first)
+            val bitmap = androidx.compose.runtime.remember(snap.photoPath) { loadWidgetBitmap(snap.photoPath) }
             GlanceTheme(colors = WidgetPalette.colors) {
                 Box(GlanceModifier.fillMaxSize().cornerRadius(22.dp).background(GlanceTheme.colors.widgetBackground).clickable(openApp(context, "risaina://app/memories"))) {
                     if (bitmap != null) {
@@ -93,8 +96,10 @@ class PhotoWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceAppWi
 class LoveNoteWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE, TALL))
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = context.widgetSnapshot()
+        val store = context.widgetEntryPoint().snapshotStore()
+        val first = store.current()
         provideContent {
+            val snap = liveSnapshot(store, first)
             WidgetFrame(GlanceModifier.clickable(openApp(context, "risaina://app/messages"))) {
                 Column {
                     when {
@@ -118,23 +123,40 @@ class LoveNoteWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceAp
 class TouchPingWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE))
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = context.widgetSnapshot()
-        val status = WidgetPingStatus.current()
+        val store = context.widgetEntryPoint().snapshotStore()
+        val first = store.current()
         provideContent {
-            WidgetFrame {
+            val snap = liveSnapshot(store, first)
+            val status = WidgetPingStatus.state.collectAsState().value
+            val incoming = snap.paired && snap.pingUnseen && snap.latestPingAtMillis != null
+            WidgetFrame(highlight = incoming) {
                 Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalAlignment = Alignment.CenterVertically) {
+                    if (incoming) {
+                        // They reached out: say so, in their words, until this phone opens Risaina or replies.
+                        Column(GlanceModifier.fillMaxWidth().clickable(openApp(context, "risaina://app/home")), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${snap.latestPingEmoji ?: "💗"}  ${snap.partnerName ?: "They"}", style = WidgetStyles.title, maxLines = 1)
+                            Text("${snap.latestPingLine ?: "Thinking of you"} · ${relative(snap.latestPingAtMillis)}", style = WidgetStyles.caption, maxLines = 2)
+                        }
+                        Spacer(GlanceModifier.height(8.dp))
+                    }
                     Box(
                         GlanceModifier.fillMaxWidth().cornerRadius(40.dp).background(GlanceTheme.colors.primary).padding(vertical = 10.dp)
                             .clickable(if (snap.paired) actionRunCallback<SendPingAction>() else openApp(context, "risaina://app/home")),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            when { !snap.paired -> "Pair first"; status == "sending" -> "Sending…"; status == "sent" -> "Sent ✓"; status == "failed" -> "Try again"; status == "cooldown" -> "Wait a moment"; else -> "💭  Thinking of you" },
+                            when {
+                                !snap.paired -> "Pair first"; status == "sending" -> "Sending…"; status == "sent" -> "Sent ✓"
+                                status == "failed" -> "Try again"; status == "cooldown" -> "Wait a moment"
+                                incoming -> "💭  Send one back"; else -> "💭  Thinking of you"
+                            },
                             style = TextStyle(color = GlanceTheme.colors.onPrimary, fontSize = 14.sp, fontWeight = androidx.glance.text.FontWeight.Medium),
                         )
                     }
-                    Spacer(GlanceModifier.height(6.dp))
-                    Text(snap.partnerName?.let { "to $it" } ?: "Touch Ping", style = WidgetStyles.caption)
+                    if (!incoming) {
+                        Spacer(GlanceModifier.height(6.dp))
+                        Text(snap.partnerName?.let { "to $it" } ?: "Touch Ping", style = WidgetStyles.caption)
+                    }
                 }
             }
         }
@@ -144,10 +166,8 @@ class TouchPingWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceA
 
 /** Transient status shown on the ping widget for a few seconds after a tap. In-memory on purpose. */
 object WidgetPingStatus {
-    @Volatile private var status: String? = null
-    @Volatile private var at: Long = 0
-    fun set(s: String?) { status = s; at = System.currentTimeMillis() }
-    fun current(): String? = status?.takeIf { System.currentTimeMillis() - at < 8_000 }
+    val state = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    fun set(s: String?) { state.value = s }
 }
 
 class SendPingAction : ActionCallback {
@@ -158,12 +178,18 @@ class SendPingAction : ActionCallback {
         val r = ep.pingRepository().send(PingType.THINKING_OF_YOU, PingType.THINKING_OF_YOU.defaultEmoji, null)
         WidgetPingStatus.set(
             when (r) {
-                is AppResult.Success -> { ep.haptics().confirm(); "sent" }
+                is AppResult.Success -> {
+                    ep.haptics().confirm()
+                    // Replying from the widget means they saw the partner's ping: clear the glow, send "Seen".
+                    runCatching { ep.widgetSnapshotUpdater().markSeenAndRecompute(ackServer = true) }
+                    "sent"
+                }
                 is AppResult.Failure -> if (r.error is com.risaina.app.core.common.AppError.RateLimited) "cooldown" else "failed"
             },
         )
         TouchPingWidget().updateAll(context)
         kotlinx.coroutines.delay(8_000)
+        WidgetPingStatus.set(null)
         TouchPingWidget().updateAll(context)
     }
 }
@@ -172,17 +198,22 @@ class SendPingAction : ActionCallback {
 class EmojiWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE))
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = context.widgetSnapshot()
+        val store = context.widgetEntryPoint().snapshotStore()
+        val first = store.current()
         provideContent {
-            WidgetFrame(GlanceModifier.clickable(openApp(context, "risaina://app/home"))) {
+            val snap = liveSnapshot(store, first)
+            // Lit up only when what it shows *is* the unseen ping (not an older mood they set).
+            val fresh = snap.paired && snap.pingUnseen && snap.latestEmojiAtMillis != null && snap.latestEmojiAtMillis == snap.latestPingAtMillis
+            WidgetFrame(GlanceModifier.clickable(openApp(context, "risaina://app/home")), highlight = fresh) {
                 Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalAlignment = Alignment.CenterVertically) {
                     when {
                         !snap.paired -> Placeholder("Pair to begin")
                         snap.latestEmojiAtMillis == null -> Placeholder("No pings yet", "The first one is a tap away")
                         snap.latestEmoji == null -> { Text("•", style = WidgetStyles.big); Text("A ping arrived · ${relative(snap.latestEmojiAtMillis)}", style = WidgetStyles.caption) }
                         else -> {
+                            if (fresh) Text("● New from ${snap.partnerName ?: "them"}", style = WidgetStyles.badge, maxLines = 1)
                             Text(snap.latestEmoji, style = WidgetStyles.emoji)
-                            Text("${snap.latestEmojiLabel ?: "Ping"} · ${relative(snap.latestEmojiAtMillis)}", style = WidgetStyles.caption)
+                            Text("${snap.latestEmojiLabel ?: "Ping"} · ${relative(snap.latestEmojiAtMillis)}", style = WidgetStyles.caption, maxLines = 2)
                         }
                     }
                 }
@@ -196,10 +227,12 @@ class EmojiWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceAppWi
 class CountdownWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE))
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = context.widgetSnapshot()
-        val date = snap.countdownDateIso?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        val countdown = date?.let { CountdownCalculator.until(it, LocalDate.now()) }
+        val store = context.widgetEntryPoint().snapshotStore()
+        val first = store.current()
         provideContent {
+            val snap = liveSnapshot(store, first)
+            val date = snap.countdownDateIso?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            val countdown = date?.let { CountdownCalculator.until(it, LocalDate.now()) }
             WidgetFrame(GlanceModifier.clickable(openApp(context, "risaina://app/home"))) {
                 Column(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                     if (countdown == null) {
@@ -220,8 +253,10 @@ class CountdownWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceA
 class VoiceNoteWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE))
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = context.widgetSnapshot()
+        val store = context.widgetEntryPoint().snapshotStore()
+        val first = store.current()
         provideContent {
+            val snap = liveSnapshot(store, first)
             WidgetFrame(GlanceModifier.clickable(openApp(context, "risaina://app/messages"))) {
                 Column(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                     Text("🎙", style = WidgetStyles.emoji)
@@ -242,10 +277,13 @@ class VoiceNoteWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceA
 class GiftWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE))
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = context.widgetSnapshot()
+        val store = context.widgetEntryPoint().snapshotStore()
+        val first = store.current()
         provideContent {
-            WidgetFrame(GlanceModifier.clickable(openApp(context, "risaina://app/home"))) {
+            val snap = liveSnapshot(store, first)
+            WidgetFrame(GlanceModifier.clickable(openApp(context, "risaina://app/home")), highlight = snap.paired && snap.giftUnseen) {
                 Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalAlignment = Alignment.CenterVertically) {
+                    if (snap.paired && snap.giftUnseen) Text("● New gift", style = WidgetStyles.badge, maxLines = 1)
                     when {
                         !snap.paired -> Placeholder("Pair to begin")
                         snap.latestGiftAtMillis == null -> { Text("🎁", style = WidgetStyles.emoji); Text("No gifts yet", style = WidgetStyles.caption) }

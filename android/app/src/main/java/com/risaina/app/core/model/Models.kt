@@ -36,6 +36,8 @@ data class Couple(
     val nextMeetingDate: LocalDate?,
     val nextMeetingLabel: String?,
     val createdAt: Instant,
+    val chatWallpaperStyle: String? = null,
+    val chatWallpaperMediaId: String? = null,
 )
 
 enum class PingType(val wire: String, val label: String, val defaultEmoji: String, val defaultMessage: String) {

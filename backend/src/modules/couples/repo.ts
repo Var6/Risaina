@@ -1,6 +1,6 @@
 import type { ObjectId } from 'mongodb';
 import type { Collections } from '../../db/collections.js';
-import type { CoupleDoc, UserDoc } from '../../db/types.js';
+import type { CoupleDoc, MediaDoc, UserDoc } from '../../db/types.js';
 
 export class CoupleRepo {
   constructor(private readonly db: Collections) {}
@@ -11,6 +11,10 @@ export class CoupleRepo {
 
   findPendingForUser(userId: ObjectId): Promise<CoupleDoc | null> {
     return this.db.couples.findOne({ memberIds: userId, status: 'pending' }, { sort: { createdAt: -1 } });
+  }
+
+  findMedia(id: ObjectId): Promise<MediaDoc | null> {
+    return this.db.media.findOne({ _id: id });
   }
 
   async insert(doc: CoupleDoc): Promise<void> {
@@ -29,11 +33,14 @@ export class CoupleRepo {
     );
   }
 
-  /** Atomically transition active → ended. Returns null when the couple was not active. */
+  /**
+   * Atomically transition active → ended and mark the couple for purging. Returns null when the
+   * couple was not active.
+   */
   async end(id: ObjectId, endedBy: ObjectId, now: Date): Promise<CoupleDoc | null> {
     return this.db.couples.findOneAndUpdate(
       { _id: id, status: 'active' },
-      { $set: { status: 'ended', endedAt: now, endedBy, updatedAt: now } },
+      { $set: { status: 'ended', endedAt: now, endedBy, updatedAt: now, purgedAt: now } },
       { returnDocument: 'after' },
     );
   }
@@ -49,24 +56,6 @@ export class CoupleRepo {
     await this.db.users.updateMany(
       { _id: { $in: memberIds }, activeCoupleId: coupleId },
       { $set: { activeCoupleId: null, updatedAt: now } },
-    );
-  }
-
-  async scheduleMediaDeletion(coupleId: ObjectId, now: Date): Promise<void> {
-    await this.db.media.updateMany(
-      { coupleId, status: { $ne: 'deleted' } },
-      { $set: { status: 'deleted', deletedAt: now } },
-    );
-  }
-
-  async deleteWidgetBoards(coupleId: ObjectId): Promise<void> {
-    await this.db.widgetBoards.deleteMany({ coupleId });
-  }
-
-  async revokeOpenInvitations(coupleId: ObjectId, now: Date): Promise<void> {
-    await this.db.invitations.updateMany(
-      { coupleId, status: 'open' },
-      { $set: { status: 'revoked', revokedAt: now } },
     );
   }
 }

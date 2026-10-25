@@ -35,7 +35,7 @@ data class AppUiState(
 
 @HiltViewModel
 class AppViewModel @Inject constructor(
-    sessionStore: SessionStore,
+    private val sessionStoreRef: SessionStore,
     preferencesStore: PreferencesStore,
     coupleRepository: CoupleRepository,
     connectivity: ConnectivityObserver,
@@ -47,7 +47,7 @@ class AppViewModel @Inject constructor(
     val deepLinks: SharedFlow<Uri> = _deepLinks
 
     val uiState: StateFlow<AppUiState> = combine(
-        sessionStore.session, preferencesStore.onboardingDone, coupleRepository.pairingState,
+        sessionStoreRef.session, preferencesStore.onboardingDone, coupleRepository.pairingState,
         preferencesStore.preferences, connectivity.isOnline,
     ) { session, onboardingDone, pairing, prefs, online ->
         val gate = when {
@@ -62,10 +62,12 @@ class AppViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             // Pull server truth on launch; a stale local couple state would otherwise linger.
-            if (sessionStore.current() != null) coupleRepository.refreshMe() else Unit
+            if (sessionStoreRef.current() != null) coupleRepository.refreshMe() else Unit
         }
         viewModelScope.launch { sessionEvents.expired.collect { authRepository.onSessionExpired() } }
     }
+
+    suspend fun isSignedIn(): Boolean = sessionStoreRef.current() != null
 
     fun onDeepLink(uri: Uri?) { if (uri != null) _deepLinks.tryEmit(uri) }
 }

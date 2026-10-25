@@ -4,6 +4,7 @@ import type {
   DeviceTokenDoc,
   EmailVerificationDoc,
   EventDoc,
+  GameDoc,
   InvitationDoc,
   ListDoc,
   MediaDoc,
@@ -35,6 +36,7 @@ export const COLLECTION_NAMES = {
   lists: 'lists',
   widgetBoards: 'widgetBoards',
   sos: 'sos',
+  games: 'games',
 } as const;
 
 export interface Collections {
@@ -54,6 +56,7 @@ export interface Collections {
   lists: Collection<ListDoc>;
   widgetBoards: Collection<WidgetBoardDoc>;
   sos: Collection<SosDoc>;
+  games: Collection<GameDoc>;
 }
 
 export function getCollections(db: Db): Collections {
@@ -74,5 +77,6 @@ export function getCollections(db: Db): Collections {
     lists: db.collection<ListDoc>(COLLECTION_NAMES.lists),
     widgetBoards: db.collection<WidgetBoardDoc>(COLLECTION_NAMES.widgetBoards),
     sos: db.collection<SosDoc>(COLLECTION_NAMES.sos),
+    games: db.collection<GameDoc>(COLLECTION_NAMES.games),
   };
 }

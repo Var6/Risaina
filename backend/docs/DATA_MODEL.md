@@ -71,8 +71,9 @@ Indexes: `{userId:1, createdAt:-1}`; `{expiresAt:1}` TTL with `expireAfterSecond
 | `nextMeetingDate`, `nextMeetingLabel` | date \| null, string \| null |
 | `sharedPreferences` | small flat map (≤ 20 keys of string/number/boolean) |
 | `activatedAt`, `endedAt`, `endedBy` | lifecycle |
+| `purgedAt` | optional; set (with `status: ended`) when an active couple is unlinked — see "Unlink purge" |
 
-Indexes: `{memberIds:1, status:1}` (pending-couple lookup, membership checks).
+Indexes: `{memberIds:1, status:1}` (pending-couple lookup, membership checks, recently-unlinked feed lookup).
 
 ### `invitations`
 | Field | Notes |
@@ -105,7 +106,7 @@ Indexes: `{coupleId:1, createdAt:-1, _id:-1}`; `{senderId:1, idempotencyKey:1}` 
 | `mimeType`, `sizeBytes`, `durationMs`, `width`, `height` | declared by client; `sizeBytes` is overwritten with the verified size on complete |
 | `status` | `pending` → `ready` (after HEAD + magic-byte verification) → `deleted` |
 | `storageKey` | server-generated `couples/{coupleId}/{category}/{mediaId}.{ext}`; validator enforces the pattern; never returned to clients |
-| `objectDeleted` | storage object removed. Set immediately when deletion succeeds, otherwise the cleanup worker retries |
+| `objectDeleted` | storage object removed. Set immediately when deletion succeeds, otherwise the cleanup worker retries. Media of an unlinked (purged) couple is deleted outright once its object is gone |
 | `readyAt`, `deletedAt` | |
 
 Indexes: `{coupleId:1, status:1, createdAt:-1}`; `{status:1, createdAt:1}` (abandoned-pending cleanup); `{status:1, objectDeleted:1}` (deferred deletes); `{ownerId:1}` (account-deletion cascade).
@@ -140,9 +141,31 @@ Indexes: `{coupleId:1, authorId:1}` unique; `{authorId:1}` (account deletion).
 
 ### `sos`
 `coupleId, senderId, recipientId, message (≤140)|null, createdAt, acknowledgedAt|null`. Never
-logged. Kept after unlink (like pings).
+logged. Hard-deleted on unlink (see "Unlink purge").
 
 Indexes: `{coupleId:1, createdAt:-1}` (`GET /sos`, export); `{senderId:1, createdAt:-1}` (3 per 10 min).
+
+### `games`
+`coupleId, kind ('rps'), createdBy, memberIds [2], status, open (bool: status not completed/cancelled),
+round (≥1), moves [{userId, move, at}] (current round, ≤2), winnerId|null, loserId|null, challenge|null,
+answer (≤500)|null, createdAt, updatedAt, completedAt|null, cancelledAt|null, cancelledBy|null`.
+
+`status` ∈ `waiting | draw | revealed | challenged | chosen | awaiting_confirmation | completed | cancelled`.
+`challenge = { truth (1–200), dare (1–200), by (winner), at, chosen: 'truth'|'dare'|null, chosenAt|null,
+doneAt|null, confirmedAt|null, rejectNote (≤200)|null }` — the winner writes both texts, the loser picks
+blind. Text visibility is enforced only in the DTO builders (`toGameDto` per viewer, `toGameEventView` for
+events without any text), never by projection, so every read path goes through them.
+
+The validator checks `kind`, `status`, `moves[].move` and `challenge.chosen` as plain strings (the Zod
+schemas are the allow-list), so new kinds/statuses/moves never need collMod; inside `challenge` it requires
+only `by` and `at` (earlier `{ kind, text }` dev documents stay updatable, e.g. cancellable). A separate collection (not a
+`messages.type`): the live `messages` validator has a strict `type` enum that cannot be widened without
+collMod. Hard-deleted on unlink. State changes are conditional `findOneAndUpdate`s on the expected status
+(plus `updatedAt` for the steps after `challenged`), so concurrent requests cannot skip or repeat a
+transition.
+
+Indexes: `{coupleId:1, createdAt:-1}` (`GET /games`, export); `{coupleId:1}` unique partial `{open: true}`
+(one open game per couple, race-safe).
 
 ### Later optional fields (never `required`; a readWrite-only DB user cannot collMod)
 
@@ -152,6 +175,8 @@ Indexes: `{coupleId:1, createdAt:-1}` (`GET /sos`, export); `{senderId:1, create
 | `messages` | `viewOnce: bool`, `openedAt: date\|null`, `viewOnceExpiredAt: date\|null` | `false`, `null`, `null` |
 | `media` | `viewOnce: bool`, `openedAt: date\|null` (copied from the message for cleanup) | `false`, `null` |
 | `memories` | `sourceMessageId: ObjectId\|null` (auto-memory from a chat photo) | `null` |
+| `couples` | `chatWallpaper: { style DEFAULT\|PAPER\|HEARTS\|NIGHT\|GLOW\|PHOTO, photoMediaId\|null, setBy, setAt } \| null` (exposed as `sharedPreferences.chatWallpaper`) | `null` |
+| `couples` | `purgedAt: date\|null` (unlink purge marker) | `null` (not purged: ended before purging existed, or never active) |
 
 Extra indexes: `messages {mediaId:1}` partial (`mediaId` is an ObjectId), `messages {openedAt:1, createdAt:1}`
 partial `{viewOnce: true}` (unopened purge), `media {openedAt:1}` partial `{viewOnce: true}` (opened purge),
@@ -170,7 +195,30 @@ partial `{viewOnce: true}` (unopened purge), `media {openedAt:1}` partial `{view
 | `push.leaseUntil` | worker lease; also used as "not before" for exponential backoff (2 s · 2ⁿ) |
 | `push.lastError`, `push.skipReason`, `push.sentAt` | `skipReason` ∈ `push_disabled`, `no_recipient`, `recipient_missing`, `notifications_disabled`, `quiet_hours`, `no_tokens`, `tokens_unregistered`, `couple_missing` |
 
-Indexes: `{coupleId:1, seq:1}` unique (WS replay, `GET /events?since`); `{'push.state':1, 'push.leaseUntil':1}` (outbox lease query).
+Indexes: `{coupleId:1, seq:1}` unique (WS replay, `GET /events?since`); `{'push.state':1, 'push.leaseUntil':1}` (outbox lease query); `{createdAt:1}` partial `{type: 'couple.unlinked'}` (`unlinked_createdAt`: 7-day retention of an unlinked couple's final event).
+
+## Unlink purge
+
+When an active couple ends (`POST /couple/unlink`, or `DELETE /me` of a member) `CoupleService.endCouple`:
+
+1. atomically sets `status: 'ended', endedAt, endedBy, purgedAt` (only from `active`, so it runs once);
+2. clears both members' `activeCoupleId`, emits `couple.unlinked` (live to sockets, outbox push to the
+   partner) and revokes the couple's sockets;
+3. **database phase** (awaited, `couples/purge.ts` `purgeData`): marks all the couple's media `deleted`;
+   clears a member's `avatarMediaId` when it references this couple's media; `deleteMany({coupleId})` on
+   `messages, pings, memories, milestones, lists, games, widgetBoards, sos, invitations`; deletes the
+   couple's `events` except `type: 'couple.unlinked'`; resets `relationshipStartDate, nextMeetingDate,
+   nextMeetingLabel` to null, `sharedPreferences` to `{}` and unsets `chatWallpaper`;
+4. **storage phase** (background, `purgeMedia`): deletes each storage object then its media document; a
+   failed delete is logged and leaves the document (`status: deleted, objectDeleted: false`).
+
+Kept: the couple document (`status, memberIds, createdBy, eventSeq, createdAt, updatedAt, activatedAt,
+endedAt, endedBy, purgedAt`) and its single `couple.unlinked` event. Every step is filter based, so the
+purge is idempotent. The cleanup worker re-runs the database phase for couples with `purgedAt` in the last
+7 days (catching writes that raced the unlink), deletes objects of `deleted` media (and, for a purged
+couple, the document too), and deletes `couple.unlinked` events older than 7 days. Until then an
+ex-member who has not paired again can still read that one event through `GET /events` and the WebSocket
+`sync` (see API.md). Couples ended before purging existed (no `purgedAt`) are not retro-purged.
 
 ## Write ordering and consistency
 

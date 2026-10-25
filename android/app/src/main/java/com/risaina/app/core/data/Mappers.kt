@@ -62,7 +62,11 @@ fun CoupleDto.toDomain() = Couple(
     nextMeetingLabel = nextMeetingLabel,
     createdAt = createdAt.toInstant(),
 )
-fun CoupleDto.toEntity() = CoupleEntity(id, status, memberIds.joinToString(","), relationshipStartDate, nextMeetingDate, nextMeetingLabel, createdAt.toInstant().toEpochMilli())
+fun CoupleDto.toEntity(): CoupleEntity {
+    val wp = (sharedPreferences?.get("chatWallpaper") as? kotlinx.serialization.json.JsonObject)
+    fun str(k: String) = (wp?.get(k) as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+    return CoupleEntity(id, status, memberIds.joinToString(","), relationshipStartDate, nextMeetingDate, nextMeetingLabel, createdAt.toInstant().toEpochMilli(), str("style"), str("photoMediaId"))
+}
 fun CoupleEntity.toDomain() = Couple(
     id = id,
     status = runCatching { CoupleStatus.valueOf(status.uppercase()) }.getOrDefault(CoupleStatus.PENDING),
@@ -71,6 +75,8 @@ fun CoupleEntity.toDomain() = Couple(
     nextMeetingDate = nextMeetingDate.toLocalDateOrNull(),
     nextMeetingLabel = nextMeetingLabel,
     createdAt = Instant.ofEpochMilli(createdAt),
+    chatWallpaperStyle = chatWallpaperStyle,
+    chatWallpaperMediaId = chatWallpaperMediaId,
 )
 
 // ---- preferences ----

@@ -48,7 +48,11 @@ export const coupleRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => 
       ...guarded,
       schema: {
         tags: [TAG],
-        summary: 'End the couple (both members notified, shared media scheduled for deletion)',
+        summary: 'End the couple: both members notified, all couple data and media purged',
+        description:
+          'Hard-deletes everything the couple created (messages, pings, memories, milestones, lists, games, ' +
+          'widget boards, SOS, invitations, media objects and documents, avatars uploaded in this couple, and ' +
+          'every event except the final couple.unlinked, which the ex-partner can still read for 7 days).',
         security: [{ bearerAuth: [] }],
         body: UnlinkBody,
         response: { 204: NoContent, 400: ErrorEnvelope, 401: ErrorEnvelope, 409: ErrorEnvelope },

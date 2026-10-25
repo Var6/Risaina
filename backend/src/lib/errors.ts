@@ -24,6 +24,9 @@ export type ErrorCode =
   | 'view_once'
   | 'view_once_consumed'
   | 'view_once_expired'
+  | 'game_in_progress'
+  | 'already_moved'
+  | 'invalid_game_state'
   | 'internal';
 
 export class AppError extends Error {
@@ -95,5 +98,11 @@ export const errors = {
     new AppError(410, 'view_once_consumed', message),
   viewOnceExpired: (message = 'This view-once photo expired before it was opened') =>
     new AppError(410, 'view_once_expired', message),
+  gameInProgress: (game: unknown) =>
+    new AppError(409, 'game_in_progress', 'Finish or cancel the open game first', { details: { game } }),
+  alreadyMoved: (game: unknown) =>
+    new AppError(409, 'already_moved', 'You already moved this round', { details: { game } }),
+  invalidGameState: (message: string, game: unknown) =>
+    new AppError(409, 'invalid_game_state', message, { details: { game } }),
   internal: (message = 'Internal server error') => new AppError(500, 'internal', message),
 };

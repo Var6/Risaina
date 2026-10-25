@@ -1,6 +1,7 @@
 import type { Db, Document } from 'mongodb';
 import { COLLECTION_NAMES } from './collections.js';
 import {
+  CHAT_WALLPAPER_STYLES,
   EVENT_TYPES,
   LIST_KINDS,
   MEDIA_CATEGORIES,
@@ -158,11 +159,23 @@ export const VALIDATORS: Record<string, Document> = {
         nextMeetingDate: nullableDate,
         nextMeetingLabel: nullableString,
         sharedPreferences: { bsonType: 'object' },
+        // optional (added later; never in `required`)
+        chatWallpaper: {
+          bsonType: ['object', 'null'],
+          required: ['style', 'photoMediaId', 'setBy', 'setAt'],
+          properties: {
+            style: { enum: [...CHAT_WALLPAPER_STYLES] },
+            photoMediaId: nullableObjectId,
+            setBy: objectId,
+            setAt: date,
+          },
+        },
         createdAt: date,
         updatedAt: date,
         activatedAt: nullableDate,
         endedAt: nullableDate,
         endedBy: nullableObjectId,
+        purgedAt: nullableDate, // optional (unlink purge marker; never in `required`)
       },
     },
   },
@@ -396,6 +409,74 @@ export const VALIDATORS: Record<string, Document> = {
         message: { bsonType: ['string', 'null'], maxLength: 140 },
         createdAt: date,
         acknowledgedAt: nullableDate,
+      },
+    },
+  },
+  [COLLECTION_NAMES.games]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: [
+        'coupleId',
+        'kind',
+        'createdBy',
+        'memberIds',
+        'status',
+        'open',
+        'round',
+        'moves',
+        'winnerId',
+        'loserId',
+        'challenge',
+        'answer',
+        'createdAt',
+        'updatedAt',
+        'completedAt',
+      ],
+      properties: {
+        coupleId: objectId,
+        // `kind`, `status`, `move` and `challenge.chosen` are plain strings on purpose: the API (Zod)
+        // is the allow-list, so adding a game kind, status or move never needs collMod (which the
+        // production DB user cannot run).
+        kind: string,
+        createdBy: objectId,
+        memberIds: { bsonType: 'array', minItems: 2, maxItems: 2, items: objectId },
+        status: string,
+        open: bool,
+        round: { bsonType: ['int', 'long', 'double'], minimum: 1 },
+        moves: {
+          bsonType: 'array',
+          maxItems: 2,
+          items: {
+            bsonType: 'object',
+            required: ['userId', 'move', 'at'],
+            properties: { userId: objectId, move: string, at: date },
+          },
+        },
+        winnerId: nullableObjectId,
+        loserId: nullableObjectId,
+        challenge: {
+          bsonType: ['object', 'null'],
+          // truth/dare are guaranteed by the API; not `required` here so games written in the earlier
+          // single-challenge shape ({ kind, text }) can still be cancelled.
+          required: ['by', 'at'],
+          properties: {
+            truth: { bsonType: 'string', minLength: 1, maxLength: 200 },
+            dare: { bsonType: 'string', minLength: 1, maxLength: 200 },
+            by: objectId,
+            at: date,
+            chosen: nullableString,
+            chosenAt: nullableDate,
+            doneAt: nullableDate,
+            confirmedAt: nullableDate,
+            rejectNote: { bsonType: ['string', 'null'], maxLength: 200 },
+          },
+        },
+        answer: { bsonType: ['string', 'null'], maxLength: 500 },
+        createdAt: date,
+        updatedAt: date,
+        completedAt: nullableDate,
+        cancelledAt: nullableDate,
+        cancelledBy: nullableObjectId,
       },
     },
   },

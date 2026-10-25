@@ -114,12 +114,13 @@ describe('devices', () => {
 });
 
 describe('account deletion', () => {
-  it('requires the password, revokes sessions, removes devices, ends the couple, emits couple.unlinked, schedules media deletion', async () => {
+  it('requires the password, revokes sessions, removes devices, ends the couple, emits couple.unlinked, purges the couple media', async () => {
     const a = await register(t.app, 'Gone', 'leaving-password-1');
     const b = await register(t.app, 'Stays');
     const coupleId = await pair(t.app, a, b);
     await sendPing(t.app, a);
     const mediaId = await uploadPhoto(t, a);
+    const storageKey = (await t.db.media.findOne({ _id: new ObjectId(mediaId) }))!.storageKey;
     await t.app.inject({
       method: 'PUT',
       url: `${API}/devices`,
@@ -183,19 +184,11 @@ describe('account deletion', () => {
     expect(unlinked).not.toBeNull();
     expect(unlinked!.payload).toEqual({ coupleId, endedAt: expect.any(String), by: a.user.id });
 
-    // own media scheduled for deletion; cleanup removes the object
-    const media = await t.db.media.findOne({ _id: new ObjectId(mediaId) });
-    expect(media!.status).toBe('deleted');
-    const { CleanupWorker } = await import('../src/workers/cleanup.js');
-    const { pino } = await import('pino');
-    const cleanup = new CleanupWorker(t.db, t.storage, t.clock.now, pino({ level: 'silent' }), {
-      intervalMs: 60_000,
-      abandonedUploadHours: 24,
-    });
-    const report = await cleanup.runOnce();
-    expect(report.objectsDeleted).toBeGreaterThanOrEqual(1);
-    expect(await t.storage.head(media!.storageKey)).toBeNull();
-    expect((await t.db.media.findOne({ _id: new ObjectId(mediaId) }))!.objectDeleted).toBe(true);
+    // the couple's media (including this user's uploads) is purged with the couple: the storage
+    // object is deleted in the background, then its document
+    await t.ctx.background.drain();
+    expect(await t.db.media.findOne({ _id: new ObjectId(mediaId) })).toBeNull();
+    expect(await t.storage.head(storageKey)).toBeNull();
   });
 });
 

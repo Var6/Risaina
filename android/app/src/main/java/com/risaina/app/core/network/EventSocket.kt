@@ -70,7 +70,7 @@ class EventSocket @Inject constructor(
                     _state.value = SocketState.SYNCING
                     send(Frame.Text(json.encodeToString(WsSync.serializer(), WsSync(since = sinceProvider()))))
                     while (true) {
-                        val msg = awaitInbound() ?: break
+                        val msg = awaitInbound() ?: run { if (BuildConfig.DEBUG) Log.d("RisainaWs", "inbound closed: ${closeReason.await()}"); null } ?: break
                         when (msg.type) {
                             "event" -> msg.event?.let { emit(SocketMessage.Event(it)) }
                             "synced" -> { _state.value = SocketState.LIVE; emit(SocketMessage.Synced) }
@@ -80,10 +80,11 @@ class EventSocket @Inject constructor(
                     }
                 }
             } catch (e: CancellationException) {
+                if (BuildConfig.DEBUG) Log.d("RisainaWs", "socket cancelled: ${e::class.simpleName} ${e.message} cause=${e.cause?.let { it::class.simpleName + ": " + it.message }}")
                 _state.value = SocketState.DISCONNECTED
                 throw e
             } catch (e: ClosedReceiveChannelException) {
-                // normal close
+                if (BuildConfig.DEBUG) Log.d("RisainaWs", "socket closed by server")
             } catch (e: Throwable) {
                 if (BuildConfig.DEBUG) Log.d("RisainaWs", "socket error: ${e::class.simpleName}")
             }

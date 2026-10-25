@@ -222,6 +222,51 @@
           ]
         }
       },
+      "ChatWallpaperInput": {
+        "type": "object",
+        "properties": {
+          "style": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "PAPER",
+              "HEARTS",
+              "NIGHT",
+              "GLOW",
+              "PHOTO"
+            ]
+          },
+          "photoMediaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set only for PHOTO; fetch with GET /media/:id/url"
+          },
+          "setBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "setAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "style",
+          "photoMediaId",
+          "setBy",
+          "setAt"
+        ]
+      },
       "CoupleInput": {
         "type": "object",
         "properties": {
@@ -277,16 +322,30 @@
           },
           "sharedPreferences": {
             "type": "object",
-            "propertyNames": {
-              "type": "string"
+            "properties": {
+              "chatWallpaper": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ChatWallpaperInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Shared chat wallpaper (same for both partners); null = app default"
+              }
             },
+            "required": [
+              "chatWallpaper"
+            ],
             "additionalProperties": {
               "type": [
                 "string",
                 "number",
                 "boolean"
               ]
-            }
+            },
+            "description": "Flat client keys (string|number|boolean) set with PATCH /couple { sharedPreferences } plus the typed, server-managed chatWallpaper (set with PATCH /couple { chatWallpaper })"
           },
           "createdAt": {
             "type": "string",
@@ -1114,6 +1173,493 @@
           "acknowledgedAt"
         ]
       },
+      "GameChallengeInput": {
+        "type": "object",
+        "properties": {
+          "truth": {
+            "description": "Winner: always. Loser: only once they chose truth",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dare": {
+            "description": "Winner: always. Loser: only once they chose dare",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "truth",
+                  "dare"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The loser's blind pick; null until chosen"
+          },
+          "by": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10",
+            "description": "The winner (who wrote both)"
+          },
+          "at": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "chosenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Loser marked it done (cleared by a reject)"
+          },
+          "confirmedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Winner confirmed (status completed)"
+          },
+          "rejectNote": {
+            "description": "Winner's note on the last reject; cleared by the next complete",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "truth",
+          "dare",
+          "chosen",
+          "by",
+          "at",
+          "chosenAt",
+          "doneAt",
+          "confirmedAt",
+          "rejectNote"
+        ]
+      },
+      "GameEventChallengeInput": {
+        "type": "object",
+        "properties": {
+          "chosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "truth",
+                  "dare"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasChallenge": {
+            "type": "boolean",
+            "const": true
+          },
+          "chosenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirmedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "chosen",
+          "hasChallenge",
+          "chosenAt",
+          "doneAt",
+          "confirmedAt"
+        ]
+      },
+      "GameInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rps"
+            ]
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "draw",
+              "revealed",
+              "challenged",
+              "chosen",
+              "awaiting_confirmation",
+              "completed",
+              "cancelled"
+            ]
+          },
+          "winnerId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "challenge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameChallengeInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answer": {
+            "description": "The loser's answer; visible to both from awaiting_confirmation on (null before)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "myMove": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rock",
+                  "paper",
+                  "scissors",
+                  "thread"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "partnerMoved": {
+            "type": "boolean"
+          },
+          "partnerMove": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rock",
+                  "paper",
+                  "scissors",
+                  "thread"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null until both players moved this round"
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "kind",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "status",
+          "winnerId",
+          "loserId",
+          "completedAt",
+          "round",
+          "challenge",
+          "answer",
+          "myMove",
+          "partnerMoved",
+          "partnerMove"
+        ]
+      },
+      "GameEventViewInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rps"
+            ]
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "draw",
+              "revealed",
+              "challenged",
+              "chosen",
+              "awaiting_confirmation",
+              "completed",
+              "cancelled"
+            ]
+          },
+          "winnerId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "challenge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameEventChallengeInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "movedBy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "description": "Who has moved this round (never which move)"
+          },
+          "moves": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{24}$",
+                      "example": "665f1c2e9b1d4a3f8c2e7a10"
+                    },
+                    "move": {
+                      "type": "string",
+                      "enum": [
+                        "rock",
+                        "paper",
+                        "scissors",
+                        "thread"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "move"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Both moves of this round once both moved; otherwise null"
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "kind",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "status",
+          "winnerId",
+          "loserId",
+          "completedAt",
+          "round",
+          "challenge",
+          "movedBy",
+          "moves"
+        ]
+      },
       "EventInput": {
         "type": "object",
         "properties": {
@@ -1157,7 +1703,8 @@
               "list.deleted",
               "widget.updated",
               "sos.raised",
-              "sos.acknowledged"
+              "sos.acknowledged",
+              "game.updated"
             ]
           },
           "actorId": {
@@ -1401,6 +1948,52 @@
           ]
         }
       },
+      "ChatWallpaper": {
+        "type": "object",
+        "properties": {
+          "style": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "PAPER",
+              "HEARTS",
+              "NIGHT",
+              "GLOW",
+              "PHOTO"
+            ]
+          },
+          "photoMediaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set only for PHOTO; fetch with GET /media/:id/url"
+          },
+          "setBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "setAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "style",
+          "photoMediaId",
+          "setBy",
+          "setAt"
+        ],
+        "additionalProperties": false
+      },
       "Couple": {
         "type": "object",
         "properties": {
@@ -1456,16 +2049,30 @@
           },
           "sharedPreferences": {
             "type": "object",
-            "propertyNames": {
-              "type": "string"
+            "properties": {
+              "chatWallpaper": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ChatWallpaper"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Shared chat wallpaper (same for both partners); null = app default"
+              }
             },
+            "required": [
+              "chatWallpaper"
+            ],
             "additionalProperties": {
               "type": [
                 "string",
                 "number",
                 "boolean"
               ]
-            }
+            },
+            "description": "Flat client keys (string|number|boolean) set with PATCH /couple { sharedPreferences } plus the typed, server-managed chatWallpaper (set with PATCH /couple { chatWallpaper })"
           },
           "createdAt": {
             "type": "string",
@@ -2307,6 +2914,498 @@
         ],
         "additionalProperties": false
       },
+      "GameChallenge": {
+        "type": "object",
+        "properties": {
+          "truth": {
+            "description": "Winner: always. Loser: only once they chose truth",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dare": {
+            "description": "Winner: always. Loser: only once they chose dare",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "truth",
+                  "dare"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The loser's blind pick; null until chosen"
+          },
+          "by": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10",
+            "description": "The winner (who wrote both)"
+          },
+          "at": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "chosenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Loser marked it done (cleared by a reject)"
+          },
+          "confirmedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Winner confirmed (status completed)"
+          },
+          "rejectNote": {
+            "description": "Winner's note on the last reject; cleared by the next complete",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "truth",
+          "dare",
+          "chosen",
+          "by",
+          "at",
+          "chosenAt",
+          "doneAt",
+          "confirmedAt",
+          "rejectNote"
+        ],
+        "additionalProperties": false
+      },
+      "GameEventChallenge": {
+        "type": "object",
+        "properties": {
+          "chosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "truth",
+                  "dare"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasChallenge": {
+            "type": "boolean",
+            "const": true
+          },
+          "chosenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirmedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "chosen",
+          "hasChallenge",
+          "chosenAt",
+          "doneAt",
+          "confirmedAt"
+        ],
+        "additionalProperties": false
+      },
+      "Game": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rps"
+            ]
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "draw",
+              "revealed",
+              "challenged",
+              "chosen",
+              "awaiting_confirmation",
+              "completed",
+              "cancelled"
+            ]
+          },
+          "winnerId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "challenge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameChallenge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answer": {
+            "description": "The loser's answer; visible to both from awaiting_confirmation on (null before)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "myMove": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rock",
+                  "paper",
+                  "scissors",
+                  "thread"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "partnerMoved": {
+            "type": "boolean"
+          },
+          "partnerMove": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rock",
+                  "paper",
+                  "scissors",
+                  "thread"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null until both players moved this round"
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "kind",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "status",
+          "winnerId",
+          "loserId",
+          "completedAt",
+          "round",
+          "challenge",
+          "answer",
+          "myMove",
+          "partnerMoved",
+          "partnerMove"
+        ],
+        "additionalProperties": false
+      },
+      "GameEventView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rps"
+            ]
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "draw",
+              "revealed",
+              "challenged",
+              "chosen",
+              "awaiting_confirmation",
+              "completed",
+              "cancelled"
+            ]
+          },
+          "winnerId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "challenge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameEventChallenge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "movedBy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "description": "Who has moved this round (never which move)"
+          },
+          "moves": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{24}$",
+                      "example": "665f1c2e9b1d4a3f8c2e7a10"
+                    },
+                    "move": {
+                      "type": "string",
+                      "enum": [
+                        "rock",
+                        "paper",
+                        "scissors",
+                        "thread"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "move"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Both moves of this round once both moved; otherwise null"
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "kind",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "status",
+          "winnerId",
+          "loserId",
+          "completedAt",
+          "round",
+          "challenge",
+          "movedBy",
+          "moves"
+        ],
+        "additionalProperties": false
+      },
       "Event": {
         "type": "object",
         "properties": {
@@ -2350,7 +3449,8 @@
               "list.deleted",
               "widget.updated",
               "sos.raised",
-              "sos.acknowledged"
+              "sos.acknowledged",
+              "game.updated"
             ]
           },
           "actorId": {
@@ -3486,7 +4586,7 @@
         }
       },
       "delete": {
-        "summary": "Delete the account (cascades: sessions, devices, couple ended, own media deleted)",
+        "summary": "Delete the account (cascades: sessions, devices, couple ended and purged, own media deleted)",
         "tags": [
           "Me"
         ],
@@ -3778,6 +4878,13 @@
                         "$ref": "#/components/schemas/Sos"
                       }
                     },
+                    "games": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Game"
+                      },
+                      "description": "Viewer-specific (as GET /games), newest first"
+                    },
                     "widgetBoards": {
                       "type": "array",
                       "items": {
@@ -3799,6 +4906,7 @@
                     "milestones",
                     "lists",
                     "sos",
+                    "games",
                     "widgetBoards",
                     "truncated"
                   ],
@@ -4247,6 +5355,47 @@
                   },
                   "sharedPreferences": {
                     "$ref": "#/components/schemas/SharedPreferencesInput"
+                  },
+                  "chatWallpaper": {
+                    "description": "Shared chat wallpaper for both partners; null resets to the app default",
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "style": {
+                            "type": "string",
+                            "enum": [
+                              "DEFAULT",
+                              "PAPER",
+                              "HEARTS",
+                              "NIGHT",
+                              "GLOW",
+                              "PHOTO"
+                            ]
+                          },
+                          "photoMediaId": {
+                            "description": "Required for PHOTO (ready photo|wallpaper media of this couple, not view-once); must be omitted/null otherwise",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{24}$",
+                                "example": "665f1c2e9b1d4a3f8c2e7a10"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "style"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -4314,10 +5463,11 @@
     },
     "/api/v1/couple/unlink": {
       "post": {
-        "summary": "End the couple (both members notified, shared media scheduled for deletion)",
+        "summary": "End the couple: both members notified, all couple data and media purged",
         "tags": [
           "Couple"
         ],
+        "description": "Hard-deletes everything the couple created (messages, pings, memories, milestones, lists, games, widget boards, SOS, invitations, media objects and documents, avatars uploaded in this couple, and every event except the final couple.unlinked, which the ex-partner can still read for 7 days).",
         "requestBody": {
           "required": true,
           "content": {
@@ -7501,12 +8651,1327 @@
         }
       }
     },
+    "/api/v1/games/suggestions": {
+      "get": {
+        "summary": "Built-in truth and dare ideas (20 each)",
+        "tags": [
+          "Games"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "truths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dares": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "truths",
+                    "dares"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games": {
+      "post": {
+        "summary": "Start a rock–paper–scissors game (one open game per couple)",
+        "tags": [
+          "Games"
+        ],
+        "description": "409 game_in_progress with details.game when an open game exists.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "rps"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Recent games of the couple, newest first (viewer-specific)",
+        "tags": [
+          "Games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Game"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}": {
+      "get": {
+        "summary": "One game (viewer-specific: the partner move is hidden until both moved)",
+        "tags": [
+          "Games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/move": {
+      "post": {
+        "summary": "Play rock, paper, scissors or thread (once per player per round)",
+        "tags": [
+          "Games"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "move": {
+                    "type": "string",
+                    "enum": [
+                      "rock",
+                      "paper",
+                      "scissors",
+                      "thread"
+                    ]
+                  }
+                },
+                "required": [
+                  "move"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/rematch": {
+      "post": {
+        "summary": "After a draw: start the next round (either player)",
+        "tags": [
+          "Games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/challenge": {
+      "post": {
+        "summary": "Winner writes BOTH a truth and a dare (status revealed → challenged)",
+        "tags": [
+          "Games"
+        ],
+        "description": "The loser sees neither text until they choose, then only the chosen one.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "truth": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "The truth question (trimmed, 1–200 chars)"
+                  },
+                  "dare": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "The dare (trimmed, 1–200 chars)"
+                  }
+                },
+                "required": [
+                  "truth",
+                  "dare"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/choose": {
+      "post": {
+        "summary": "Loser picks truth or dare blind (status challenged → chosen)",
+        "tags": [
+          "Games"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "truth",
+                      "dare"
+                    ],
+                    "description": "Blind pick: the loser has not seen either text"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/complete": {
+      "post": {
+        "summary": "Loser marks the chosen truth or dare done (status chosen → awaiting_confirmation)",
+        "tags": [
+          "Games"
+        ],
+        "description": "A truth needs a non-empty `answer` (400 otherwise); for a dare it is optional.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "answer": {
+                        "description": "Trimmed, ≤ 500 chars. Required (non-empty) when the loser chose truth; optional for a dare (\"\" ⇒ null)",
+                        "type": "string",
+                        "maxLength": 500
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/confirm": {
+      "post": {
+        "summary": "Winner accepts it (status awaiting_confirmation → completed)",
+        "tags": [
+          "Games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/reject": {
+      "post": {
+        "summary": "Winner sends it back with an optional note (status awaiting_confirmation → chosen)",
+        "tags": [
+          "Games"
+        ],
+        "description": "Clears the answer; the note is cleared by the next complete.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "note": {
+                        "description": "Optional note to the loser, trimmed, ≤ 200 chars (\"\" ⇒ null)",
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/cancel": {
+      "post": {
+        "summary": "Cancel an unfinished game (either player; idempotent)",
+        "tags": [
+          "Games"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/events": {
       "get": {
         "summary": "Events newer than `since` (missed-event recovery)",
         "tags": [
           "Events"
         ],
+        "description": "Active couple: all its events. After an unlink (and until paired again) the ended couple's `couple.unlinked` event stays readable for 7 days; otherwise 409 not_paired.",
         "parameters": [
           {
             "schema": {
@@ -7742,6 +10207,9 @@
     },
     {
       "name": "SOS"
+    },
+    {
+      "name": "Games"
     },
     {
       "name": "Events"

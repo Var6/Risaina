@@ -121,6 +121,9 @@ data class CoupleEntity(
     val nextMeetingDate: String?,
     val nextMeetingLabel: String?,
     val createdAt: Long,
+    /** Shared by both partners: chat wallpaper style and optional photo. */
+    val chatWallpaperStyle: String? = null,
+    val chatWallpaperMediaId: String? = null,
 )
 
 /** Operations queued while offline. Drained in order by SyncWorker. */

@@ -107,6 +107,17 @@ export type CoupleStatus = 'pending' | 'active' | 'ended';
 
 export type SharedPreferences = Record<string, string | number | boolean>;
 
+export const CHAT_WALLPAPER_STYLES = ['DEFAULT', 'PAPER', 'HEARTS', 'NIGHT', 'GLOW', 'PHOTO'] as const;
+export type ChatWallpaperStyle = (typeof CHAT_WALLPAPER_STYLES)[number];
+
+/** Shared chat wallpaper (same for both partners). Exposed as couple.sharedPreferences.chatWallpaper. */
+export interface ChatWallpaper {
+  style: ChatWallpaperStyle;
+  photoMediaId: ObjectId | null; // set only for PHOTO
+  setBy: ObjectId;
+  setAt: Date;
+}
+
 export interface CoupleDoc {
   _id: ObjectId;
   status: CoupleStatus;
@@ -117,11 +128,18 @@ export interface CoupleDoc {
   nextMeetingDate: Date | null;
   nextMeetingLabel: string | null;
   sharedPreferences: SharedPreferences;
+  // Added later: optional in the validator, absent on older documents (read as null). Stored as a
+  // top-level field so `PATCH /couple { sharedPreferences }` (which replaces the flat map) keeps it.
+  chatWallpaper?: ChatWallpaper | null;
   createdAt: Date;
   updatedAt: Date;
   activatedAt: Date | null;
   endedAt: Date | null;
   endedBy: ObjectId | null;
+  // Set (with status 'ended') when an active couple is unlinked: its couple-scoped data is purged
+  // (couples/purge.ts) and the cleanup worker re-runs that idempotent purge while the final
+  // `couple.unlinked` event is retained. Optional; absent on couples ended before purging existed.
+  purgedAt?: Date | null;
 }
 
 export type InvitationStatus = 'open' | 'accepted' | 'revoked';
@@ -281,6 +299,7 @@ export const EVENT_TYPES = [
   'widget.updated',
   'sos.raised',
   'sos.acknowledged',
+  'game.updated',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -355,4 +374,68 @@ export interface EventDoc {
   payload: Record<string, unknown>;
   createdAt: Date;
   push: EventPush;
+}
+
+// --- Games (rock–paper–scissors with truth or dare) ---------------------------------------
+
+export const GAME_KINDS = ['rps'] as const;
+export type GameKind = (typeof GAME_KINDS)[number];
+/** Rock (stone), paper, scissors, plus thread: thread beats rock and paper; scissors cut thread. */
+export const RPS_MOVES = ['rock', 'paper', 'scissors', 'thread'] as const;
+export type RpsMove = (typeof RPS_MOVES)[number];
+export const GAME_STATUSES = [
+  'waiting',
+  'draw',
+  'revealed',
+  'challenged',
+  'chosen',
+  'awaiting_confirmation',
+  'completed',
+  'cancelled',
+] as const;
+export type GameStatus = (typeof GAME_STATUSES)[number];
+export const CHALLENGE_KINDS = ['truth', 'dare'] as const;
+export type ChallengeKind = (typeof CHALLENGE_KINDS)[number];
+
+/**
+ * The winner writes BOTH a truth and a dare; the loser picks one blind. Visibility is enforced by
+ * the DTO builders (modules/shared/dto.ts): the loser only ever sees the text they chose, and
+ * events never carry either text.
+ */
+export interface GameChallenge {
+  truth: string; // 1–200
+  dare: string; // 1–200
+  by: ObjectId; // the winner
+  at: Date;
+  chosen: ChallengeKind | null; // set by the loser (POST /games/:id/choose)
+  chosenAt: Date | null;
+  doneAt: Date | null; // last POST /complete; cleared by a reject
+  confirmedAt: Date | null; // winner confirmed (status completed)
+  rejectNote: string | null; // winner's note on the last reject; cleared by the next complete
+}
+
+/**
+ * Games live in their own collection (not as chat messages): the `messages` validator stored on the
+ * live database has a strict `type` enum that a readWrite-only user cannot widen, so clients merge
+ * `GET /games` / `game.updated` into the chat timeline by `createdAt`.
+ */
+export interface GameDoc {
+  _id: ObjectId;
+  coupleId: ObjectId;
+  kind: GameKind;
+  createdBy: ObjectId;
+  memberIds: ObjectId[]; // the two players (couple members at creation)
+  status: GameStatus;
+  open: boolean; // status ∉ {completed, cancelled}; unique per couple while true
+  round: number; // starts at 1; +1 per rematch after a draw
+  moves: { userId: ObjectId; move: RpsMove; at: Date }[]; // current round only, ≤ 2
+  winnerId: ObjectId | null;
+  loserId: ObjectId | null;
+  challenge: GameChallenge | null;
+  answer: string | null; // the loser's answer (required for a truth); cleared by a reject
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
+  cancelledAt: Date | null;
+  cancelledBy: ObjectId | null;
 }

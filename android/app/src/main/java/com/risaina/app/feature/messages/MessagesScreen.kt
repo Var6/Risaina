@@ -54,6 +54,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -96,11 +98,16 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> pendingPhoto = uri }
     var toDelete by remember { mutableStateOf<Message?>(null) }
     var showWallpaper by remember { mutableStateOf(false) }
+    val gameActions = remember(vm) {
+        GameActions(vm::gameMove, vm::gameRematch, vm::gameChallenge, vm::gameChoose, vm::gameComplete, vm::gameConfirm, vm::gameReject, vm::gameCancel, vm::gameSuggestions, vm::startGame)
+    }
     val wallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::setWallpaperPhoto); showWallpaper = false }
 
     // Mark partner messages read as they become visible.
     LaunchedEffect(s.messages.size, listState.firstVisibleItemIndex) {
-        listState.layoutInfo.visibleItemsInfo.mapNotNull { info -> s.messages.getOrNull(info.index) }.forEach(vm::markRead)
+        // Match by key, not position: game cards sit in the same list and shift positions.
+        val byId = s.messages.associateBy { it.id }
+        listState.layoutInfo.visibleItemsInfo.mapNotNull { info -> byId[info.key as? String] }.forEach(vm::markRead)
     }
     // Infinite scroll towards the past.
     LaunchedEffect(listState.firstVisibleItemIndex, s.messages.size) {
@@ -133,18 +140,30 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
             Composer(
                 text = s.composer, onText = vm::onComposer, onSend = vm::send,
                 onPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji,
+                onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji, onGame = vm::startGame,
             )
         },
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
     ) { padding ->
-        ChatBackground(s.wallpaper, s.wallpaperPhoto, Modifier.padding(padding))
-        if (s.messages.isEmpty()) {
+        val wallpaperModel = com.risaina.app.feature.common.rememberMediaModel(s.wallpaperMediaId)
+        ChatBackground(s.wallpaper, wallpaperModel, Modifier.padding(padding))
+        if (s.messages.isEmpty() && s.games.isEmpty()) {
             EmptyState(
                 title = "Nothing here yet", body = "Write the first line. Short is fine — it's the showing up that counts.",
                 modifier = Modifier.padding(padding).fillMaxSize(),
             )
         } else {
+            val timeline: List<Any> = remember(s.messages, s.games) {
+                (s.messages + s.games).sortedByDescending { item ->
+                    when (item) { is Message -> item.createdAt; is com.risaina.app.core.network.GameDto -> java.time.Instant.parse(item.createdAt); else -> java.time.Instant.EPOCH }
+                }
+            }
+            // A new game, or a game that changed state (your turn, sealed, confirmed…), scrolls into view.
+            val liveGame = s.games.filter { it.status !in setOf("completed", "cancelled") }.maxByOrNull { it.updatedAt }
+            LaunchedEffect(liveGame?.id, liveGame?.status) {
+                val i = liveGame?.let { g -> timeline.indexOfFirst { it is com.risaina.app.core.network.GameDto && it.id == g.id } } ?: -1
+                if (i >= 0) listState.animateScrollToItem(i)
+            }
             LazyColumn(
                 state = listState, reverseLayout = true,
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -152,9 +171,15 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
                 // Bottom-anchored like any chat: a short conversation sits just above the composer.
                 verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom),
             ) {
-                itemsIndexed(s.messages, key = { _, m -> m.id }) { index, m ->
+                itemsIndexed(timeline, key = { _, it -> if (it is Message) it.id else "game-" + (it as com.risaina.app.core.network.GameDto).id }) { index, item ->
+                    if (item is com.risaina.app.core.network.GameDto) {
+                        GameCard(item, s.myId, s.partner?.displayName ?: "your partner", gameActions)
+                        return@itemsIndexed
+                    }
+                    val m = item as Message
+                    val prevItem = timeline.getOrNull(index + 1) // older (reverse layout)
+                    val prev = prevItem as? Message
                     val mine = m.senderId == s.myId
-                    val prev = s.messages.getOrNull(index + 1) // older (reverse layout)
                     val showDay = prev == null || prev.createdAt.atZone(ZoneId.systemDefault()).toLocalDate() != m.createdAt.atZone(ZoneId.systemDefault()).toLocalDate()
                     Column {
                         if (showDay) DaySeparator(Format.day(m.createdAt))
@@ -195,7 +220,7 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
     }
     viewOnceUrl?.let { url -> ViewOnceViewer(url) { viewOnceUrl = null } }
     if (showWallpaper) ChatWallpaperSheet(
-        current = s.wallpaper, photo = s.wallpaperPhoto,
+        current = s.wallpaper, photo = com.risaina.app.feature.common.rememberMediaModel(s.wallpaperMediaId),
         onPick = { vm.setWallpaper(it); showWallpaper = false },
         onPickPhoto = { wallpaperPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
         onDismiss = { showWallpaper = false },
@@ -299,7 +324,7 @@ private fun Bubble(
 }
 
 @Composable
-private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit, onPhoto: () -> Unit, onMic: () -> Unit, uploading: Float?, onQuickEmoji: (String) -> Unit = {}) {
+private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit, onPhoto: () -> Unit, onMic: () -> Unit, uploading: Float?, onQuickEmoji: (String) -> Unit = {}, onGame: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).navigationBarsPadding().imePadding()) {
         if (uploading != null) LinearProgressIndicator(progress = { uploading }, modifier = Modifier.fillMaxWidth().height(2.dp))
         // One-tap reactions: tapping adds the emoji to the draft; on an empty draft it sends straight away.
@@ -310,6 +335,7 @@ private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit,
         }
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
             IconButton(onClick = onPhoto, enabled = uploading == null) { Icon(ImageIcon, contentDescription = "Send a photo") }
+            IconButton(onClick = onGame) { Text("✊", fontSize = 20.sp, modifier = Modifier.semantics { contentDescription = "Play stone paper scissors thread" }) }
             TextField(
                 value = text, onValueChange = onText, modifier = Modifier.weight(1f),
                 placeholder = { Text("Write something small", fontFamily = FrauncesText) },

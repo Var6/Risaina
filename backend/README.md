@@ -57,7 +57,7 @@ prints values.
 | `MAILER` | no | `console` (default) or `resend` |
 | `RESEND_API_KEY`, `MAIL_FROM` | when `resend` | `MAIL_FROM` like `Risaina <hello@yourdomain>` (domain verified in Resend) |
 | `GOOGLE_CLIENT_IDS` | no | comma separated Google OAuth **Web** client ID(s) (the Android app's `serverClientId`). Absent ⇒ `POST /auth/google` returns 503 and `/health` shows `google: disabled` |
-| limits | no | see `.env.example` for every knob and its default (ping cooldown 15 s, 40 pings/h, media sizes, invitation TTL 24 h, token TTLs, email-code TTL 30 min / resend cooldown 60 s / 5 per hour, rate limits incl. `RATE_LIMIT_LIST_WRITES_PER_MIN` (120 list writes per user per minute) and `RATE_LIMIT_WIDGET_WRITES_PER_MIN` (30), view-once `VIEW_ONCE_URL_TTL_SECONDS` (120) / `VIEW_ONCE_UNOPENED_DAYS` (7), outbox/cleanup intervals, WS timeouts) |
+| limits | no | see `.env.example` for every knob and its default (ping cooldown 15 s, 40 pings/h, media sizes, invitation TTL 24 h, token TTLs, email-code TTL 30 min / resend cooldown 60 s / 5 per hour, rate limits incl. `RATE_LIMIT_LIST_WRITES_PER_MIN` (120 list writes per user per minute) and `RATE_LIMIT_WIDGET_WRITES_PER_MIN` (30), `RATE_LIMIT_GAME_WRITES_PER_MIN` (30 game writes per user per minute), view-once `VIEW_ONCE_URL_TTL_SECONDS` (120) / `VIEW_ONCE_UNOPENED_DAYS` (7), outbox/cleanup intervals, WS timeouts) |
 
 ## Scripts
 
@@ -166,6 +166,17 @@ derived from `JWT_SECRET` in `emailVerifications` (TTL index) and emails it. `PO
 code (newest code only is live), at most 1 per 60 s and 5 per hour per user. Exact shapes and error
 codes: `docs/API.md` → "Auth additions".
 
+## Unlink purge
+
+Ending a couple (`POST /couple/unlink`, or `DELETE /me` of a member) hard-deletes everything the couple
+created to save database and storage space: messages, pings, memories, milestones, lists, games, widget
+boards, SOS, invitations, avatars uploaded in that couple, every event except the final
+`couple.unlinked`, and the media (objects first, in the background, then their documents). The couple
+document is kept as a minimal ended record. The purge (`src/modules/couples/purge.ts`) is idempotent; the
+cleanup worker re-runs it for 7 days, retries failed storage deletes and then drops the retained
+`couple.unlinked` event (which the ex-partner can read via `GET /events` / WebSocket sync until then).
+Details: `docs/DATA_MODEL.md` → "Unlink purge", `../docs/API.md` → "Unlink purge".
+
 ## Deployment recommendation
 
 Run as **one long-running container** (Fly.io, Railway, Render, or a small VPS) with MongoDB Atlas
@@ -197,3 +208,6 @@ the invitation attempt limiter are in-process (D-04 known limit). Set `NODE_ENV=
   (no `GET /events`/sync replay, no FCM push). Boot logs name the affected types; grant `dbAdmin`
   and restart once to fix (the new validator uses a pattern, so later types won't need this).
 - The list write limiter (per user) is in-process, like the other limiters.
+- Unlink purge: an upload whose presigned PUT (10 min) lands *after* the unlink leaves an orphan object
+  in the bucket (its media document is already gone, so nothing can reference or clean it). Couples
+  ended before the purge existed are not retro-purged.

@@ -72,21 +72,30 @@ class EventSyncManager @Inject constructor(
         if (sessionStore.current() == null) return AppResult.Success(emptyList())
         val collected = mutableListOf<Incoming>()
         var since = sessionStore.lastEventSeq.first()
-        var changed = false
-        repeat(10) {
+        // At most 10 pages per sync. (This used `repeat` with `return@repeat`, which only skips to the
+        // next pass, so every sync made 10 requests even when it had already caught up.)
+        for (pageNo in 0 until 10) {
             val page = when (val r = apiCall { api.events(since = since, limit = 200) }) {
                 is AppResult.Success -> r.value
                 is AppResult.Failure -> return r
             }
-            if (page.items.isEmpty()) return@repeat
+            if (page.items.isEmpty()) break
             for (e in page.items) {
                 collected += applyMutex.withLock { reducer.apply(e) }
-                changed = true
             }
             since = page.items.maxOf { it.seq }
-            if (since >= page.latestSeq) return@repeat
+            if (since >= page.latestSeq) break
         }
-        if (changed) widgetSnapshotUpdater.recompute()
+        // Recompute even when nothing new arrived: the countdown's "days left" moves at midnight,
+        // and an app update may change what the widgets derive from the same data.
+        widgetSnapshotUpdater.recompute()
+        // Open on screen but the event came by push or catch-up sync (not the socket): the
+        // notification is suppressed in the foreground, so buzz and reveal it in the app instead.
+        if (androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            val freshPing = collected.filterIsInstance<Incoming.NewPing>().any { java.time.Duration.between(it.ping.createdAt, java.time.Instant.now()).seconds < 60 }
+            if (freshPing) haptics.arrival()
+            collected.forEach { _incoming.tryEmit(it) }
+        }
         return AppResult.Success(collected)
     }
 }

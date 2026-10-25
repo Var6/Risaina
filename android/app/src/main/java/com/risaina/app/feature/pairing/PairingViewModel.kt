@@ -66,7 +66,7 @@ class PairingViewModel @Inject constructor(
         }
     }
 
-    fun onCode(v: String) = local.update { it.copy(codeInput = v.uppercase().filter { c -> c.isLetterOrDigit() }.take(10), error = null) }
+    fun onCode(v: String) = local.update { it.copy(codeInput = PairingCode.extract(v), error = null) }
 
     fun join() {
         val code = state.value.codeInput
@@ -95,5 +95,27 @@ class PairingViewModel @Inject constructor(
         is AppError.Offline -> "You're offline."
         is AppError.Validation -> message ?: "Check the code"
         else -> "Something went wrong. Try again."
+    }
+}
+
+
+/**
+ * Pulls the 10-character code out of whatever was typed or pasted. People often paste the whole
+ * share message ("Join me on Risaina… use: ABCDE12345"); taking the first 10 letters of that gave
+ * "JOINMEONRI" and a confusing "couldn't find that code".
+ */
+object PairingCode {
+    private val token = Regex("(?<![0-9A-Z])[0-9A-HJKMNP-TV-Z]{10}(?![0-9A-Z])")
+
+    fun extract(input: String): String {
+        val up = input.uppercase()
+        // A pasted message: prefer the token after "USE:", else the last standalone 10-char code.
+        if (up.length > 14) {
+            val afterUse = up.substringAfterLast("USE:", "")
+            token.find(afterUse)?.let { return it.value }
+            token.findAll(up).lastOrNull()?.let { return it.value }
+        }
+        // Typed by hand, possibly with spaces or dashes.
+        return up.filter { it.isLetterOrDigit() }.take(10)
     }
 }

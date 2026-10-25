@@ -40,6 +40,17 @@ data class WidgetSnapshot(
     val latestGiftEmoji: String? = null,
     val latestGiftLine: String? = null,
     val latestGiftAtMillis: Long? = null,
+    /** The partner's newest ping, for the "they reached out" state on the ping widget and lock card. */
+    val latestPingEmoji: String? = null,
+    val latestPingLine: String? = null,
+    val latestPingAtMillis: Long? = null,
+    /** True until this phone opens Risaina (or replies) after the ping arrived: widgets light up. */
+    val pingUnseen: Boolean = false,
+    val giftUnseen: Boolean = false,
+    /** For the all-in-one widget: the newest thing from the partner ("ping", "gift", "note", "photo", "voice"). */
+    val latestKind: String? = null,
+    val latestAtMillis: Long? = null,
+    val latestUnseen: Boolean = false,
 )
 
 @Singleton
@@ -63,6 +74,16 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
         val giftEmoji = stringPreferencesKey("gift_emoji")
         val giftLine = stringPreferencesKey("gift_line")
         val giftAt = longPreferencesKey("gift_at")
+        val pingEmoji = stringPreferencesKey("ping_emoji")
+        val pingLine = stringPreferencesKey("ping_line")
+        val pingAt = longPreferencesKey("ping_at")
+        val pingUnseen = stringPreferencesKey("ping_unseen")
+        val giftUnseen = stringPreferencesKey("gift_unseen")
+        val latestKind = stringPreferencesKey("latest_kind")
+        val latestAt = longPreferencesKey("latest_at")
+        val latestUnseen = stringPreferencesKey("latest_unseen")
+        /** Everything the partner sent before this instant counts as seen on this phone. */
+        val seenUntil = longPreferencesKey("seen_until")
     }
 
     val snapshot: Flow<WidgetSnapshot> = context.widgetDataStore.data.map { p ->
@@ -85,6 +106,14 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
             latestGiftEmoji = p[K.giftEmoji],
             latestGiftLine = p[K.giftLine],
             latestGiftAtMillis = p[K.giftAt],
+            latestPingEmoji = p[K.pingEmoji],
+            latestPingLine = p[K.pingLine],
+            latestPingAtMillis = p[K.pingAt],
+            pingUnseen = p[K.pingUnseen] == "1",
+            giftUnseen = p[K.giftUnseen] == "1",
+            latestKind = p[K.latestKind],
+            latestAtMillis = p[K.latestAt],
+            latestUnseen = p[K.latestUnseen] == "1",
         )
     }
 
@@ -103,8 +132,15 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
             put(K.voiceId, s.latestVoiceNoteId); putL(K.voiceDuration, s.latestVoiceDurationMs); putL(K.voiceAt, s.latestVoiceAtMillis)
             put(K.paired, if (s.paired) "1" else "0")
             put(K.giftEmoji, s.latestGiftEmoji); put(K.giftLine, s.latestGiftLine); putL(K.giftAt, s.latestGiftAtMillis)
+            put(K.pingEmoji, s.latestPingEmoji); put(K.pingLine, s.latestPingLine); putL(K.pingAt, s.latestPingAtMillis)
+            put(K.pingUnseen, if (s.pingUnseen) "1" else "0"); put(K.giftUnseen, if (s.giftUnseen) "1" else "0")
+            put(K.latestKind, s.latestKind); putL(K.latestAt, s.latestAtMillis); put(K.latestUnseen, if (s.latestUnseen) "1" else "0")
         }
     }
+
+    suspend fun seenUntil(): Long = context.widgetDataStore.data.first()[K.seenUntil] ?: 0L
+
+    suspend fun markSeen(atMillis: Long) { context.widgetDataStore.edit { it[K.seenUntil] = atMillis } }
 
     suspend fun clear() { context.widgetDataStore.edit { it.clear() } }
 }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,11 +49,22 @@ interface WidgetEntryPoint {
     fun snapshotStore(): WidgetSnapshotStore
     fun pingRepository(): com.risaina.app.core.data.PingRepository
     fun haptics(): com.risaina.app.core.notifications.Haptics
+    fun widgetSnapshotUpdater(): com.risaina.app.core.sync.WidgetSnapshotUpdater
 }
 
 fun Context.widgetEntryPoint(): WidgetEntryPoint = EntryPointAccessors.fromApplication(applicationContext, WidgetEntryPoint::class.java)
 
 suspend fun Context.widgetSnapshot(): WidgetSnapshot = widgetEntryPoint().snapshotStore().current()
+
+/**
+ * The snapshot as live state inside a widget's composition. Glance keeps a widget session running
+ * for a while after it draws, and an update that reaches a running session only recomposes it; it
+ * does not call provideGlance again. Reading the store as a Flow here means a second ping that lands
+ * during that window still redraws the widget with the newest data.
+ */
+@Composable
+fun liveSnapshot(store: WidgetSnapshotStore, initial: WidgetSnapshot): WidgetSnapshot =
+    store.snapshot.collectAsState(initial).value
 
 /** Brand colours for widgets, light and dark. */
 object WidgetPalette {
@@ -93,13 +105,20 @@ object WidgetStyles {
     val caption @Composable get() = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp)
     val big @Composable get() = TextStyle(color = GlanceTheme.colors.primary, fontSize = 30.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Serif)
     val emoji @Composable get() = TextStyle(fontSize = 40.sp)
+    /** "● New from <partner>": the small line that marks something the partner just sent. */
+    val badge @Composable get() = TextStyle(color = GlanceTheme.colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
 }
 
-/** Standard widget frame: themed surface with rounded corners and padding. */
+/**
+ * Standard widget frame: themed surface with rounded corners and padding. [highlight] tints it
+ * rose when the partner has just reached out and this phone hasn't opened Risaina since, so the
+ * widget itself works as the "they're missing you" signal on the home screen.
+ */
 @Composable
-fun WidgetFrame(modifier: GlanceModifier = GlanceModifier, content: @Composable () -> Unit) {
+fun WidgetFrame(modifier: GlanceModifier = GlanceModifier, highlight: Boolean = false, content: @Composable () -> Unit) {
     GlanceTheme(colors = WidgetPalette.colors) {
-        Box(modifier.fillMaxSize().background(GlanceTheme.colors.widgetBackground).cornerRadius(22.dp).padding(14.dp)) { content() }
+        val bg = if (highlight) GlanceTheme.colors.primaryContainer else GlanceTheme.colors.widgetBackground
+        Box(modifier.fillMaxSize().background(bg).cornerRadius(22.dp).padding(14.dp)) { content() }
     }
 }
 
@@ -130,6 +149,7 @@ fun loadWidgetBitmap(path: String?): Bitmap? {
 @Singleton
 class GlanceWidgetRefresher @Inject constructor(@ApplicationContext private val context: Context) : WidgetRefresher {
     override suspend fun refreshAll() {
+        UsWidget().updateAll(context)
         PhotoWidget().updateAll(context)
         LoveNoteWidget().updateAll(context)
         TouchPingWidget().updateAll(context)

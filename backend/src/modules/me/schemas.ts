@@ -4,6 +4,7 @@ import {
   Birthday,
   CityInput,
   Couple,
+  Game,
   IdString,
   List,
   Memory,
@@ -74,6 +75,7 @@ export const ExportResponse = z.object({
   milestones: z.array(Milestone),
   lists: z.array(List),
   sos: z.array(Sos),
+  games: z.array(Game).meta({ description: 'Viewer-specific (as GET /games), newest first' }),
   widgetBoards: z
     .array(WidgetBoard)
     .meta({ description: 'Both boards of the couple (authorId tells whose)' }),

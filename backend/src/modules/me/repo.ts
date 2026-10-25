@@ -2,6 +2,7 @@ import type { ObjectId } from 'mongodb';
 import type { Collections } from '../../db/collections.js';
 import type {
   CoupleDoc,
+  GameDoc,
   ListDoc,
   MediaDoc,
   MemoryDoc,
@@ -132,6 +133,10 @@ export class MeRepo {
 
   sos(coupleId: ObjectId, limit: number): Promise<SosDoc[]> {
     return this.db.sos.find({ coupleId }).sort({ createdAt: -1 }).limit(limit).toArray();
+  }
+
+  games(coupleId: ObjectId, limit: number): Promise<GameDoc[]> {
+    return this.db.games.find({ coupleId }).sort({ createdAt: -1 }).limit(limit).toArray();
   }
 
   widgetBoards(coupleId: ObjectId): Promise<WidgetBoardDoc[]> {

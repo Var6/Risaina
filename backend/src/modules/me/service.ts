@@ -9,6 +9,7 @@ import { AuthService } from '../auth/service.js';
 import { CoupleService } from '../couples/service.js';
 import {
   toCoupleDto,
+  toGameDto,
   toListDto,
   toMemoryDto,
   toMessageDto,
@@ -119,7 +120,8 @@ export class MeService {
 
   /**
    * DELETE /me: verifies the password (or, for accounts without one, `confirm: "DELETE"`), revokes
-   * sessions + devices, ends the couple, schedules media deletion.
+   * sessions + devices, ends the couple (which purges all of its data and media, see
+   * CoupleService.endCouple) and schedules deletion of any other media the user still owns.
    */
   async deleteAccount(userId: string, proof: { password?: string; confirm?: 'DELETE' }): Promise<void> {
     const user = await this.mustUser(userId);
@@ -151,7 +153,7 @@ export class MeService {
     const user = await this.mustUser(userId);
     const couple = user.activeCoupleId ? await this.repo.findCouple(user.activeCoupleId) : null;
     const coupleId = couple?._id;
-    const [pings, messages, memories, milestones, lists, boards, sos] = coupleId
+    const [pings, messages, memories, milestones, lists, boards, sos, games] = coupleId
       ? await Promise.all([
           this.repo.pings(coupleId, EXPORT_LIMIT),
           this.repo.messages(coupleId, EXPORT_LIMIT),
@@ -160,8 +162,9 @@ export class MeService {
           this.repo.lists(coupleId, EXPORT_LIMIT),
           this.repo.widgetBoards(coupleId),
           this.repo.sos(coupleId, EXPORT_LIMIT),
+          this.repo.games(coupleId, EXPORT_LIMIT),
         ])
-      : [[], [], [], [], [], [], []];
+      : [[], [], [], [], [], [], [], []];
     return {
       exportedAt: this.ctx.now().toISOString(),
       user: toUserDto(user),
@@ -173,8 +176,11 @@ export class MeService {
       milestones: milestones.map(toMilestoneDto),
       lists: lists.map(toListDto),
       sos: sos.map(toSosDto),
+      games: games.map((g) => toGameDto(g, userId)),
       widgetBoards: boards.map(toWidgetBoardDto),
-      truncated: [pings, messages, memories, milestones, lists, sos].some((l) => l.length >= EXPORT_LIMIT),
+      truncated: [pings, messages, memories, milestones, lists, sos, games].some(
+        (l) => l.length >= EXPORT_LIMIT,
+      ),
     };
   }
 }

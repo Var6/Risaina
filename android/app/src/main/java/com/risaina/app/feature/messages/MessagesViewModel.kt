@@ -50,7 +50,10 @@ data class MessagesUiState(
     val playback: PlaybackState = PlaybackState(),
     val socket: SocketState = SocketState.DISCONNECTED,
     val wallpaper: String = "DEFAULT",
-    val wallpaperPhoto: File? = null,
+    /** Shared wallpaper photo (media id); loaded via the shared media cache. */
+    val wallpaperMediaId: String? = null,
+    val games: List<com.risaina.app.core.network.GameDto> = emptyList(),
+    val wallpaperBusy: Boolean = false,
 )
 
 private data class Local(
@@ -72,10 +75,11 @@ class MessagesViewModel @Inject constructor(
     val recorder: VoiceRecorder,
     val player: VoicePlaybackController,
     private val preferencesStore: com.risaina.app.core.datastore.PreferencesStore,
+    gameRepo: com.risaina.app.core.data.GameRepository,
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
-    private val wallpaperFile get() = File(appContext.filesDir, "chat_wallpaper.jpg")
-    private val wallpaperVersion = MutableStateFlow(0)
+    private val wallpaperBusy = MutableStateFlow(false)
+    private val gameRepository = gameRepo
 
     private val local = MutableStateFlow(Local())
     private val effects = Channel<String>(Channel.BUFFERED)
@@ -84,40 +88,76 @@ class MessagesViewModel @Inject constructor(
     val state: StateFlow<MessagesUiState> = combine(
         messageRepository.recent(300), sessionStore.session, coupleRepository.partner, local,
         combine(recorder.state, player.state, syncManager.socketState) { r, p, s -> Triple(r, p, s) },
-        preferencesStore.preferences, wallpaperVersion,
+        coupleRepository.couple, combine(gameRepo.games, wallpaperBusy) { g, b -> g to b },
     ) { arr ->
         @Suppress("UNCHECKED_CAST") val messages = arr[0] as List<Message>
         val session = arr[1] as com.risaina.app.core.model.Session?
         val partner = arr[2] as Partner?
         val l = arr[3] as Local
         @Suppress("UNCHECKED_CAST") val (rec, play, socket) = arr[4] as Triple<VoiceRecorder.State, PlaybackState, SocketState>
-        val prefs = arr[5] as com.risaina.app.core.model.Preferences
+        val couple = arr[5] as com.risaina.app.core.model.Couple?
+        @Suppress("UNCHECKED_CAST") val (games, wpBusy) = arr[6] as Pair<List<com.risaina.app.core.network.GameDto>, Boolean>
         MessagesUiState(
             messages = messages, myId = session?.userId, partner = partner,
             composer = l.composer, sendingMedia = l.sendingMedia, canLoadMore = l.canLoadMore, loadingMore = l.loadingMore,
             showRecorder = l.showRecorder, recorder = rec, playback = play, socket = socket,
-            wallpaper = prefs.chatWallpaper, wallpaperPhoto = wallpaperFile.takeIf { it.exists() },
+            wallpaper = couple?.chatWallpaperStyle ?: "DEFAULT", wallpaperMediaId = couple?.chatWallpaperMediaId,
+            games = games, wallpaperBusy = wpBusy,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MessagesUiState())
 
-    init { viewModelScope.launch { messageRepository.refresh() } }
+    init { viewModelScope.launch { messageRepository.refresh() }; viewModelScope.launch { gameRepository.refresh() } }
 
     fun onComposer(v: String) = local.update { it.copy(composer = v) }
 
-    fun setWallpaper(style: String) { viewModelScope.launch { preferencesStore.update { it.copy(chatWallpaper = style) } } }
-
-    /** Copies a downscaled version into private storage so the background survives the photo being deleted. */
-    fun setWallpaperPhoto(uri: Uri) {
+    /** Shared with the partner: both chats change. */
+    fun setWallpaper(style: String) {
         viewModelScope.launch {
-            runCatching {
-                val c = imageCompressor.compress(uri, maxEdge = 1600, quality = 80)
-                c.file.copyTo(wallpaperFile, overwrite = true); c.file.delete()
-            }.onSuccess {
-                preferencesStore.update { it.copy(chatWallpaper = "PHOTO") }
-                wallpaperVersion.value++
-            }.onFailure { effects.trySend("Couldn't use that photo") }
+            wallpaperBusy.value = true
+            coupleRepository.setChatWallpaper(if (style == "DEFAULT") null else style)
+                .onSuccess { effects.trySend("Chat wallpaper changed for both of you") }
+                .onFailure { effects.trySend(it.message ?: "Couldn't change the wallpaper") }
+            wallpaperBusy.value = false
         }
     }
+
+    fun setWallpaperPhoto(uri: Uri) {
+        viewModelScope.launch {
+            wallpaperBusy.value = true
+            try {
+                val c = imageCompressor.compress(uri, maxEdge = 1600, quality = 82)
+                when (val up = mediaRepository.upload(com.risaina.app.core.model.MediaCategory.WALLPAPER, c.file, c.mimeType, width = c.width, height = c.height)) {
+                    is AppResult.Success -> coupleRepository.setChatWallpaper("PHOTO", up.value.id)
+                        .onSuccess { effects.trySend("Chat wallpaper changed for both of you") }
+                        .onFailure { effects.trySend(it.message ?: "Couldn't change the wallpaper") }
+                    is AppResult.Failure -> effects.trySend(up.error.message ?: "Upload failed")
+                }
+                c.file.delete()
+            } catch (e: Exception) { effects.trySend("Couldn't use that photo") }
+            wallpaperBusy.value = false
+        }
+    }
+
+    // ---- rock–paper–scissors ----
+    fun startGame() {
+        viewModelScope.launch {
+            when (val r = gameRepository.start()) {
+                is AppResult.Success -> Unit
+                is AppResult.Failure -> effects.trySend(
+                    if ((r.error as? com.risaina.app.core.common.AppError.Conflict)?.code == "game_in_progress") "Finish the current game first ✊✋✌️" else r.error.message ?: "Couldn't start a game",
+                )
+            }
+        }
+    }
+    fun gameMove(id: String, move: String) { viewModelScope.launch { gameRepository.move(id, move).onFailure { effects.trySend(it.message ?: "Couldn't play") } } }
+    fun gameRematch(id: String) { viewModelScope.launch { gameRepository.rematch(id).onFailure { effects.trySend(it.message ?: "Couldn't start a rematch") } } }
+    fun gameChallenge(id: String, truth: String, dare: String) { viewModelScope.launch { gameRepository.challenge(id, truth, dare).onFailure { effects.trySend(it.message ?: "Couldn't send") } } }
+    fun gameChoose(id: String, kind: String) { viewModelScope.launch { gameRepository.choose(id, kind).onFailure { effects.trySend(it.message ?: "Couldn't choose") } } }
+    fun gameConfirm(id: String) { viewModelScope.launch { gameRepository.confirm(id).onFailure { effects.trySend(it.message ?: "Couldn't confirm") } } }
+    fun gameReject(id: String, note: String?) { viewModelScope.launch { gameRepository.reject(id, note).onFailure { effects.trySend(it.message ?: "Couldn't send") } } }
+    fun gameComplete(id: String, answer: String?) { viewModelScope.launch { gameRepository.complete(id, answer).onFailure { effects.trySend(it.message ?: "Couldn't mark done") } } }
+    fun gameCancel(id: String) { viewModelScope.launch { gameRepository.cancel(id) } }
+    suspend fun gameSuggestions() = gameRepository.suggestions()
 
     fun send() {
         val text = local.value.composer.trim()

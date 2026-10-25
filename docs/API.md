@@ -58,7 +58,7 @@ Event      { id, coupleId, seq: number, type: string, actorId, payload: object, 
 | PATCH | `/me` | `{ displayName?, avatarMediaId? }` | `{ user }` |
 | GET | `/me/preferences` | | `{ preferences }` |
 | PUT | `/me/preferences` | `Preferences` (partial allowed) | `{ preferences }` |
-| DELETE | `/me` | `{ password }` | `204` — cascades: sessions, devices, couple ended, own media deleted |
+| DELETE | `/me` | `{ password }` | `204` — cascades: sessions, devices, couple ended **and purged** (see "Unlink purge"), own media deleted |
 | GET | `/me/export` | | `{ user, couple, pings, messages, memories, milestones }` (bounded) |
 
 ## Pairing
@@ -71,7 +71,7 @@ Event      { id, coupleId, seq: number, type: string, actorId, payload: object, 
 | POST | `/invitations/accept` | `{ code }` | `200 { couple, partner }` — 410 `invitation_expired`, 409 `invitation_used`/`already_paired` |
 | GET | `/couple` | | `{ couple, partner }` |
 | PATCH | `/couple` | `{ relationshipStartDate?, nextMeetingDate?, nextMeetingLabel?, sharedPreferences? }` | `{ couple }` |
-| POST | `/couple/unlink` | `{ confirm: true }` | `204` — couple `ended`, both notified, shared media scheduled for deletion |
+| POST | `/couple/unlink` | `{ confirm: true }` | `204` — couple `ended`, both notified, **all couple data and media deleted** (see "Unlink purge") |
 
 ## Devices
 
@@ -133,7 +133,7 @@ and ≤ 180 s (`audio/mp4|audio/aac|audio/ogg`), avatar ≤ 3 MB, wallpaper ≤ 
 
 | Method | Path | | |
 |---|---|---|---|
-| GET | `/events` | `?since=<seq>&limit=200` | `{ items: Event[], latestSeq }` |
+| GET | `/events` | `?since=<seq>&limit=200` | `{ items: Event[], latestSeq }` (after an unlink: see "Unlink purge") |
 | WS | `/ws` | see below | |
 
 WebSocket protocol:
@@ -517,3 +517,194 @@ WebSocket only (not stored, no replay, no push); the HTTP request still succeeds
 the dotted-name pattern and accept them.
 
 New error codes: `view_once` (403), `view_once_consumed` (410), `view_once_expired` (410).
+
+## Games (rock–paper–scissors with truth or dare) and shared chat wallpaper
+
+Additive. All routes: Bearer + active couple (`409 not_paired` otherwise).
+
+### Why games are not chat messages
+
+The `messages` collection validator has had a strict `type: { enum: ['text','emoji','photo','voice'] }`
+since v1. The production DB user cannot run `collMod`, so the stored validator on the live database would
+reject `type: 'game'`. Games therefore live in their own `games` collection (new collections get the new
+validator via `createCollection`, which readWrite allows) and **messages are untouched**. Clients render
+games inside the chat by merging `GET /games` (and `game.updated` events) into the message timeline by
+`createdAt` (a game's card can then update in place by `id`).
+
+### Shapes
+
+```ts
+RpsMove = 'rock'|'paper'|'scissors'|'thread'
+GameStatus = 'waiting'|'draw'|'revealed'|'challenged'|'chosen'|'awaiting_confirmation'|'completed'|'cancelled'
+
+// HTTP responses: viewer-specific
+Game { id, coupleId, kind: 'rps', createdBy, createdAt, updatedAt,
+       status: GameStatus,
+       myMove: RpsMove|null,          // my move in the current round
+       partnerMoved: boolean,         // partner has moved in the current round
+       partnerMove: RpsMove|null,     // null until BOTH moved this round (never revealed by cancel)
+       winnerId: string|null, loserId: string|null,   // set when status reaches 'revealed'
+       challenge: GameChallenge | null,               // null until the winner sets it
+       answer: string|null,           // the loser's answer; null before 'awaiting_confirmation'
+       completedAt: string|null,      // set by confirm
+       round: number /* ≥ 1, +1 per rematch */ }
+
+GameChallenge {                       // viewer-specific, see "Blind visibility"
+  truth: string|null,                 // winner: always; loser: only after choosing 'truth'
+  dare: string|null,                  // winner: always; loser: only after choosing 'dare'
+  chosen: 'truth'|'dare'|null,        // the loser's blind pick
+  by: string,                         // the winner (who wrote both)
+  at: string,                         // when the challenge was set
+  chosenAt: string|null,
+  doneAt: string|null,                // last complete; cleared by a reject
+  confirmedAt: string|null,           // winner confirmed (status completed)
+  rejectNote: string|null }           // winner's note on the last reject; cleared by the next complete
+
+// game.updated payload: viewer-neutral, NEVER contains truth/dare texts or the answer
+GameEventView { id, coupleId, kind, createdBy, createdAt, updatedAt, status,
+                movedBy: string[],                            // user ids that moved this round (order of moving)
+                moves: { userId: string, move: RpsMove }[] | null,   // both moves once both moved, else null
+                winnerId, loserId, completedAt, round,        // same as Game
+                challenge: { chosen: 'truth'|'dare'|null, hasChallenge: true,
+                             chosenAt: string|null, doneAt: string|null, confirmedAt: string|null } | null }
+                // no `answer` key
+```
+
+To get the viewer view from an event: `myMove`/`partnerMove` = `moves?.find(userId == me / != me)?.move`
+(null while `moves` is null); `partnerMoved` = `movedBy` contains the partner. The texts and the answer are
+only in HTTP responses: on any `game.updated` whose `challenge` is non-null, **re-fetch `GET /games/:id`**.
+
+### Blind visibility
+
+Enforced server-side in every HTTP response (`GET /games/:id`, `GET /games`, write responses, `details.game`
+of errors, `GET /me/export`):
+
+| Viewer | `challenge.truth` / `challenge.dare` | `answer` |
+|---|---|---|
+| winner | both texts, always | from `awaiting_confirmation` on |
+| loser, before `choose` | both `null` | `null` |
+| loser, after `choose` | only the chosen text; the other stays `null` forever (also after completion or cancel) | from `awaiting_confirmation` on |
+
+`answer` is shown (to both) in `awaiting_confirmation` and `completed`, and in `cancelled` if the game was
+cancelled while awaiting confirmation; a reject clears it.
+
+### Lifecycle
+
+```
+waiting ──both moved──▶ draw ──rematch──▶ waiting (round + 1, moves cleared)
+        └─────────────▶ revealed ──challenge (winner: truth + dare)──▶ challenged
+challenged ──choose (loser, blind)──▶ chosen ──complete (loser)──▶ awaiting_confirmation
+awaiting_confirmation ──confirm (winner)──▶ completed
+awaiting_confirmation ──reject (winner, optional note)──▶ chosen   (answer cleared, doneAt cleared)
+any status except completed ──cancel (either)──▶ cancelled
+```
+
+Rock beats scissors, scissors beat paper and thread, paper beats rock, thread beats rock and paper. At most
+one **open** game (status not `completed`/`cancelled`) per couple.
+
+### Endpoints
+
+| Method | Path | Body | Success | Who / when |
+|---|---|---|---|---|
+| GET | `/games/suggestions` | | `200 { truths: string[20], dares: string[20] }` | anyone paired |
+| POST | `/games` | `{ kind: 'rps' }` | `201 { game: Game }` (`status: waiting`, `round: 1`) | no open game in the couple |
+| GET | `/games` | `?limit=1..50` (default 20) | `200 { items: Game[] }` newest first (`createdAt` desc) | |
+| GET | `/games/:id` | | `200 { game: Game }` | |
+| POST | `/games/:id/move` | `{ move: RpsMove }` | `200 { game: Game }` | either player, status `waiting`, once per round |
+| POST | `/games/:id/rematch` | (none) | `200 { game: Game }` | either player, status `draw` |
+| POST | `/games/:id/challenge` | `{ truth: string, dare: string }` (each trimmed, 1–200) | `200 { game: Game }` (`challenged`) | **winner**, status `revealed` |
+| POST | `/games/:id/choose` | `{ kind: 'truth'\|'dare' }` | `200 { game: Game }` (`chosen`) | **loser**, status `challenged` |
+| POST | `/games/:id/complete` | optional: none, `{}` or `{ answer?: string }` (trimmed ≤ 500; `''` ⇒ null) | `200 { game: Game }` (`awaiting_confirmation`) | **loser**, status `chosen`; chosen `truth` ⇒ non-empty `answer` required (400 otherwise); for a dare it is optional |
+| POST | `/games/:id/confirm` | (none) | `200 { game: Game }` (`completed`, `completedAt` + `challenge.confirmedAt` set) | **winner**, status `awaiting_confirmation` |
+| POST | `/games/:id/reject` | optional: none, `{}` or `{ note?: string }` (trimmed ≤ 200; `''` ⇒ null) | `200 { game: Game }` (back to `chosen`; `answer` and `doneAt` cleared, `rejectNote` set) | **winner**, status `awaiting_confirmation` |
+| POST | `/games/:id/cancel` | (none) | `200 { game: Game }` (`cancelled`) | either player, status ≠ `completed`; idempotent (already cancelled ⇒ 200, no event) |
+
+All bodies are strict (unknown keys ⇒ 400; the old `{ kind, text }` challenge body is rejected). Bodiless
+POSTs must be sent without a JSON `Content-Type` (or with `{}`). Suggestions are ≤ 200 chars, so they can be
+sent as `truth`/`dare` unchanged. A truth answer submitted after a reject must again be non-empty.
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | bad body / `kind` / `move` / text, answer or note length / missing `truth` or `dare` / `complete` of a chosen truth without a non-empty `answer` (`details: [{ path: '/answer' }]`) / `limit`; malformed `:id` |
+| 403 | `forbidden` | right status but wrong player: challenge, confirm, reject by the loser; choose, complete by the winner |
+| 404 | `not_found` | game unknown or in another couple |
+| 409 | `game_in_progress` | `POST /games` while an open game exists; `details.game` = that game (viewer view) |
+| 409 | `already_moved` | second move by the same player in a round; `details.game` = current game |
+| 409 | `invalid_game_state` | action not allowed in the current status (move when not waiting, rematch when not draw, challenge when not revealed, choose when not challenged, complete when not chosen, confirm/reject when not awaiting_confirmation, cancel when completed); `details.game` = current game (viewer view) |
+| 409 | `not_paired` | no active couple |
+| 429 | `rate_limited` | more than 30 game writes per user per minute (`RATE_LIMIT_GAME_WRITES_PER_MIN`; all POSTs above except suggestions share it), `Retry-After` |
+
+Status is checked before the role, so e.g. the winner calling `complete` on a `revealed` game gets
+`409 invalid_game_state`, and on a `chosen` game gets `403 forbidden`.
+
+### Event
+
+| Event type | `payload` |
+|---|---|
+| `game.updated` | `{ game: GameEventView, action: 'created'\|'moved'\|'revealed'\|'draw'\|'rematch'\|'challenged'\|'chosen'\|'done'\|'confirmed'\|'rejected'\|'cancelled' }` |
+
+Emitted once per successful write (actor = caller): `challenge` ⇒ `'challenged'`, `choose` ⇒ `'chosen'`,
+`complete` ⇒ `'done'`, `confirm` ⇒ `'confirmed'`, `reject` ⇒ `'rejected'`. The second move of a round emits
+`'revealed'` or `'draw'` with both `moves`; a first move emits `'moved'` with `moves: null` and only
+`movedBy`. A move is never present in any payload (event, `GET /events`, WebSocket, push) before both
+players moved, and the truth/dare texts, the answer and the reject note are never present in any event at
+all. Push goes through the normal outbox to the other member, subject to `notificationsEnabled` and quiet
+hours (push data is the usual `{ type, eventId, coupleId, seq }`). (If two moves race, both requests
+succeed and the later event may also say `'moved'` while already carrying the revealed state: render from
+`status`.)
+
+`GET /me/export` adds `games: Game[]` (viewer-specific, newest first, bounded to 1000, counted in `truncated`).
+
+### Shared chat wallpaper
+
+```ts
+Couple.sharedPreferences = { ...flat client keys (string|number|boolean),
+                             chatWallpaper: ChatWallpaper | null }     // always present; null = app default
+ChatWallpaper { style: 'DEFAULT'|'PAPER'|'HEARTS'|'NIGHT'|'GLOW'|'PHOTO',
+                photoMediaId: string|null,    // non-null only for PHOTO
+                setBy: string, setAt: string }
+```
+
+`PATCH /couple` additionally accepts `chatWallpaper: { style, photoMediaId? } | null` (either member;
+`null` resets to the default; strict object):
+
+- `style: 'PHOTO'` requires `photoMediaId`: a **ready** media of the same couple, category `photo` or
+  `wallpaper`, not view-once (either partner's upload). Other styles must omit it or send `null`.
+- Errors: `400 validation_failed` (unknown style, PHOTO without id, id with a non-PHOTO style, media unknown /
+  not ready / wrong category / view-once), `403 forbidden` (media of another couple) — same rules as the
+  widget-board photo.
+- Both members download the photo with `GET /media/:id/url`.
+- Emits `couple.updated { couple: Couple }` (as every `PATCH /couple`).
+- `PATCH /couple { sharedPreferences }` still replaces the flat map and keeps the wallpaper; a
+  `chatWallpaper` key inside `sharedPreferences` is ignored, so clients may echo the map back as received.
+- Like widget photos, the wallpaper is not cleared if its media is later deleted; `GET /media/:id/url`
+  then answers `409 media_not_ready` — fall back to `DEFAULT`.
+
+New error codes: `game_in_progress` (409), `already_moved` (409), `invalid_game_state` (409).
+
+## Unlink purge
+
+`POST /couple/unlink { confirm: true }` and `DELETE /me` (for a paired user) end the couple and **delete
+everything it created**. The response is still `204`; nothing can be recovered afterwards (offer
+`GET /me/export` before unlinking).
+
+- Deleted at once: messages, pings, memories, milestones, lists, games, widget boards, SOS alerts,
+  invitations of the couple, and every event of the couple **except** the final `couple.unlinked`.
+- Media: all of the couple's media becomes unavailable at once; storage objects and then their media
+  records are deleted in the background (failures are retried by the cleanup worker). Both members'
+  `avatarMediaId` is cleared when the avatar was uploaded in this couple (avatars live under the couple's
+  storage prefix); the partner receives no `partner.updated` for this (the couple is gone).
+- The couple record is reduced to `status: 'ended'`, `memberIds`, `endedAt`, `endedBy`;
+  `relationshipStartDate`, `nextMeetingDate`, `nextMeetingLabel` become `null`, `sharedPreferences` `{}`
+  and the chat wallpaper is removed.
+- `couple.unlinked { coupleId, endedAt, by }` is still delivered to the partner: live over the WebSocket
+  (followed by `{ type: 'revoked' }` + close 4403) and as a push through the outbox.
+- For **7 days** after the unlink, a former member who has not paired again can still read that one event:
+  `GET /events?since=<seq>` answers `200 { items: [couple.unlinked] (if seq > since), latestSeq }` (instead
+  of `409 not_paired`), and on the WebSocket (`ready.coupleId` is `null`) a `sync` replays it before
+  `synced`. Only `couple.unlinked` is ever returned for the ended couple. After 7 days the event is deleted
+  and `GET /events` is `409 not_paired` again. Once paired again, the feed is the new couple's.
+- Re-pairing works as usual with a fresh invitation; the new couple starts empty (new `coupleId`, `seq`
+  from 1).
+- Idempotent: a second unlink is `409 not_paired`; the server re-runs the purge for 7 days to remove
+  anything written concurrently with the unlink.

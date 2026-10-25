@@ -137,8 +137,17 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         }
     }
 
+    /**
+     * Event numbers start at 0 for every couple, so pairing with a different couple must restart
+     * the cursor; otherwise the new couple's first events look "already applied" and are skipped.
+     * Unlinking keeps the cursor, so the old couple's `couple.unlinked` is not replayed.
+     */
     suspend fun setActiveCoupleId(id: String?) {
-        context.sessionDataStore.edit { p -> if (id == null) p.remove(Keys.activeCoupleId) else p[Keys.activeCoupleId] = id }
+        context.sessionDataStore.edit { p ->
+            if (id == null) { p.remove(Keys.activeCoupleId); return@edit }
+            if (p[Keys.activeCoupleId] != id) p[Keys.lastEventSeq] = 0L
+            p[Keys.activeCoupleId] = id
+        }
     }
 
     suspend fun setLastPingSentAt(at: Instant) {

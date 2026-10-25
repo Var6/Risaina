@@ -9,18 +9,14 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import com.risaina.app.app.AppViewModel
 import com.risaina.app.app.RisainaAppUi
 import com.risaina.app.core.designsystem.theme.RisainaTheme
 import com.risaina.app.core.model.DarkMode
-import com.risaina.app.core.sync.EventSyncManager
 import com.risaina.app.core.sync.SyncWorker
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -28,7 +24,6 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     private val appViewModel: AppViewModel by viewModels()
-    @Inject lateinit var syncManager: EventSyncManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -36,15 +31,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         splash.setKeepOnScreenCondition { appViewModel.uiState.value.loading }
 
-        // Foreground-only realtime connection: opened when STARTED, closed when STOPPED.
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                syncManager.start(this)
-                SyncWorker.enqueueSilent(applicationContext)
-                try { awaitCancellation() } finally { syncManager.stop() }
-            }
-        }
+        // The realtime socket and "seen" marking follow the whole app's foreground state (RisainaApp).
         SyncWorker.schedulePeriodic(applicationContext)
+        // Re-register this phone for push on every start: a sign-out elsewhere or a token change must
+        // never leave a signed-in phone unable to receive pings, SOS or widget updates.
+        lifecycleScope.launch { if (appViewModel.isSignedIn()) com.risaina.app.core.notifications.RegisterDeviceWorker.enqueue(applicationContext) }
         // A link that launched the app is opened by NavHost itself; only later links are forwarded.
 
         setContent {

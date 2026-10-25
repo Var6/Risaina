@@ -22,6 +22,7 @@ import type { AppContext } from './app-context.js';
 import type { Env } from './config/env.js';
 import { getCollections } from './db/collections.js';
 import { AttemptLimiter } from './lib/attempt-limiter.js';
+import { BackgroundTasks } from './lib/background.js';
 import { createLogger } from './lib/logger.js';
 import { type Clock, systemClock } from './lib/time.js';
 import { createGoogleVerifier, type GoogleTokenVerifier } from './modules/auth/google.js';
@@ -30,6 +31,7 @@ import { TokenService } from './modules/auth/tokens.js';
 import { coupleRoutes } from './modules/couples/routes.js';
 import { deviceRoutes } from './modules/devices/routes.js';
 import { eventRoutes } from './modules/events/routes.js';
+import { gameRoutes } from './modules/games/routes.js';
 import { healthRoutes } from './modules/health/routes.js';
 import { invitationRoutes } from './modules/invitations/routes.js';
 import { listRoutes } from './modules/lists/routes.js';
@@ -127,6 +129,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
       env.invitations.acceptWindowMinutes * 60_000,
       now,
     ),
+    background: new BackgroundTasks(logger),
     now,
     logger,
     version: opts.version ?? readPackageVersion(),
@@ -200,6 +203,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
         { name: 'Lists' },
         { name: 'Widget' },
         { name: 'SOS' },
+        { name: 'Games' },
         { name: 'Events' },
       ],
     },
@@ -238,6 +242,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
       await api.register(listRoutes, ctx);
       await api.register(widgetBoardRoutes, ctx);
       await api.register(sosRoutes, ctx);
+      await api.register(gameRoutes, ctx);
       await api.register(eventRoutes, ctx);
       await api.register(websocketRoutes, ctx);
       if (opts.storage instanceof LocalStorageDriver) {
@@ -261,6 +266,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
 
   app.addHook('onClose', async () => {
     hub.closeAll();
+    await ctx.background.drain(); // let in-flight unlink storage purges finish
   });
 
   return { app, ctx };
