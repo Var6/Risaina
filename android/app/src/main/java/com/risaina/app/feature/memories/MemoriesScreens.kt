@@ -117,7 +117,7 @@ private fun MemoryTile(m: Memory, image: suspend () -> Any?, onClick: () -> Unit
 }
 
 @Composable
-fun MemoryDetailScreen(id: String, onBack: () -> Unit, onWallpaper: (String) -> Unit, vm: MemoriesViewModel = hiltViewModel()) {
+fun MemoryDetailScreen(id: String, onBack: () -> Unit, vm: MemoriesViewModel = hiltViewModel()) {
     val memory by vm.memory(id).collectAsStateWithLifecycle(initialValue = null)
     val s by vm.state.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
@@ -133,7 +133,6 @@ fun MemoryDetailScreen(id: String, onBack: () -> Unit, onWallpaper: (String) -> 
                 actions = {
                     if (m != null) {
                         IconButton(onClick = { vm.setPinned(m, !m.pinned) }) { Icon(PushPinIcon, contentDescription = if (m.pinned) "Unpin" else "Pin as favourite", tint = if (m.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-                        IconButton(onClick = { onWallpaper(m.id) }) { Icon(WallpaperIcon, contentDescription = "Use in Wallpaper Studio") }
                         if (m.createdBy == s.myId) IconButton(onClick = { confirmDelete = true }) { Icon(DeleteIcon, contentDescription = "Delete") }
                     }
                 },

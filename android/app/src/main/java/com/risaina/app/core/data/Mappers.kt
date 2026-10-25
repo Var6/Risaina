@@ -49,9 +49,9 @@ fun Long?.toInstantOrNull(): Instant? = this?.let(Instant::ofEpochMilli)
 
 // ---- users / couple ----
 fun UserDto.toDomain() = User(id, displayName, avatarMediaId, createdAt.toInstant())
-fun PartnerDto.toDomain() = Partner(id, displayName, avatarMediaId, birthday, timeZone)
-fun PartnerDto.toEntity() = PartnerEntity(id, displayName, avatarMediaId, birthday, timeZone)
-fun PartnerEntity.toDomain() = Partner(id, displayName, avatarMediaId, birthday, timeZone)
+fun PartnerDto.toDomain() = Partner(id, displayName, avatarMediaId, birthday, timeZone, city?.let { com.risaina.app.core.model.City(it.name, it.latitude, it.longitude) })
+fun PartnerDto.toEntity() = PartnerEntity(id, displayName, avatarMediaId, birthday, timeZone, city?.name, city?.latitude, city?.longitude)
+fun PartnerEntity.toDomain() = Partner(id, displayName, avatarMediaId, birthday, timeZone, if (cityName != null && cityLat != null && cityLon != null) com.risaina.app.core.model.City(cityName, cityLat, cityLon) else null)
 
 fun CoupleDto.toDomain() = Couple(
     id = id,
@@ -117,6 +117,7 @@ fun MessageDto.toEntity(localMediaPath: String? = null) = MessageEntity(
     type = type, text = text, mediaId = mediaId, createdAt = createdAt.toInstant().toEpochMilli(),
     editedAt = editedAt.toInstantOrNull()?.toEpochMilli(), deletedAt = deletedAt.toInstantOrNull()?.toEpochMilli(),
     readAt = readAt.toInstantOrNull()?.toEpochMilli(), sendState = MessageSendState.SENT.name, localMediaPath = localMediaPath,
+    viewOnce = viewOnce, openedAt = openedAt.toInstantOrNull()?.toEpochMilli(), viewOnceExpired = viewOnceExpired,
 )
 fun MessageEntity.toDomain() = Message(
     id = id, localKey = localKey, coupleId = coupleId, senderId = senderId, recipientId = recipientId,
@@ -124,6 +125,7 @@ fun MessageEntity.toDomain() = Message(
     editedAt = editedAt.toInstantOrNull(), deletedAt = deletedAt.toInstantOrNull(), readAt = readAt.toInstantOrNull(),
     sendState = runCatching { MessageSendState.valueOf(sendState) }.getOrDefault(MessageSendState.SENT),
     localMediaPath = localMediaPath,
+    viewOnce = viewOnce, openedAt = openedAt.toInstantOrNull(), viewOnceExpired = viewOnceExpired,
 )
 
 // ---- media ----

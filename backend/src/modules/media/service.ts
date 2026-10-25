@@ -187,6 +187,9 @@ export class MediaService {
 
   async downloadUrl(couple: CoupleDoc, mediaId: ObjectId): Promise<{ url: string; expiresAt: string }> {
     const media = await this.loadInCouple(couple, mediaId);
+    // Nobody re-fetches a view-once photo: the sender has the local file, the recipient uses
+    // POST /messages/:id/open exactly once.
+    if (media.viewOnce) throw errors.viewOnce();
     if (media.status !== 'ready') throw errors.mediaNotReady();
     const signed = await this.ctx.storage.presignDownload(
       media.storageKey,

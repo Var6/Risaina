@@ -104,6 +104,8 @@ fun VoiceRecorderSheet(
             Spacer(Modifier.height(20.dp))
 
             // Level bars (recording) or progress (preview)
+            val barPlayed = MaterialTheme.colorScheme.primary
+            val barIdle = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
             val progressAnim by animateFloatAsState(if (recorderState is VoiceRecorder.State.Recorded) playback.progress else 0f, label = "progress")
             Canvas(Modifier.fillMaxWidth().height(56.dp)) {
                 val barW = 4.dp.toPx(); val gap = 3.dp.toPx(); val count = 48
@@ -116,7 +118,7 @@ fun VoiceRecorderSheet(
                     val x = startX + i * (barW + gap) + barW / 2
                     val played = recorded && (i.toFloat() / count) <= progressAnim
                     drawLine(
-                        color = if (played) Risaina_Primary else Risaina_Muted,
+                        color = if (played) barPlayed else barIdle,
                         start = Offset(x, size.height / 2 - h / 2), end = Offset(x, size.height / 2 + h / 2),
                         strokeWidth = barW, cap = StrokeCap.Round,
                     )
@@ -163,7 +165,3 @@ fun VoiceRecorderSheet(
         }
     }
 }
-
-// Canvas cannot read MaterialTheme inside draw scope; capture outside via these composable-free helpers.
-private val Risaina_Primary get() = com.risaina.app.core.designsystem.theme.Palette.Rosewood
-private val Risaina_Muted get() = com.risaina.app.core.designsystem.theme.Palette.Rosewood.copy(alpha = 0.3f)

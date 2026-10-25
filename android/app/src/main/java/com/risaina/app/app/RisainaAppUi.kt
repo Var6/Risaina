@@ -38,6 +38,7 @@ import com.risaina.app.navigation.SignIn
 import com.risaina.app.navigation.SignUp
 import com.risaina.app.navigation.Welcome
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 val LocalSnackbar = compositionLocalOf<SnackbarHostState> { error("no snackbar host") }
 
@@ -58,9 +59,14 @@ fun RisainaAppUi(state: AppUiState, deepLinks: Flow<android.net.Uri>) {
         navController.resetToGate(state.gate)
     }
 
+    // rememberUpdatedState: the collector lives for the whole session, so it must read the
+    // current gate, not the one from first composition (which was LOADING, dropping every link).
+    val currentGate by androidx.compose.runtime.rememberUpdatedState(state.gate)
     LaunchedEffect(Unit) {
         deepLinks.collect { uri ->
-            if (state.gate == Gate.HOME) {
+            // Wait until the user is on the paired part of the app, then navigate.
+            androidx.compose.runtime.snapshotFlow { currentGate }.first { it == Gate.HOME }
+            run {
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
                 navController.handleDeepLink(intent)
             }

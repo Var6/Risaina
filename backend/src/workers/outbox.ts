@@ -1,10 +1,13 @@
 import type { ObjectId } from 'mongodb';
 import type { Logger } from 'pino';
 import type { Collections } from '../db/collections.js';
-import type { EventDoc } from '../db/types.js';
+import type { EventDoc, EventType } from '../db/types.js';
 import { isInQuietHours } from '../lib/quiet-hours.js';
 import type { Clock } from '../lib/time.js';
 import type { PushService } from '../services/push/types.js';
+
+/** Event types pushed regardless of the recipient's notificationsEnabled / quiet hours. */
+export const BYPASS_PREFERENCES: ReadonlySet<EventType> = new Set<EventType>(['sos.raised']);
 
 export interface OutboxOptions {
   pollMs: number;
@@ -118,10 +121,14 @@ export class OutboxWorker {
       { projection: { preferences: 1, deletedAt: 1 } },
     );
     if (!recipient || recipient.deletedAt) return { state: 'skipped', reason: 'recipient_missing' };
-    const prefs = recipient.preferences;
-    if (!prefs.notificationsEnabled) return { state: 'skipped', reason: 'notifications_disabled' };
-    if (!prefs.allowPushInQuietHours && isInQuietHours(prefs.quietHours, this.now())) {
-      return { state: 'skipped', reason: 'quiet_hours' };
+    // An SOS must always reach the partner: it bypasses the notification and quiet-hours preferences
+    // (push_disabled, recipient_missing and no_tokens still apply).
+    if (!BYPASS_PREFERENCES.has(event.type)) {
+      const prefs = recipient.preferences;
+      if (!prefs.notificationsEnabled) return { state: 'skipped', reason: 'notifications_disabled' };
+      if (!prefs.allowPushInQuietHours && isInQuietHours(prefs.quietHours, this.now())) {
+        return { state: 'skipped', reason: 'quiet_hours' };
+      }
     }
 
     const tokens = await this.tokensFor(recipientId);

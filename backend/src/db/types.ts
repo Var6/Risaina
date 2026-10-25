@@ -35,6 +35,13 @@ export const DEFAULT_PREFERENCES: Preferences = {
   reducedMotion: false,
 };
 
+/** A user's city for the partner's weather widget. Coordinates are rounded to 2 decimals (~1 km). */
+export interface City {
+  name: string; // 1–80
+  latitude: number; // -90..90
+  longitude: number; // -180..180
+}
+
 export interface UserDoc {
   _id: ObjectId;
   email: string; // lowercased; unique
@@ -54,6 +61,9 @@ export interface UserDoc {
   birthday?: string | null; // 'YYYY-MM-DD', or '--MM-DD' when the year is private
   timeZone?: string | null; // IANA id
   shareLocalTime?: boolean; // false hides timeZone from the partner
+  // Weather city (added later; optional, absent ⇒ city null, shareWeather true).
+  city?: City | null;
+  shareWeather?: boolean; // false hides city from the partner
 
   createdAt: Date;
   updatedAt: Date;
@@ -172,6 +182,11 @@ export interface MessageDoc {
   deletedAt: Date | null;
   readAt: Date | null;
   idempotencyKey: string;
+  // View-once photos (added after v1). Optional in the validator (Atlas cannot collMod) and absent
+  // on older documents: read missing viewOnce as false, openedAt / viewOnceExpiredAt as null.
+  viewOnce?: boolean;
+  openedAt?: Date | null; // set by the recipient's first POST /messages/:id/open
+  viewOnceExpiredAt?: Date | null; // set by the cleanup worker when the photo was purged unopened
 }
 
 export const MEDIA_CATEGORIES = ['photo', 'voice', 'avatar', 'wallpaper'] as const;
@@ -194,6 +209,10 @@ export interface MediaDoc {
   readyAt: Date | null;
   deletedAt: Date | null;
   objectDeleted: boolean; // storage object removed (cleanup worker flips this)
+  // Set when the media is attached to a view-once message (optional; absent ⇒ false / null).
+  // View-once media is never downloadable through GET /media/:id/url.
+  viewOnce?: boolean;
+  openedAt?: Date | null; // mirrors the message's openedAt so cleanup can find it on media alone
 }
 
 export interface DeviceTokenDoc {
@@ -219,6 +238,8 @@ export interface MemoryDoc {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  // Chat photo this memory was auto-created from (optional; absent on manual / older memories).
+  sourceMessageId?: ObjectId | null;
 }
 
 export const MILESTONE_KINDS = ['anniversary', 'meeting', 'custom'] as const;
@@ -243,6 +264,7 @@ export const EVENT_TYPES = [
   'message.created',
   'message.read',
   'message.deleted',
+  'message.opened',
   'media.ready',
   'memory.created',
   'memory.updated',
@@ -256,6 +278,9 @@ export const EVENT_TYPES = [
   'list.created',
   'list.updated',
   'list.deleted',
+  'widget.updated',
+  'sos.raised',
+  'sos.acknowledged',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -284,6 +309,30 @@ export interface ListDoc {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+}
+
+/** What one partner shows on the OTHER partner's home-screen widgets (one per author per couple). */
+export interface WidgetBoardDoc {
+  _id: ObjectId;
+  coupleId: ObjectId;
+  authorId: ObjectId; // who wrote it; the partner is the audience
+  note: string | null; // ≤ 140
+  emoji: string | null; // 1–2 graphemes
+  mood: string | null; // ≤ 40
+  photoMediaId: ObjectId | null; // ready photo|wallpaper media of the same couple, not view-once
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** An SOS alert to the partner. Pushed even through quiet hours / disabled notifications. */
+export interface SosDoc {
+  _id: ObjectId;
+  coupleId: ObjectId;
+  senderId: ObjectId;
+  recipientId: ObjectId;
+  message: string | null; // ≤ 140; private content, never logged
+  createdAt: Date;
+  acknowledgedAt: Date | null;
 }
 
 export type PushState = 'pending' | 'sent' | 'skipped' | 'failed';

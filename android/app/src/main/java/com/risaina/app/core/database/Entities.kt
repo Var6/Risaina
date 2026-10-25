@@ -37,6 +37,9 @@ data class MessageEntity(
     val readAt: Long?,
     val sendState: String,
     val localMediaPath: String?,
+    val viewOnce: Boolean = false,
+    val openedAt: Long? = null,
+    val viewOnceExpired: Boolean = false,
 )
 
 @Entity(tableName = "media")
@@ -88,6 +91,9 @@ data class PartnerEntity(
     val avatarMediaId: String?,
     val birthday: String? = null,
     val timeZone: String? = null,
+    val cityName: String? = null,
+    val cityLat: Double? = null,
+    val cityLon: Double? = null,
 )
 
 /** Shared note or checklist; items are stored as JSON (they are always edited as a whole). */

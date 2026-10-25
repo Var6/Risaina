@@ -94,3 +94,21 @@ _Last updated: 2026-10-25 (emulator journey verified against MongoDB Atlas)_
 ### Known, not fixed
 - Home briefly shows "—" and "Good morning, you" for a moment on a slow cold start before data loads.
 - The emulator raised one "not responding" dialog; the trace showed the main thread waiting on the software GPU, with no app code on the stack. Re-check on a real phone.
+
+## Phone feedback round (2026-10-25)
+Built against the user's notes after using the app on their phone. Verified on the emulator against a
+local server with the new backend (fresh database); backend 137/137 tests, Android 32/32 unit tests,
+lint 0 errors. **The live server needs these backend changes deployed (user pushes; Render redeploys).**
+
+- ✅ Chat order: oldest at top, newest at bottom, bottom-anchored (was reversed).
+- ✅ Ping cooldown counts down live (was frozen at 15 s).
+- ✅ Partner's phone buzzes: instant notification from the push itself; buzz on any screen when open; both partners asked for notification permission; battery/autostart guidance.
+- ✅ Profile photo changes reach the partner (Home, chat, profile) — verified live update within seconds.
+- ✅ Partner birthday and weather (Open-Meteo, shared city only) in the partner profile; weather under their name on Home; local time optional in Settings.
+- ✅ Colour themes recolour secondary colours, cards, chips, borders and hero labels too.
+- ✅ Chat wallpaper per person (5 designs or own photo). Wallpaper Studio and the SET_WALLPAPER permission removed: the app never changes the phone wallpaper or lock screen.
+- ✅ Chat photos saved to Memories automatically; view-once photos (open once, screenshots blocked, deleted after viewing).
+- ✅ Widgets show the partner's content: their mood/note/emoji (set from "Their widget"), their latest chat photo, latest gift. New Gift widget; widgets allow lock-screen placement where the phone supports it; opt-in lock-screen card shows the latest gift.
+- ✅ SOS in the partner profile with a warning; rings on the alarm channel even on silent until opened; optional Do Not Disturb bypass; sender sees "saw your SOS".
+- ✅ Also fixed: notification/link taps ignored when the app was already open; false "Offline" banner.
+- ❌ Not verified: SOS/ping push with the app closed on real phones (needs the deployed server + Firebase); lock-screen widgets on a real launcher.

@@ -76,11 +76,14 @@ const rawSchema = z
     MEDIA_UPLOAD_URL_TTL_SECONDS: intFromEnv(10 * 60, 1),
     MEDIA_DOWNLOAD_URL_TTL_SECONDS: intFromEnv(15 * 60, 1),
     MEDIA_ABANDONED_UPLOAD_HOURS: intFromEnv(24, 1),
+    VIEW_ONCE_URL_TTL_SECONDS: intFromEnv(120, 1),
+    VIEW_ONCE_UNOPENED_DAYS: intFromEnv(7, 1),
     RATE_LIMIT_GLOBAL_MAX: intFromEnv(300, 1),
     RATE_LIMIT_GLOBAL_WINDOW_MS: intFromEnv(60_000, 1000),
     RATE_LIMIT_AUTH_MAX: intFromEnv(10, 1),
     RATE_LIMIT_AUTH_WINDOW_MS: intFromEnv(15 * 60_000, 1000),
     RATE_LIMIT_LIST_WRITES_PER_MIN: intFromEnv(120, 1),
+    RATE_LIMIT_WIDGET_WRITES_PER_MIN: intFromEnv(30, 1),
     OUTBOX_POLL_MS: intFromEnv(1000, 50),
     OUTBOX_LEASE_MS: intFromEnv(30_000, 1000),
     OUTBOX_MAX_ATTEMPTS: intFromEnv(5, 1),
@@ -192,6 +195,12 @@ export interface Env {
     downloadUrlTtlSeconds: number;
     abandonedUploadHours: number;
   };
+  viewOnce: {
+    /** TTL of the one download URL returned by POST /messages/:id/open. */
+    urlTtlSeconds: number;
+    /** Unopened view-once photos are purged after this many days. */
+    unopenedDays: number;
+  };
   rateLimit: {
     globalMax: number;
     globalWindowMs: number;
@@ -199,6 +208,8 @@ export interface Env {
     authWindowMs: number;
     /** POST/PATCH/DELETE /lists per user per minute (shared budget across the three). */
     listWritesPerMinute: number;
+    /** PUT /widget-board per user per minute. */
+    widgetWritesPerMinute: number;
   };
   outbox: { pollMs: number; leaseMs: number; maxAttempts: number; backoffBaseMs: number };
   cleanup: { intervalMs: number };
@@ -321,12 +332,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       downloadUrlTtlSeconds: v.MEDIA_DOWNLOAD_URL_TTL_SECONDS,
       abandonedUploadHours: v.MEDIA_ABANDONED_UPLOAD_HOURS,
     },
+    viewOnce: { urlTtlSeconds: v.VIEW_ONCE_URL_TTL_SECONDS, unopenedDays: v.VIEW_ONCE_UNOPENED_DAYS },
     rateLimit: {
       globalMax: v.RATE_LIMIT_GLOBAL_MAX,
       globalWindowMs: v.RATE_LIMIT_GLOBAL_WINDOW_MS,
       authMax: v.RATE_LIMIT_AUTH_MAX,
       authWindowMs: v.RATE_LIMIT_AUTH_WINDOW_MS,
       listWritesPerMinute: v.RATE_LIMIT_LIST_WRITES_PER_MIN,
+      widgetWritesPerMinute: v.RATE_LIMIT_WIDGET_WRITES_PER_MIN,
     },
     outbox: {
       pollMs: v.OUTBOX_POLL_MS,

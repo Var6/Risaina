@@ -16,7 +16,9 @@ import {
   toPartnerDto,
   toPingDto,
   toPreferencesDto,
+  toSosDto,
   toUserDto,
+  toWidgetBoardDto,
 } from '../shared/dto.js';
 import type { PreferencesUpdate } from '../shared/schemas.js';
 import { MeRepo } from './repo.js';
@@ -80,6 +82,8 @@ export class MeService {
       set.timeZone = patch.timeZone === null ? null : canonicalTimeZone(patch.timeZone);
     }
     if (patch.shareLocalTime !== undefined) set.shareLocalTime = patch.shareLocalTime;
+    if (patch.city !== undefined) set.city = patch.city;
+    if (patch.shareWeather !== undefined) set.shareWeather = patch.shareWeather;
 
     const updated = await this.repo.update(user._id, set);
     if (!updated) throw errors.unauthorized();
@@ -138,6 +142,7 @@ export class MeService {
     await this.repo.deleteDeviceTokens(user._id);
     await this.repo.deletePasswordResets(user._id);
     await this.repo.deleteEmailVerifications(user._id);
+    await this.repo.deleteWidgetBoards(user._id);
     await this.repo.anonymise(user._id, now);
     await this.auth.revokeAllForUser(user._id, 'account_deleted');
   }
@@ -146,25 +151,30 @@ export class MeService {
     const user = await this.mustUser(userId);
     const couple = user.activeCoupleId ? await this.repo.findCouple(user.activeCoupleId) : null;
     const coupleId = couple?._id;
-    const [pings, messages, memories, milestones, lists] = coupleId
+    const [pings, messages, memories, milestones, lists, boards, sos] = coupleId
       ? await Promise.all([
           this.repo.pings(coupleId, EXPORT_LIMIT),
           this.repo.messages(coupleId, EXPORT_LIMIT),
           this.repo.memories(coupleId, EXPORT_LIMIT),
           this.repo.milestones(coupleId, EXPORT_LIMIT),
           this.repo.lists(coupleId, EXPORT_LIMIT),
+          this.repo.widgetBoards(coupleId),
+          this.repo.sos(coupleId, EXPORT_LIMIT),
         ])
-      : [[], [], [], [], []];
+      : [[], [], [], [], [], [], []];
     return {
       exportedAt: this.ctx.now().toISOString(),
       user: toUserDto(user),
       couple: couple ? toCoupleDto(couple) : null,
       pings: pings.map(toPingDto),
-      messages: messages.map(toMessageDto),
+      // view-once photos keep their row but never expose a media reference in an export
+      messages: messages.map((m) => (m.viewOnce ? { ...toMessageDto(m), mediaId: null } : toMessageDto(m))),
       memories: memories.map(toMemoryDto),
       milestones: milestones.map(toMilestoneDto),
       lists: lists.map(toListDto),
-      truncated: [pings, messages, memories, milestones, lists].some((l) => l.length >= EXPORT_LIMIT),
+      sos: sos.map(toSosDto),
+      widgetBoards: boards.map(toWidgetBoardDto),
+      truncated: [pings, messages, memories, milestones, lists, sos].some((l) => l.length >= EXPORT_LIMIT),
     };
   }
 }
@@ -175,7 +185,9 @@ function profileChanged(before: UserDoc, after: UserDoc): boolean {
     String(before.avatarMediaId ?? null) !== String(after.avatarMediaId ?? null) ||
     (before.birthday ?? null) !== (after.birthday ?? null) ||
     (before.timeZone ?? null) !== (after.timeZone ?? null) ||
-    (before.shareLocalTime ?? true) !== (after.shareLocalTime ?? true)
+    (before.shareLocalTime ?? true) !== (after.shareLocalTime ?? true) ||
+    JSON.stringify(before.city ?? null) !== JSON.stringify(after.city ?? null) ||
+    (before.shareWeather ?? true) !== (after.shareWeather ?? true)
   );
 }
 

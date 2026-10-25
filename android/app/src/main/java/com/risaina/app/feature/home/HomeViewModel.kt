@@ -39,7 +39,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -95,6 +99,8 @@ data class HomeUiState(
     val background: String = "GLOW",
     val partnerAvatar: File? = null,
     val askStartDate: Boolean = false,
+    val partnerWeather: com.risaina.app.core.data.Weather? = null,
+    val showPartnerTime: Boolean = false,
 )
 
 private data class Local(
@@ -111,6 +117,7 @@ private data class Local(
     val favouriteImage: File? = null,
     val partnerAvatar: File? = null,
     val startDateDismissed: Boolean = false,
+    val weather: com.risaina.app.core.data.Weather? = null,
 )
 
 @HiltViewModel
@@ -126,6 +133,7 @@ class HomeViewModel @Inject constructor(
     pushAvailability: PushAvailability,
     uiFlags: UiFlags,
     private val preferencesStore: com.risaina.app.core.datastore.PreferencesStore,
+    private val weatherRepository: com.risaina.app.core.data.WeatherRepository,
 ) : ViewModel() {
 
     private val local = MutableStateFlow(Local(justPaired = uiFlags.justPaired.also { uiFlags.justPaired = false }))
@@ -139,16 +147,17 @@ class HomeViewModel @Inject constructor(
     val snackbars: Flow<String> = effects.receiveAsFlow()
     private val pushConfigured = pushAvailability.configured
 
-    private data class Content(val partner: Partner?, val couple: Couple?, val myName: String, val myId: String?, val emailVerified: Boolean = true, val pings: List<Ping>, val messages: List<Message>, val favourite: Memory?, val unread: Int, val myBirthday: String? = null, val background: String = "GLOW")
+    private data class Content(val partner: Partner?, val couple: Couple?, val myName: String, val myId: String?, val emailVerified: Boolean = true, val pings: List<Ping>, val messages: List<Message>, val favourite: Memory?, val unread: Int, val myBirthday: String? = null, val background: String = "GLOW", val showPartnerTime: Boolean = false)
 
     private val content: Flow<Content> = combine(
         coupleRepository.partner, coupleRepository.couple, coupleRepository.profile, pingRepository.recent, messageRepository.recent(30),
     ) { partner, couple, me, pings, messages -> Content(partner, couple, me?.displayName ?: "", me?.userId, me?.emailVerified ?: true, pings, messages, null, 0, me?.birthday) }
         .combine(memoryRepository.favourite) { c, fav -> c.copy(favourite = fav) }
         .combine(messageRepository.unreadCount) { c, n -> c.copy(unread = n) }
-        .combine(preferencesStore.preferences) { c, p -> c.copy(background = p.background) }
+        .combine(preferencesStore.preferences) { c, p -> c.copy(background = p.background, showPartnerTime = p.showPartnerTime) }
 
-    val state: StateFlow<HomeUiState> = combine(content, local, pingRepository.cooldownRemaining, ticker, syncManager.socketState) { c, l, cooldown, now, socket ->
+    val state: StateFlow<HomeUiState> = combine(content, local, pingRepository.cooldownEndsAt, ticker, syncManager.socketState) { c, l, cooldownEnds, now, socket ->
+        val cooldown = cooldownEnds?.let { java.time.Duration.between(now, it).seconds.coerceAtLeast(0) } ?: 0L
         val today = now.atZone(ZoneId.systemDefault()).toLocalDate()
         val lastSent = l.lastSentKey?.let { key -> c.pings.firstOrNull { it.localKey == key } }
         val button: PingButtonState = when {
@@ -183,6 +192,8 @@ class HomeViewModel @Inject constructor(
             pingsToday = c.pings.count { it.createdAt.atZone(ZoneId.systemDefault()).toLocalDate() == today && it.status != com.risaina.app.core.model.PingStatus.FAILED },
             background = c.background,
             partnerAvatar = l.partnerAvatar,
+            partnerWeather = l.weather,
+            showPartnerTime = c.showPartnerTime,
             askStartDate = c.couple != null && c.couple.relationshipStartDate == null && !l.startDateDismissed,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
@@ -191,7 +202,18 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { pingRepository.refresh(); messageRepository.refresh(); memoryRepository.refresh() }
         viewModelScope.launch {
             syncManager.incoming.collect { item ->
-                if (item is Incoming.NewPing) { haptics.arrival(); local.update { it.copy(incoming = item.ping) } }
+                if (item is Incoming.NewPing) local.update { it.copy(incoming = item.ping) }
+            }
+        }
+        viewModelScope.launch {
+            // Weather for the partner's shared city; refreshed when it changes and every 30 min.
+            coupleRepository.partner.map { it?.city }.distinctUntilChanged().collectLatest { city ->
+                while (true) {
+                    val w = city?.let { c -> weatherRepository.current(c) }
+                    local.update { it.copy(weather = w) }
+                    // Retry soon after a failure (e.g. a network blip); otherwise every 30 minutes.
+                    delay(if (city != null && w == null) 2 * 60 * 1000L else 30 * 60 * 1000L)
+                }
             }
         }
         viewModelScope.launch {
@@ -298,4 +320,12 @@ class HomeViewModel @Inject constructor(
     }
 
     fun consumeJustPaired() = local.update { it.copy(justPaired = false) }
+
+    suspend fun shouldAskNotificationPermission(context: android.content.Context): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return false
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted || preferencesStore.notificationPromptShown.first()) return false
+        preferencesStore.setNotificationPromptShown()
+        return true
+    }
 }

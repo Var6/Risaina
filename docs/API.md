@@ -367,3 +367,153 @@ Note for servers whose MongoDB user lacks `dbAdmin`: a database created by an ea
 an `events` validator that rejects `list.*`. The list request still succeeds; the event is sent live
 over the WebSocket but is not stored (absent from `GET /events` and sync replay; no FCM push).
 Clients should refresh `GET /lists` on app open / reconnect rather than rely on replay alone.
+
+## Auto-memories, view-once photos, widget board, SOS, weather city
+
+Additive: every existing field keeps its shape. Rows written before these features lack the new
+fields; the server reads them as the defaults below, so clients always receive the full shape.
+
+### Changed shapes
+
+```ts
+Message { ...as above,
+          viewOnce: boolean,          // false for everything except view-once photos
+          openedAt: string|null,      // when the recipient opened a view-once photo
+          viewOnceExpired: boolean }  // view-once photo purged unopened (openedAt stays null)
+Memory  { ...as above, sourceMessageId: string|null }   // chat photo it came from; null = manual memory
+User    { ...as above, city: City|null, shareWeather: boolean /* default true */ }
+Partner { ...as above, city: City|null }                 // null when unset OR that partner has shareWeather = false
+City    { name: string, latitude: number, longitude: number }   // coordinates rounded to 2 decimals
+WidgetBoard { authorId, note: string|null, emoji: string|null, mood: string|null,
+              photoMediaId: string|null, updatedAt }
+Sos     { id, coupleId, senderId, recipientId, message: string|null, createdAt, acknowledgedAt: string|null }
+```
+
+`GET /me/export` adds `sos: Sos[]` (bounded to 1000, counted in `truncated`) and
+`widgetBoards: WidgetBoard[]` (both boards of the couple). View-once messages are exported with
+`mediaId: null` (the row itself is kept).
+
+### Auto-memories from chat photos
+
+- `POST /messages` with `type: 'photo'` and no `viewOnce` creates a memory
+  `{ mediaId, caption: null, takenAt: message.createdAt, createdBy: sender, sourceMessageId: message.id }`
+  and emits `memory.created` (actor = sender) right after `message.created`. Idempotent replays create nothing.
+- `DELETE /messages/:id` also soft-deletes that memory and emits `memory.deleted` (actor = sender).
+- `DELETE /memories/:id` only soft-deletes the memory; the media object is never deleted by it, so the
+  chat photo keeps working.
+- `POST /memories` with a view-once media ⇒ `400 validation_failed`.
+
+### View-once photos
+
+`POST /messages` accepts `viewOnce?: boolean`. `viewOnce: true` with any `type` other than `photo`
+⇒ `400 validation_failed` (`viewOnce: false` is accepted for every type). Additional errors:
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | the media was already sent as view-once (any new message reusing it) |
+| 409 | `conflict` | `viewOnce: true` with a media already used by a live message, memory or widget board |
+
+View-once messages never create a memory. Their media:
+
+- `GET /media/:id/url` ⇒ `403 { error: { code: 'view_once' } }` for **both** members (always, also after opening).
+- cannot be used as a memory or widget photo (`400`).
+
+`POST /messages/:id/open` (no body; Bearer + active couple; recipient only):
+
+→ `200 { url: string, expiresAt: string, message: Message }`. First call sets `openedAt` and emits
+`message.opened` `{ messageId, openedAt }` (actor = recipient). `url` is a signed GET valid for
+`VIEW_ONCE_URL_TTL_SECONDS` (default 120 s). Download it immediately; there is no second URL.
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | message is not a view-once photo |
+| 403 | `forbidden` | caller is the sender |
+| 404 | `not_found` | not in the caller's couple, deleted, or malformed id |
+| 410 | `view_once_consumed` | already opened (also the loser of two concurrent opens) |
+| 410 | `view_once_expired` | purged unopened (`viewOnceExpired: true`) |
+| 409 | `not_paired` | no active couple |
+
+Server-side lifecycle (cleanup worker, every `CLEANUP_INTERVAL_MS`): opened view-once media is deleted
+(storage object removed, media `status: deleted`) once `openedAt + TTL + 60 s` has passed; unopened
+view-once photos older than `VIEW_ONCE_UNOPENED_DAYS` (default 7) are deleted and their message reports
+`viewOnceExpired: true`, `openedAt: null`. The message row stays in the history.
+
+### Widget board
+
+Each partner decides what the OTHER partner's home-screen widgets show. Bearer + active couple.
+
+| Method | Path | Body | Success |
+|---|---|---|---|
+| GET | `/widget-board` | | `200 { mine: WidgetBoard\|null, forMe: WidgetBoard\|null }` — `mine` = what I set for my partner, `forMe` = what my partner set for me |
+| PUT | `/widget-board` | `{ note?, emoji?, mood?, photoMediaId? }` (≥ 1 key) | `200 { board: WidgetBoard }` |
+
+PUT rules: omitted keys keep their value; `null` clears; `note`/`mood` are trimmed and `''` clears.
+`note` ≤ 140, `mood` ≤ 40, `emoji` 1–2 grapheme clusters (same rule as pings). Strict body.
+`photoMediaId` must be a **ready** media of the same couple, category `photo` or `wallpaper`, not
+view-once; either partner's upload is fine. The partner fetches it with the normal `GET /media/:id/url`.
+Rate limit: 30 PUTs per user per minute (`RATE_LIMIT_WIDGET_WRITES_PER_MIN`).
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | empty body, limits, unknown key, photo unknown / not ready / wrong category / view-once |
+| 403 | `forbidden` | `photoMediaId` belongs to another couple |
+| 409 | `not_paired` | no active couple |
+| 429 | `rate_limited` | budget exceeded (`Retry-After`) |
+
+Each PUT emits `widget.updated` `{ board: WidgetBoard }` (actor = author); the outbox pushes it to the
+other member like any other event. Boards are deleted on unlink and on account deletion. A board's
+`photoMediaId` is not cleared if that media is later deleted (e.g. the chat message is unsent); the
+URL call then answers `409 media_not_ready`, so render a placeholder.
+
+### SOS
+
+Bearer + active couple.
+
+| Method | Path | Body | Success |
+|---|---|---|---|
+| POST | `/sos` | `{ message?: string }` (trimmed, ≤ 140; `''` ⇒ null; strict) | `201 { sos: Sos }` |
+| GET | `/sos` | `?limit=1..20` (default 20) | `200 { items: Sos[] }` newest first |
+| POST | `/sos/:id/ack` | | `200 { sos: Sos }` recipient only; idempotent |
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | message > 140, unknown key, `limit` out of range |
+| 403 | `forbidden` | ack by the sender |
+| 404 | `not_found` | ack of an SOS from another couple / unknown / malformed id |
+| 409 | `not_paired` | no active couple |
+| 429 | `rate_limited` | more than 3 SOS by the same sender in 10 minutes (`Retry-After` = seconds until a slot frees) |
+
+Events: `sos.raised` `{ sos: Sos }` (actor = sender); `sos.acknowledged` `{ sosId, acknowledgedAt }`
+(actor = recipient, emitted once). **Push:** `sos.raised` is pushed even when the recipient has
+`notificationsEnabled: false` or is inside quiet hours. It is still skipped when push is disabled on the
+server (`push_disabled`) or the recipient has no device tokens (`no_tokens`). Every other event keeps the
+old rules. The SOS message is never logged.
+
+### Weather city
+
+`PATCH /me` additionally accepts:
+
+```ts
+{ city?: { name: string /* trimmed, 1–80 */, latitude: number /* -90..90 */, longitude: number /* -180..180 */ } | null,
+  shareWeather?: boolean }
+```
+
+`city` is strict (unknown keys ⇒ 400) and the coordinates must be JSON numbers. They are rounded to
+2 decimals (`25.594095` ⇒ `25.59`). `null` clears. Changing `city` or `shareWeather` emits
+`partner.updated` `{ partner: Partner }`; a PATCH that changes nothing emits nothing.
+
+### New event types
+
+| Event type | `payload` |
+|---|---|
+| `message.opened` | `{ messageId, openedAt }` |
+| `widget.updated` | `{ board: WidgetBoard }` |
+| `sos.raised` | `{ sos: Sos }` |
+| `sos.acknowledged` | `{ sosId, acknowledgedAt }` |
+
+Push payload is unchanged: `{ type, eventId, coupleId, seq }`. On a database whose old `events`
+validator still has the strict type enum (no `dbAdmin`), these types are delivered live over the
+WebSocket only (not stored, no replay, no push); the HTTP request still succeeds. Fresh databases use
+the dotted-name pattern and accept them.
+
+New error codes: `view_once` (403), `view_once_consumed` (410), `view_once_expired` (410).

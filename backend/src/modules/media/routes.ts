@@ -71,6 +71,7 @@ export const mediaRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
       schema: {
         tags: [TAG],
         summary: 'Short-lived signed download URL (membership-checked)',
+        description: 'View-once media: 403 view_once for both members (use POST /messages/:id/open).',
         security,
         params: IdParams,
         response: {

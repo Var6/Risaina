@@ -31,6 +31,8 @@ class WidgetSnapshotUpdater @Inject constructor(
     private val milestoneDao: MilestoneDao,
     private val mediaRepository: MediaRepository,
     private val refresher: WidgetRefresher,
+    private val widgetBoardRepository: com.risaina.app.core.data.WidgetBoardRepository,
+    private val lockScreenCard: com.risaina.app.core.notifications.LockScreenCard,
 ) {
     suspend fun recompute() {
         val me = sessionStore.current()?.userId
@@ -39,13 +41,28 @@ class WidgetSnapshotUpdater @Inject constructor(
         val couple = coupleDao.couple()
         val paired = partner != null && couple?.status.equals("active", true)
 
-        val latestNote = messageDao.recent(20).first().firstOrNull { it.deletedAt == null && (it.type == "text" || it.type == "emoji") }
-        val latestPing = pingDao.recent(20).first().firstOrNull { it.senderId != me }
-        val favourite = memoryDao.favourite().first() ?: memoryDao.all().first().firstOrNull()
-        val photoPath = if (prefs.widgetPrivacy.showPhoto && favourite != null) {
-            mediaRepository.localFile(favourite.mediaId)?.absolutePath
-                ?: mediaRepository.ensureCached(favourite.mediaId, "image/jpeg").getOrNull()?.absolutePath
+        // Everything on these widgets comes from the partner: first what they explicitly put on
+        // "my widget" (widget board), then the latest thing they sent, and only then a pinned memory.
+        val board = widgetBoardRepository.forMeNow()
+        val recent = messageDao.recent(60).first().filter { it.deletedAt == null && it.senderId != me }
+        val latestNote = recent.firstOrNull { it.type == "text" || it.type == "emoji" }
+        val partnerPings = pingDao.recent(50).first().filter { it.senderId != me }
+        val latestPing = partnerPings.firstOrNull()
+        val latestGift = partnerPings.firstOrNull { com.risaina.app.feature.ping.Expressions.isGift(it.message) }
+        val partnerPhoto = recent.firstOrNull { it.type == "photo" && !it.viewOnce && it.mediaId != null }
+        val favourite = memoryDao.favourite().first()
+        val photoMediaId = board?.photoMediaId ?: partnerPhoto?.mediaId ?: favourite?.mediaId
+        val photoPath = if (prefs.widgetPrivacy.showPhoto && photoMediaId != null) {
+            mediaRepository.localFile(photoMediaId)?.absolutePath
+                ?: mediaRepository.ensureCached(photoMediaId, "image/jpeg").getOrNull()?.absolutePath
         } else null
+        val boardAt = board?.updatedAt?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+        val noteText = board?.note ?: board?.mood ?: latestNote?.text
+        val noteAt = if (board?.note != null || board?.mood != null) boardAt else latestNote?.createdAt
+        val emoji = board?.emoji ?: latestPing?.emoji
+        val emojiAt = if (board?.emoji != null) boardAt else latestPing?.createdAt
+        val emojiLabel = board?.mood ?: latestPing?.let { p -> PingType.fromWire(p.type).label }
+        val photoCaption = if (board?.photoMediaId != null) board.note ?: board.mood else if (partnerPhoto != null) null else favourite?.caption
 
         val today = LocalDate.now()
         val meeting = couple?.nextMeetingDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }?.takeIf { !it.isBefore(today) }
@@ -56,27 +73,31 @@ class WidgetSnapshotUpdater @Inject constructor(
             nextMilestone != null -> nextMilestone.second to nextMilestone.first.toString()
             else -> null to null
         }
-        val latestVoice = messageDao.recent(30).first().firstOrNull { it.type == "voice" && it.deletedAt == null && it.mediaId != null }
+        val latestVoice = recent.firstOrNull { it.type == "voice" && it.mediaId != null }
 
         store.update {
             it.copy(
                 partnerName = partner?.displayName,
-                latestNoteText = if (prefs.widgetPrivacy.showNoteText) latestNote?.text else null,
-                latestNoteAtMillis = latestNote?.createdAt,
-                latestNoteFromPartner = latestNote != null && latestNote.senderId != me,
-                latestEmoji = if (prefs.widgetPrivacy.showEmoji) latestPing?.emoji else null,
-                latestEmojiAtMillis = latestPing?.createdAt,
-                latestEmojiLabel = latestPing?.let { p -> PingType.fromWire(p.type).label },
+                latestNoteText = if (prefs.widgetPrivacy.showNoteText) noteText else null,
+                latestNoteAtMillis = noteAt,
+                latestNoteFromPartner = noteText != null,
+                latestEmoji = if (prefs.widgetPrivacy.showEmoji) emoji else null,
+                latestEmojiAtMillis = emojiAt,
+                latestEmojiLabel = emojiLabel,
                 photoPath = photoPath,
-                photoCaption = if (prefs.widgetPrivacy.showPhoto) favourite?.caption else null,
+                photoCaption = if (prefs.widgetPrivacy.showPhoto) photoCaption else null,
                 countdownLabel = countdownLabel,
                 countdownDateIso = countdownDate,
                 latestVoiceNoteId = latestVoice?.id,
                 latestVoiceDurationMs = null,
                 latestVoiceAtMillis = latestVoice?.createdAt,
                 paired = paired,
+                latestGiftEmoji = if (prefs.widgetPrivacy.showEmoji) latestGift?.emoji else null,
+                latestGiftLine = if (prefs.widgetPrivacy.showNoteText) com.risaina.app.feature.ping.Expressions.giftLine(latestGift?.message) else null,
+                latestGiftAtMillis = latestGift?.createdAt,
             )
         }
         runCatching { refresher.refreshAll() }
+        runCatching { lockScreenCard.update(store.current()) }
     }
 }

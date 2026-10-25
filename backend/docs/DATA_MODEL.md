@@ -131,6 +131,32 @@ Indexes: `{coupleId:1, date:1}`.
 
 Indexes: `{coupleId:1, deletedAt:1, pinned:-1, updatedAt:-1}` (`GET /lists`, export).
 
+### `widgetBoards`
+`coupleId, authorId, note (≤140)|null, emoji (1–2 graphemes)|null, mood (≤40)|null, photoMediaId|null, createdAt, updatedAt`.
+One per author per couple (what the author shows on the partner's widgets). Deleted on unlink and
+account deletion.
+
+Indexes: `{coupleId:1, authorId:1}` unique; `{authorId:1}` (account deletion).
+
+### `sos`
+`coupleId, senderId, recipientId, message (≤140)|null, createdAt, acknowledgedAt|null`. Never
+logged. Kept after unlink (like pings).
+
+Indexes: `{coupleId:1, createdAt:-1}` (`GET /sos`, export); `{senderId:1, createdAt:-1}` (3 per 10 min).
+
+### Later optional fields (never `required`; a readWrite-only DB user cannot collMod)
+
+| Collection | Field | Missing reads as |
+|---|---|---|
+| `users` | `city: { name 1–80, latitude, longitude (2 decimals) } \| null`, `shareWeather: bool` | `null`, `true` |
+| `messages` | `viewOnce: bool`, `openedAt: date\|null`, `viewOnceExpiredAt: date\|null` | `false`, `null`, `null` |
+| `media` | `viewOnce: bool`, `openedAt: date\|null` (copied from the message for cleanup) | `false`, `null` |
+| `memories` | `sourceMessageId: ObjectId\|null` (auto-memory from a chat photo) | `null` |
+
+Extra indexes: `messages {mediaId:1}` partial (`mediaId` is an ObjectId), `messages {openedAt:1, createdAt:1}`
+partial `{viewOnce: true}` (unopened purge), `media {openedAt:1}` partial `{viewOnce: true}` (opened purge),
+`memories {sourceMessageId:1}` partial. Indexes only need `createIndex` (part of readWrite).
+
 ### `events` (durable log + push outbox)
 | Field | Notes |
 |---|---|

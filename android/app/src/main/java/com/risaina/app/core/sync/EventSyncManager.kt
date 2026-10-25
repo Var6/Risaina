@@ -33,6 +33,7 @@ class EventSyncManager @Inject constructor(
     private val sessionStore: SessionStore,
     private val coupleRepository: CoupleRepository,
     private val widgetSnapshotUpdater: WidgetSnapshotUpdater,
+    private val haptics: com.risaina.app.core.notifications.Haptics,
 ) {
     private val applyMutex = Mutex()
     private var socketJob: Job? = null
@@ -52,6 +53,7 @@ class EventSyncManager @Inject constructor(
                     is SocketMessage.Event -> {
                         val results = applyMutex.withLock { reducer.apply(msg.event) }
                         if (results.isNotEmpty()) {
+                            if (results.any { it is Incoming.NewPing }) haptics.arrival()
                             results.forEach { _incoming.tryEmit(it) }
                             widgetSnapshotUpdater.recompute()
                         }

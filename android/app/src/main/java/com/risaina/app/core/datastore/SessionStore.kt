@@ -44,6 +44,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         val birthday = stringPreferencesKey("birthday")
         val hasPassword = stringPreferencesKey("has_password")
         val sharedTimeZone = stringPreferencesKey("shared_time_zone")
+        val cityJson = stringPreferencesKey("city")
     }
 
     val session: Flow<Session?> = context.sessionDataStore.data.map { p ->
@@ -66,7 +67,8 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
 
     val profile: Flow<Profile?> = context.sessionDataStore.data.map { p ->
         val userId = p[Keys.userId] ?: return@map null
-        Profile(userId, p[Keys.displayName] ?: "", p[Keys.avatarMediaId], p[Keys.emailVerified] != "0", p[Keys.birthday], p[Keys.hasPassword] != "0")
+        Profile(userId, p[Keys.displayName] ?: "", p[Keys.avatarMediaId], p[Keys.emailVerified] != "0", p[Keys.birthday], p[Keys.hasPassword] != "0",
+            p[Keys.cityJson]?.split("|")?.takeIf { it.size == 3 }?.let { com.risaina.app.core.model.City(it[0], it[1].toDouble(), it[2].toDouble()) })
     }
     val prefsDirty: Flow<Boolean> = context.sessionDataStore.data.map { it[Keys.prefsDirty] == "1" }
 
@@ -86,6 +88,10 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
             p[Keys.hasPassword] = if (hasPassword) "1" else "0"
             if (sharedTimeZone == null) p.remove(Keys.sharedTimeZone) else p[Keys.sharedTimeZone] = sharedTimeZone
         }
+    }
+
+    suspend fun saveCity(city: com.risaina.app.core.model.City?) {
+        context.sessionDataStore.edit { p -> if (city == null) p.remove(Keys.cityJson) else p[Keys.cityJson] = "${city.name.replace("|", " ")}|${city.latitude}|${city.longitude}" }
     }
 
     /** The zone last reported to the server, so we only PATCH when it changes (travel, DST rules). */

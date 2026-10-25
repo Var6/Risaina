@@ -52,7 +52,8 @@ export class CoupleService {
 
   /**
    * End an active couple: status → ended, both members unpaired, `couple.unlinked` emitted
-   * (so the partner is notified), shared media scheduled for deletion, sockets revoked.
+   * (so the partner is notified), shared media scheduled for deletion, widget boards removed,
+   * sockets revoked.
    * Idempotent: a couple that is not active is left untouched.
    */
   async endCouple(coupleId: ObjectId, byUserId: ObjectId): Promise<CoupleDoc | null> {
@@ -68,6 +69,7 @@ export class CoupleService {
       payload: { coupleId: ended._id.toHexString(), endedAt: now.toISOString(), by: byUserId.toHexString() },
     });
     await this.repo.scheduleMediaDeletion(ended._id, now);
+    await this.repo.deleteWidgetBoards(ended._id);
     this.ctx.hub.revokeCouple(ended._id.toHexString());
     return ended;
   }

@@ -229,6 +229,7 @@ describe('me', () => {
         avatarMediaId: avatar,
         birthday: null,
         timeZone: null,
+        city: null,
       },
     });
 

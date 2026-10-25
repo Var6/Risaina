@@ -74,6 +74,7 @@ class RisainaApi @Inject constructor(
     suspend fun messages(limit: Int = 40, before: String? = null): MessagePage =
         client.get("messages") { parameter("limit", limit); if (before != null) parameter("before", before) }.body()
     suspend fun messageRead(id: String): MessageResponse = client.post("messages/$id/read").body()
+    suspend fun openViewOnce(id: String): OpenViewOnceResponse = client.post("messages/$id/open").body()
     suspend fun deleteMessage(id: String): MessageResponse = client.delete("messages/$id").body()
 
     // ---- media ----
@@ -98,6 +99,15 @@ class RisainaApi @Inject constructor(
     suspend fun createList(req: CreateListRequest): ListResponse = client.post("lists") { json(req) }.body()
     suspend fun patchList(id: String, req: PatchListRequest): ListResponse = client.patch("lists/$id") { json(req) }.body()
     suspend fun deleteList(id: String) { client.delete("lists/$id") }
+
+    // ---- widget board: what each partner shows on the other's widgets ----
+    suspend fun widgetBoard(): WidgetBoardsResponse = client.get("widget-board").body()
+    suspend fun putWidgetBoard(body: kotlinx.serialization.json.JsonObject): WidgetBoardResponse = client.put("widget-board") { json(body) }.body()
+
+    // ---- SOS ----
+    suspend fun createSos(req: CreateSosRequest): SosResponse = client.post("sos") { json(req) }.body()
+    suspend fun ackSos(id: String): SosResponse = client.post("sos/$id/ack") { json(EmptyBody) }.body()
+    suspend fun sosList(): SosList = client.get("sos") { parameter("limit", 10) }.body()
 
     // ---- events ----
     suspend fun events(since: Long, limit: Int = 200): EventsResponse =

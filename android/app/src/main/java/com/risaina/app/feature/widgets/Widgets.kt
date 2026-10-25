@@ -237,3 +237,27 @@ class VoiceNoteWidget : GlanceAppWidget() {
 }
 class VoiceNoteWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceAppWidget = VoiceNoteWidget() }
 
+
+// ---------------- Gift (works on lock screens that allow widgets) ----------------
+class GiftWidget : GlanceAppWidget() {
+    override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE))
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val snap = context.widgetSnapshot()
+        provideContent {
+            WidgetFrame(GlanceModifier.clickable(openApp(context, "risaina://app/home"))) {
+                Column(modifier = GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalAlignment = Alignment.CenterVertically) {
+                    when {
+                        !snap.paired -> Placeholder("Pair to begin")
+                        snap.latestGiftAtMillis == null -> { Text("🎁", style = WidgetStyles.emoji); Text("No gifts yet", style = WidgetStyles.caption) }
+                        else -> {
+                            Text(snap.latestGiftEmoji ?: "🎁", style = WidgetStyles.emoji)
+                            Text(snap.latestGiftLine ?: "A gift arrived", style = WidgetStyles.title, maxLines = 2)
+                            Text("from ${snap.partnerName ?: "them"} · ${relative(snap.latestGiftAtMillis)}", style = WidgetStyles.caption)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+class GiftWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceAppWidget = GiftWidget() }

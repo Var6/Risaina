@@ -45,6 +45,21 @@ export const ProfileTimeZone = z
   .refine((s) => /^[A-Za-z]/.test(s) && isValidTimeZone(s), 'must be a valid IANA time zone')
   .meta({ example: 'Asia/Kolkata' });
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** PATCH /me input: coordinates are rounded to 2 decimals server-side (~1 km). */
+export const CityInput = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    latitude: z.number().min(-90).max(90).transform(round2),
+    longitude: z.number().min(-180).max(180).transform(round2),
+  })
+  .strict();
+
+export const City = z
+  .object({ name: z.string(), latitude: z.number(), longitude: z.number() })
+  .meta({ id: 'City', description: 'Coordinates rounded to 2 decimals' });
+
 export const ErrorEnvelope = z
   .object({
     error: z.object({
@@ -88,6 +103,8 @@ export const User = z
     birthday: z.string().nullable().meta({ description: "'YYYY-MM-DD' or '--MM-DD' (year private)" }),
     timeZone: z.string().nullable().meta({ description: 'IANA time zone id' }),
     shareLocalTime: z.boolean().meta({ description: 'When false the partner sees timeZone: null' }),
+    city: City.nullable().meta({ description: 'Weather city; null when unset' }),
+    shareWeather: z.boolean().meta({ description: 'When false the partner sees city: null' }),
   })
   .meta({ id: 'User' });
 
@@ -101,6 +118,7 @@ export const Partner = z
       .string()
       .nullable()
       .meta({ description: 'IANA id; null when unset or the partner turned shareLocalTime off' }),
+    city: City.nullable().meta({ description: 'null when unset or the partner turned shareWeather off' }),
   })
   .meta({ id: 'Partner' });
 
@@ -216,6 +234,11 @@ export const Message = z
     deletedAt: IsoDateTimeNullable,
     readAt: IsoDateTimeNullable,
     idempotencyKey: z.string(),
+    viewOnce: z.boolean().meta({ description: 'View-once photo (only the recipient can open it, once)' }),
+    openedAt: IsoDateTimeNullable.meta({ description: 'When the recipient opened a view-once photo' }),
+    viewOnceExpired: z.boolean().meta({
+      description: 'True when a view-once photo was purged unopened (openedAt stays null)',
+    }),
   })
   .meta({ id: 'Message' });
 
@@ -252,6 +275,9 @@ export const Memory = z
     pinned: z.boolean(),
     createdAt: IsoDateTime,
     deletedAt: IsoDateTimeNullable,
+    sourceMessageId: IdString.nullable().meta({
+      description: 'Chat photo message this memory was auto-created from; null for manual memories',
+    }),
   })
   .meta({ id: 'Memory' });
 
@@ -301,6 +327,33 @@ export const List = z
   })
   .meta({ id: 'List' });
 
+// --- Widget board ---------------------------------------------------------------------------
+
+export const WidgetBoard = z
+  .object({
+    authorId: IdString.meta({ description: 'Who set it; the audience is the other member' }),
+    note: z.string().nullable(),
+    emoji: z.string().nullable(),
+    mood: z.string().nullable(),
+    photoMediaId: IdString.nullable(),
+    updatedAt: IsoDateTime,
+  })
+  .meta({ id: 'WidgetBoard' });
+
+// --- SOS ------------------------------------------------------------------------------------
+
+export const Sos = z
+  .object({
+    id: IdString,
+    coupleId: IdString,
+    senderId: IdString,
+    recipientId: IdString,
+    message: z.string().nullable(),
+    createdAt: IsoDateTime,
+    acknowledgedAt: IsoDateTimeNullable,
+  })
+  .meta({ id: 'Sos' });
+
 // --- Events ---------------------------------------------------------------------------------
 
 export const EventType = z.enum(EVENT_TYPES);
@@ -330,3 +383,5 @@ export type MilestoneDto = z.infer<typeof Milestone>;
 export type EventDto = z.infer<typeof Event>;
 export type ListDto = z.infer<typeof List>;
 export type ListItemDto = z.infer<typeof ListItem>;
+export type WidgetBoardDto = z.infer<typeof WidgetBoard>;
+export type SosDto = z.infer<typeof Sos>;

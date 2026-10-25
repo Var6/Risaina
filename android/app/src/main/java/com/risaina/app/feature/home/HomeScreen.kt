@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -86,12 +88,12 @@ data class HomeNav(
     val memory: (String) -> Unit,
     val timeline: () -> Unit,
     val widgets: () -> Unit,
-    val wallpaper: () -> Unit,
     val pingHistory: () -> Unit,
     val notificationPermission: () -> Unit,
     val verifyEmail: () -> Unit = {},
     val lists: () -> Unit = {},
     val gifts: () -> Unit = {},
+    val theirWidget: () -> Unit = {},
 )
 
 @Composable
@@ -99,9 +101,15 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
-    LaunchedEffect(s.justPaired) { if (s.justPaired) { nav.notificationPermission(); vm.consumeJustPaired() } }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        // Both partners are asked once (previously only the one who entered the code was).
+        if (vm.shouldAskNotificationPermission(context)) nav.notificationPermission()
+        vm.consumeJustPaired()
+    }
 
     var pickStart by remember { mutableStateOf(false) }
+    var showProfile by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         HomeBackground(s.background, s.favouriteImage)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
@@ -112,7 +120,7 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
                     Text("So you can recover your account. Takes 10 seconds.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
                 }
             }
-            item { Hero(s) }
+            item { Hero(s, onOpenProfile = { showProfile = true }) }
             if (s.askStartDate) item { StartDatePrompt(onPick = { pickStart = true }, onDismiss = vm::dismissStartDate) }
             item { PingArea(s, vm) }
             item { Shortcuts(s.selectedType, onPick = { vm.selectType(it); vm.tapPing() }, onMore = vm::openComposer) }
@@ -126,6 +134,7 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
             }
         }
         IncomingPingReveal(ping = s.incoming, partnerName = s.partner?.displayName, onReply = vm::replyToIncoming, onDismiss = vm::dismissIncoming, modifier = Modifier.align(Alignment.TopCenter))
+        if (showProfile) PartnerProfileSheet(s, onDismiss = { showProfile = false })
         if (pickStart) com.risaina.app.feature.timeline.DateDialog(null, { pickStart = false }) { vm.setStartDate(it) }
         if (s.showComposer) {
             PingComposerSheet(initialType = s.selectedType, initialTab = s.composerTab, sending = s.button is PingButtonState.Sending, onDismiss = vm::closeComposer, onSend = vm::sendCustom)
@@ -142,24 +151,36 @@ private fun TopRow(greeting: String, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun Hero(s: HomeUiState) {
-    HeroPanel(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth()) {
+private fun Hero(s: HomeUiState, onOpenProfile: () -> Unit) {
+    HeroPanel(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clickable(onClick = onOpenProfile)) {
         Column(Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(name = s.partner?.displayName, model = s.partnerAvatar, size = 60.dp, ring = true)
+                Avatar(name = s.partner?.displayName, model = com.risaina.app.feature.common.rememberMediaModel(s.partner?.avatarMediaId), size = 60.dp, ring = true)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(s.partner?.displayName ?: "—", style = MaterialTheme.typography.displaySmall, color = Palette.WarmIvory, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val clock = s.partnerClock
-                    Text(
-                        if (clock != null) "It's ${clock.first} for them" + (clock.second?.let { " · $it" } ?: "") else "Paired",
-                        style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark,
-                    )
+                    // Weather sits right under the name: the first thing you wonder about someone far away.
+                    val w = s.partnerWeather
+                    val city = s.partner?.city?.name?.substringBefore(",")
+                    when {
+                        w != null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(w.emoji, style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.width(6.dp))
+                            Text("${w.temperatureC}°", style = MaterialTheme.typography.titleMedium, color = Palette.WarmIvory)
+                            Spacer(Modifier.width(6.dp))
+                            Text("${w.label} in $city", style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        city != null -> Text("📍 $city", style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark)
+                        else -> Text("Tap for their profile", style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark)
+                    }
+                    s.partnerClock?.takeIf { s.showPartnerTime }?.let { c ->
+                        Text("🕰️ ${c.first} for them" + (c.second?.let { n -> " · $n" } ?: ""), style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark)
+                    }
                 }
             }
             s.anniversary?.let { a ->
                 Spacer(Modifier.height(18.dp))
-                Text("TOGETHER", style = RisainaTextStyles.overline, color = Palette.SoftChampagne)
+                Text("TOGETHER", style = RisainaTextStyles.overline, color = Risaina.colors.heroAccent)
                 Text(a.together, style = MaterialTheme.typography.headlineSmall, color = Palette.WarmIvory)
                 Text("%,d days".format(a.daysTogether), style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark)
             }
@@ -178,7 +199,7 @@ private fun Hero(s: HomeUiState) {
             }
             if (s.pingsToday > 0) {
                 Spacer(Modifier.height(12.dp))
-                Text("You've reached for each other ${s.pingsToday} ${if (s.pingsToday == 1) "time" else "times"} today", style = MaterialTheme.typography.bodySmall, color = Palette.Blush)
+                Text("You've reached for each other ${s.pingsToday} ${if (s.pingsToday == 1) "time" else "times"} today", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.heroAccentSoft)
             }
         }
     }
@@ -315,7 +336,7 @@ private fun QuickRow(nav: HomeNav) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         QuickTile("Gifts", com.risaina.app.feature.common.HeartIcon, nav.gifts, Modifier.weight(1f))
         QuickTile("Widgets", WidgetsIcon, nav.widgets, Modifier.weight(1f))
-        QuickTile("Wallpaper", WallpaperIcon, nav.wallpaper, Modifier.weight(1f))
+        QuickTile("Their widget", WallpaperIcon, nav.theirWidget, Modifier.weight(1f))
         QuickTile("Settings", com.risaina.app.feature.common.SettingsIcon, nav.settings, Modifier.weight(1f))
     }
 }
@@ -385,3 +406,70 @@ private fun RecentRow(item: ActivityItem) {
         }
     }
 }
+
+
+/**
+ * Partner profile: who they are and how their day looks (weather, time, birthday) as tiles, then
+ * a separated emergency section. SOS lives here, never on Home, so it can't be hit by accident.
+ */
+@Composable
+private fun PartnerProfileSheet(s: HomeUiState, onDismiss: () -> Unit) {
+    val p = s.partner ?: return
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 20.dp).navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Avatar(name = p.displayName, model = com.risaina.app.feature.common.rememberMediaModel(p.avatarMediaId), size = 112.dp, ring = true)
+            Spacer(Modifier.height(12.dp))
+            Text(p.displayName, style = MaterialTheme.typography.displaySmall)
+            s.anniversary?.let { Text("Together ${it.together}", style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted) }
+            Spacer(Modifier.height(20.dp))
+            val w = s.partnerWeather
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                InfoTile(
+                    emoji = w?.emoji ?: "🌍", label = "Weather",
+                    value = w?.let { "${it.temperatureC}°" } ?: "—",
+                    sub = w?.let { "${it.label} in ${p.city?.name?.substringBefore(",")}" } ?: (p.city?.name?.substringBefore(",")?.let { "in $it" } ?: "City not shared"),
+                    modifier = Modifier.weight(1f),
+                )
+                InfoTile(
+                    emoji = "🕰️", label = "Their time",
+                    value = s.partnerClock?.first ?: "—",
+                    sub = s.partnerClock?.second ?: if (s.partnerClock != null) "same day" else "Not shared",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            val bday = com.risaina.app.core.domain.Birthday.parse(p.birthday)
+            val next = s.partnerBirthday
+            InfoTile(
+                emoji = "🎂", label = "Birthday",
+                value = bday?.let { b -> b.monthDay.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM")) } ?: "Not shared yet",
+                sub = next?.let { n -> if (n.daysLeft == 0L) "Today! 🎉" else (n.turning?.let { t -> "Turns $t in " } ?: "In ") + "${n.daysLeft} days" },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(24.dp))
+            com.risaina.app.feature.sos.SosSection()
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun InfoTile(emoji: String, label: String, value: String, sub: String?, modifier: Modifier = Modifier) {
+    Column(modifier.clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(emoji, style = MaterialTheme.typography.titleLarge); Spacer(Modifier.width(8.dp))
+            Text(label.uppercase(), style = RisainaTextStyles.overline, color = Risaina.colors.textMuted)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(value, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (sub != null) Text(sub, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, maxLines = 2)
+    }
+}
+

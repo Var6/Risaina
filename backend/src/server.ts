@@ -60,6 +60,8 @@ async function main(): Promise<void> {
   const cleanup = new CleanupWorker(db, storage, now, logger, {
     intervalMs: env.cleanup.intervalMs,
     abandonedUploadHours: env.media.abandonedUploadHours,
+    viewOnceUrlTtlSeconds: env.viewOnce.urlTtlSeconds,
+    viewOnceUnopenedDays: env.viewOnce.unopenedDays,
   });
   ctx.events.onEmitted(() => outbox.wake());
 

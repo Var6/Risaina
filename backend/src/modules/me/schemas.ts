@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DisplayName } from '../auth/schemas.js';
 import {
   Birthday,
+  CityInput,
   Couple,
   IdString,
   List,
@@ -13,7 +14,9 @@ import {
   Preferences,
   PreferencesUpdate,
   ProfileTimeZone,
+  Sos,
   User,
+  WidgetBoard,
 } from '../shared/schemas.js';
 
 export const MeResponse = z.object({
@@ -30,6 +33,11 @@ export const MePatchBody = z
     birthday: Birthday.nullable().optional(),
     timeZone: ProfileTimeZone.nullable().optional(),
     shareLocalTime: z.boolean().optional(),
+    city: CityInput.nullable().optional().meta({
+      description:
+        '{ name 1–80, latitude -90..90, longitude -180..180 } (rounded to 2 decimals); null clears',
+    }),
+    shareWeather: z.boolean().optional(),
   })
   .strict();
 
@@ -65,5 +73,9 @@ export const ExportResponse = z.object({
   memories: z.array(Memory),
   milestones: z.array(Milestone),
   lists: z.array(List),
+  sos: z.array(Sos),
+  widgetBoards: z
+    .array(WidgetBoard)
+    .meta({ description: 'Both boards of the couple (authorId tells whose)' }),
   truncated: z.boolean(),
 });

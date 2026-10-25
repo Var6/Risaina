@@ -14,8 +14,10 @@ import kotlinx.serialization.json.JsonObject
     val id: String, val displayName: String, val avatarMediaId: String? = null, val createdAt: String,
     val emailVerified: Boolean = false, val hasPassword: Boolean = true,
     val birthday: String? = null, val timeZone: String? = null, val shareLocalTime: Boolean = true,
+    val city: CityDto? = null, val shareWeather: Boolean = true,
 )
-@Serializable data class PartnerDto(val id: String, val displayName: String, val avatarMediaId: String? = null, val birthday: String? = null, val timeZone: String? = null)
+@Serializable data class CityDto(val name: String, val latitude: Double, val longitude: Double)
+@Serializable data class PartnerDto(val id: String, val displayName: String, val avatarMediaId: String? = null, val birthday: String? = null, val timeZone: String? = null, val city: CityDto? = null)
 @Serializable data class CoupleDto(
     val id: String,
     val status: String,
@@ -106,8 +108,12 @@ import kotlinx.serialization.json.JsonObject
     val deletedAt: String? = null,
     val readAt: String? = null,
     val idempotencyKey: String,
+    val viewOnce: Boolean = false,
+    val openedAt: String? = null,
+    val viewOnceExpired: Boolean = false,
 )
-@Serializable data class CreateMessageRequest(val type: String, val text: String? = null, val mediaId: String? = null, val idempotencyKey: String)
+@Serializable data class CreateMessageRequest(val type: String, val text: String? = null, val mediaId: String? = null, val idempotencyKey: String, val viewOnce: Boolean? = null)
+@Serializable data class OpenViewOnceResponse(val url: String, val expiresAt: String, val message: MessageDto)
 @Serializable data class MessageResponse(val message: MessageDto)
 @Serializable data class MessagePage(val items: List<MessageDto>, val nextCursor: String? = null)
 
@@ -133,7 +139,7 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class MemoryDto(
     val id: String, val coupleId: String, val createdBy: String, val mediaId: String,
     val caption: String? = null, val takenAt: String? = null, val pinned: Boolean = false,
-    val createdAt: String, val deletedAt: String? = null,
+    val createdAt: String, val deletedAt: String? = null, val sourceMessageId: String? = null,
 )
 @Serializable data class CreateMemoryRequest(val mediaId: String, val caption: String? = null, val takenAt: String? = null)
 @Serializable data class PatchMemoryRequest(val caption: String? = null, val pinned: Boolean? = null)
@@ -179,5 +185,18 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class ListResponse(val list: SharedListDto)
 @Serializable data class CreateListRequest(val title: String, val kind: String, val body: String? = null, val items: List<ListItemDto>? = null, val pinned: Boolean? = null)
 @Serializable data class PatchListRequest(val title: String? = null, val body: String? = null, val items: List<ListItemDto>? = null, val pinned: Boolean? = null, val expectedVersion: Int? = null)
+@Serializable data class WidgetBoardDto(
+    val authorId: String? = null, val note: String? = null, val emoji: String? = null, val mood: String? = null,
+    val photoMediaId: String? = null, val updatedAt: String? = null,
+)
+@Serializable data class WidgetBoardsResponse(val mine: WidgetBoardDto? = null, val forMe: WidgetBoardDto? = null)
+@Serializable data class WidgetBoardResponse(val board: WidgetBoardDto)
+@Serializable data class SosDto(
+    val id: String, val coupleId: String, val senderId: String, val recipientId: String,
+    val message: String? = null, val createdAt: String, val acknowledgedAt: String? = null,
+)
+@Serializable data class CreateSosRequest(val message: String? = null)
+@Serializable data class SosResponse(val sos: SosDto)
+@Serializable data class SosList(val items: List<SosDto>)
 @Serializable data class HealthResponse(val status: String, val version: String? = null, val checks: JsonObject? = null)
 @Serializable data class ExportResponse(@SerialName("user") val user: UserDto, val couple: CoupleDto? = null)

@@ -46,6 +46,7 @@ describe('profile: birthday / timeZone / shareLocalTime', () => {
       avatarMediaId: null,
       birthday: null,
       timeZone: null,
+      city: null,
     });
   });
 
@@ -114,6 +115,7 @@ describe('profile: birthday / timeZone / shareLocalTime', () => {
       avatarMediaId: null,
       birthday: '--07-01',
       timeZone: 'Europe/Berlin',
+      city: null,
     };
     expect((await getMe(b)).partner).toEqual(expected);
     const couple = await t.app.inject({ method: 'GET', url: `${API}/couple`, headers: bearer(b) });

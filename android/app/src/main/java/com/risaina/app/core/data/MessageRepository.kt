@@ -77,7 +77,7 @@ class MessageRepository @Inject constructor(
         return post(pending)
     }
 
-    suspend fun sendMedia(type: MessageType, mediaId: String, localMediaPath: String?): AppResult<Message> {
+    suspend fun sendMedia(type: MessageType, mediaId: String, localMediaPath: String?, viewOnce: Boolean = false): AppResult<Message> {
         val session = sessionStore.current() ?: return AppResult.Failure(AppError.Unauthorized())
         val partner = coupleDao.partner() ?: return AppResult.Failure(AppError.Conflict("not_paired", "You're not paired yet"))
         val localKey = UUID.randomUUID().toString()
@@ -85,6 +85,7 @@ class MessageRepository @Inject constructor(
             id = "local:$localKey", localKey = localKey, coupleId = null, senderId = session.userId, recipientId = partner.id,
             type = type.wire, text = null, mediaId = mediaId, createdAt = time.now().toEpochMilli(),
             editedAt = null, deletedAt = null, readAt = null, sendState = MessageSendState.PENDING.name, localMediaPath = localMediaPath,
+            viewOnce = viewOnce,
         )
         messageDao.upsert(pending)
         outboxDao.upsert(OutboxEntity(localKey, "message", json.encodeToString(OutboxMessage.serializer(), OutboxMessage(type.wire, null, mediaId, localKey)), 0, null, pending.createdAt))
@@ -92,7 +93,7 @@ class MessageRepository @Inject constructor(
     }
 
     private suspend fun post(pending: MessageEntity): AppResult<Message> {
-        val res = apiCall { api.createMessage(CreateMessageRequest(pending.type, pending.text, pending.mediaId, pending.localKey)) }
+        val res = apiCall { api.createMessage(CreateMessageRequest(pending.type, pending.text, pending.mediaId, pending.localKey, viewOnce = pending.viewOnce.takeIf { it })) }
         return when (res) {
             is AppResult.Success -> {
                 val sent = res.value.message.toEntity(localMediaPath = pending.localMediaPath)
@@ -134,6 +135,14 @@ class MessageRepository @Inject constructor(
         messageDao.upsert(row)
         return post(row)
     }
+
+    /**
+     * Opens a view-once photo: the server hands out a short-lived URL exactly once. The image is
+     * never written to disk on this phone; the caller shows it from memory with screenshots blocked.
+     */
+    suspend fun openViewOnce(id: String): AppResult<String> = apiCall { api.openViewOnce(id) }
+        .onSuccess { r -> messageDao.upsert(r.message.toEntity()) }
+        .map { it.url }
 
     suspend fun discard(localKey: String) { messageDao.deleteByLocalKey(localKey); outboxDao.deleteByKey(localKey) }
 

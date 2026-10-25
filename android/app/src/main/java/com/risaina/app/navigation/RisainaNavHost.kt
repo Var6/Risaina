@@ -35,7 +35,6 @@ import com.risaina.app.feature.settings.ProfileScreen
 import com.risaina.app.feature.settings.SettingsNav
 import com.risaina.app.feature.settings.SettingsScreen
 import com.risaina.app.feature.timeline.TimelineScreen
-import com.risaina.app.feature.wallpaper.WallpaperStudioScreen
 import com.risaina.app.feature.widgets.WidgetGalleryScreen
 import kotlinx.coroutines.launch
 
@@ -98,14 +97,18 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     memory = { id -> navController.navigate(MemoryDetail(id)) },
                     timeline = { navController.navigate(Timeline) },
                     widgets = { navController.navigate(WidgetGallery) },
-                    wallpaper = { navController.navigate(WallpaperStudio()) },
                     pingHistory = { navController.navigate(PingHistory) },
                     notificationPermission = { navController.navigate(NotificationPermission) },
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     lists = { navController.navigate(Lists) },
+                    theirWidget = { navController.navigate(TheirWidget) },
                 ),
             )
         }
+        composable<Sos>(deepLinks = listOf(navDeepLink<Sos>(basePath = "risaina://app/sos"))) { entry ->
+            com.risaina.app.feature.sos.SosScreen(id = entry.toRoute<Sos>().id, onBack = back, onOpenChat = { navController.navigate(Messages()) })
+        }
+        composable<TheirWidget> { com.risaina.app.feature.theirwidget.TheirWidgetScreen(onBack = back) }
         composable<Lists> { com.risaina.app.feature.lists.ListsScreen(onBack = back, onOpen = { navController.navigate(ListDetail(it)) }) }
         composable<ListDetail> { entry -> com.risaina.app.feature.lists.ListDetailScreen(id = entry.toRoute<ListDetail>().id, onBack = back) }
         composable<PingHistory> { PingHistoryScreen(onBack = back) }
@@ -116,10 +119,9 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
             MessagesScreen(onBack = back, openRecorder = entry.toRoute<Messages>().openRecorder)
         }
         composable<Memories> { MemoriesScreen(onBack = back, onOpen = { navController.navigate(MemoryDetail(it)) }, onAdd = { navController.navigate(AddMemory) }) }
-        composable<MemoryDetail> { entry -> MemoryDetailScreen(id = entry.toRoute<MemoryDetail>().id, onBack = back, onWallpaper = { navController.navigate(WallpaperStudio(it)) }) }
+        composable<MemoryDetail> { entry -> MemoryDetailScreen(id = entry.toRoute<MemoryDetail>().id, onBack = back) }
         composable<AddMemory> { AddMemoryScreen(onBack = back, onDone = back) }
         composable<Timeline> { TimelineScreen(onBack = back) }
-        composable<WallpaperStudio> { entry -> WallpaperStudioScreen(memoryId = entry.toRoute<WallpaperStudio>().memoryId, onBack = back) }
         composable<WidgetGallery> { WidgetGalleryScreen(onBack = back) }
 
         composable<Settings> {

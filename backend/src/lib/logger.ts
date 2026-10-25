@@ -47,6 +47,20 @@ export const REDACT_PATHS = [
   '*.lists',
   'birthday',
   '*.birthday',
+  // widget board: notes and moods are private content
+  'note',
+  '*.note',
+  'mood',
+  '*.mood',
+  'board',
+  '*.board',
+  // SOS messages and weather city are private
+  'sos',
+  '*.sos',
+  'sos.message',
+  '*.sos.message',
+  'city',
+  '*.city',
 ];
 
 export function loggerOptions(level: string, pretty: boolean): LoggerOptions {

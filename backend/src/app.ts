@@ -39,6 +39,8 @@ import { memoryRoutes } from './modules/memories/routes.js';
 import { messageRoutes } from './modules/messages/routes.js';
 import { milestoneRoutes } from './modules/milestones/routes.js';
 import { pingRoutes } from './modules/pings/routes.js';
+import { sosRoutes } from './modules/sos/routes.js';
+import { widgetBoardRoutes } from './modules/widget-board/routes.js';
 import './modules/shared/schemas.js';
 import { registerAuthDecorators } from './plugins/authenticate.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
@@ -196,6 +198,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
         { name: 'Memories' },
         { name: 'Milestones' },
         { name: 'Lists' },
+        { name: 'Widget' },
+        { name: 'SOS' },
         { name: 'Events' },
       ],
     },
@@ -232,6 +236,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
       await api.register(memoryRoutes, ctx);
       await api.register(milestoneRoutes, ctx);
       await api.register(listRoutes, ctx);
+      await api.register(widgetBoardRoutes, ctx);
+      await api.register(sosRoutes, ctx);
       await api.register(eventRoutes, ctx);
       await api.register(websocketRoutes, ctx);
       if (opts.storage instanceof LocalStorageDriver) {

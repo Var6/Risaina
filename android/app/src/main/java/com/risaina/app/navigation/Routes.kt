@@ -18,7 +18,6 @@ import kotlinx.serialization.Serializable
 @Serializable data object AddMemory
 @Serializable data object Timeline
 @Serializable data class EditMilestone(val id: String? = null)
-@Serializable data class WallpaperStudio(val memoryId: String? = null)
 @Serializable data object WidgetGallery
 @Serializable data object Settings
 @Serializable data object NotificationSettings
@@ -28,4 +27,6 @@ import kotlinx.serialization.Serializable
 @Serializable data object NotificationPermission
 @Serializable data object VerifyEmail
 @Serializable data object Lists
+@Serializable data object TheirWidget
+@Serializable data class Sos(val id: String)
 @Serializable data class ListDetail(val id: String)

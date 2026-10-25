@@ -37,6 +37,9 @@ data class WidgetSnapshot(
     val latestVoiceDurationMs: Long? = null,
     val latestVoiceAtMillis: Long? = null,
     val paired: Boolean = false,
+    val latestGiftEmoji: String? = null,
+    val latestGiftLine: String? = null,
+    val latestGiftAtMillis: Long? = null,
 )
 
 @Singleton
@@ -57,6 +60,9 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
         val voiceDuration = longPreferencesKey("voice_duration")
         val voiceAt = longPreferencesKey("voice_at")
         val paired = stringPreferencesKey("paired")
+        val giftEmoji = stringPreferencesKey("gift_emoji")
+        val giftLine = stringPreferencesKey("gift_line")
+        val giftAt = longPreferencesKey("gift_at")
     }
 
     val snapshot: Flow<WidgetSnapshot> = context.widgetDataStore.data.map { p ->
@@ -76,6 +82,9 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
             latestVoiceDurationMs = p[K.voiceDuration],
             latestVoiceAtMillis = p[K.voiceAt],
             paired = p[K.paired] == "1",
+            latestGiftEmoji = p[K.giftEmoji],
+            latestGiftLine = p[K.giftLine],
+            latestGiftAtMillis = p[K.giftAt],
         )
     }
 
@@ -93,6 +102,7 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
             put(K.countdownLabel, s.countdownLabel); put(K.countdownDate, s.countdownDateIso)
             put(K.voiceId, s.latestVoiceNoteId); putL(K.voiceDuration, s.latestVoiceDurationMs); putL(K.voiceAt, s.latestVoiceAtMillis)
             put(K.paired, if (s.paired) "1" else "0")
+            put(K.giftEmoji, s.latestGiftEmoji); put(K.giftLine, s.latestGiftLine); putL(K.giftAt, s.latestGiftAtMillis)
         }
     }
 

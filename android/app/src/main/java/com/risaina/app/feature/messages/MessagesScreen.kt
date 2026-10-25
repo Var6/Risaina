@@ -78,6 +78,7 @@ import com.risaina.app.feature.common.PlayIcon
 import com.risaina.app.feature.common.SendIcon
 import com.risaina.app.feature.voice.VoiceRecorderSheet
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.ZoneId
 
 @Composable
@@ -89,8 +90,13 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
     LaunchedEffect(s.playback.id, s.playback.playing) { while (s.playback.playing) { vm.tickPlayback(); delay(250) } }
 
     val listState = rememberLazyListState()
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::sendPhoto) }
+    var pendingPhoto by remember { mutableStateOf<android.net.Uri?>(null) }
+    var viewOnceUrl by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> pendingPhoto = uri }
     var toDelete by remember { mutableStateOf<Message?>(null) }
+    var showWallpaper by remember { mutableStateOf(false) }
+    val wallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::setWallpaperPhoto); showWallpaper = false }
 
     // Mark partner messages read as they become visible.
     LaunchedEffect(s.messages.size, listState.firstVisibleItemIndex) {
@@ -107,7 +113,7 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(name = s.partner?.displayName, model = null, size = 34.dp)
+                        Avatar(name = s.partner?.displayName, model = com.risaina.app.feature.common.rememberMediaModel(s.partner?.avatarMediaId), size = 34.dp)
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(s.partner?.displayName ?: "—", style = MaterialTheme.typography.titleMedium)
@@ -119,6 +125,7 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
                     }
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(BackIcon, contentDescription = "Back") } },
+                actions = { IconButton(onClick = { showWallpaper = true }) { Icon(com.risaina.app.feature.common.WallpaperIcon, contentDescription = "Chat wallpaper") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -129,8 +136,9 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
                 onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji,
             )
         },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
     ) { padding ->
+        ChatBackground(s.wallpaper, s.wallpaperPhoto, Modifier.padding(padding))
         if (s.messages.isEmpty()) {
             EmptyState(
                 title = "Nothing here yet", body = "Write the first line. Short is fine — it's the showing up that counts.",
@@ -141,7 +149,8 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
                 state = listState, reverseLayout = true,
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                // Bottom-anchored like any chat: a short conversation sits just above the composer.
+                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom),
             ) {
                 itemsIndexed(s.messages, key = { _, m -> m.id }) { index, m ->
                     val mine = m.senderId == s.myId
@@ -152,7 +161,12 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
                         Bubble(
                             m = m, mine = mine, playing = s.playback.id == m.id && s.playback.playing,
                             progress = if (s.playback.id == m.id) s.playback.progress else 0f,
-                            resolve = { vm.resolveImage(m) },
+                            resolve = { if (m.viewOnce) null else vm.resolveImage(m) },
+                            onOpenViewOnce = {
+                                scope.launch {
+                                    vm.openViewOnce(m).onSuccess { viewOnceUrl = it }.onFailure { snackbar.showSnackbar(it.message ?: "Couldn't open") }
+                                }
+                            },
                             onPlay = { vm.togglePlay(m) },
                             onLongPress = { if (mine && m.sendState == MessageSendState.SENT) toDelete = m },
                             onRetry = { vm.retry(m) }, onDiscard = { vm.discard(m) },
@@ -164,6 +178,28 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
         }
     }
 
+    pendingPhoto?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingPhoto = null },
+            title = { Text("Send this photo") },
+            text = {
+                Column {
+                    AsyncImage(model = uri, contentDescription = "Selected photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
+                    Spacer(Modifier.height(10.dp))
+                    Text("“View once” can be opened a single time. It isn't saved to Memories, can't be screenshotted in Risaina, and is deleted after viewing.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.sendPhoto(uri); pendingPhoto = null }) { Text("Send") } },
+            dismissButton = { TextButton(onClick = { vm.sendPhoto(uri, viewOnce = true); pendingPhoto = null }) { Text("① View once") } },
+        )
+    }
+    viewOnceUrl?.let { url -> ViewOnceViewer(url) { viewOnceUrl = null } }
+    if (showWallpaper) ChatWallpaperSheet(
+        current = s.wallpaper, photo = s.wallpaperPhoto,
+        onPick = { vm.setWallpaper(it); showWallpaper = false },
+        onPickPhoto = { wallpaperPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        onDismiss = { showWallpaper = false },
+    )
     if (s.showRecorder) {
         VoiceRecorderSheet(
             recorderState = s.recorder, supportsPause = vm.recorder.supportsPause, playback = s.playback, uploading = s.sendingMedia,
@@ -193,6 +229,7 @@ private fun DaySeparator(label: String) {
 private fun Bubble(
     m: Message, mine: Boolean, playing: Boolean, progress: Float,
     resolve: suspend () -> Any?, onPlay: () -> Unit, onLongPress: () -> Unit, onRetry: () -> Unit, onDiscard: () -> Unit,
+    onOpenViewOnce: () -> Unit = {},
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = if (mine) 20.dp else 6.dp, bottomEnd = if (mine) 6.dp else 20.dp)
     val container = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
@@ -206,7 +243,24 @@ private fun Bubble(
             when (m.type) {
                 MessageType.TEXT -> Text(m.text ?: "", style = MaterialTheme.typography.bodyLarge, color = onContainer)
                 MessageType.EMOJI -> Text(m.text ?: "", style = RisainaTextStyles.emojiLarge)
-                MessageType.PHOTO -> {
+                MessageType.PHOTO -> if (m.viewOnce) {
+                    val state = when {
+                        mine && m.openedAt != null -> "Opened"
+                        mine -> "Not opened yet"
+                        m.openedAt != null -> "Opened"
+                        m.viewOnceExpired -> "Expired"
+                        else -> "Tap to view"
+                    }
+                    val canOpen = !mine && m.openedAt == null && !m.viewOnceExpired
+                    Row(
+                        Modifier.width(220.dp).clip(RoundedCornerShape(14.dp)).then(if (canOpen) Modifier.clickable(onClick = onOpenViewOnce) else Modifier).padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("①", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column { Text("Photo · view once", style = MaterialTheme.typography.titleSmall, color = onContainer); Text(state, style = RisainaTextStyles.timestamp, color = onContainer.copy(alpha = 0.8f)) }
+                    }
+                } else {
                     val model by produceState<Any?>(initialValue = m.localMediaPath, key1 = m.id) { value = resolve() ?: m.localMediaPath }
                     Box(Modifier.width(260.dp).aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
                         if (model != null) AsyncImage(model = model, contentDescription = "Photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -270,6 +324,35 @@ private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit,
             } else {
                 IconButton(onClick = onSend) { Icon(SendIcon, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary) }
             }
+        }
+    }
+}
+
+
+/**
+ * Full-screen, one-time viewer. FLAG_SECURE blocks screenshots and screen recording of this window;
+ * the image is loaded with memory and disk caches off, so nothing is kept after closing.
+ */
+@Composable
+private fun ViewOnceViewer(url: String, onClose: () -> Unit) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn, // FLAG_SECURE on the dialog window
+        ),
+    ) {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val request = remember(url) {
+            coil3.request.ImageRequest.Builder(ctx).data(url)
+                .diskCachePolicy(coil3.request.CachePolicy.DISABLED)
+                .memoryCachePolicy(coil3.request.CachePolicy.DISABLED)
+                .build()
+        }
+        Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onClose)) {
+            AsyncImage(model = request, contentDescription = "View-once photo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+            Text("Tap to close · this photo can't be opened again", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp))
         }
     }
 }

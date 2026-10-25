@@ -21,6 +21,9 @@ export type ErrorCode =
   | 'verification_code_invalid'
   | 'verification_code_expired'
   | 'verification_attempts_exceeded'
+  | 'view_once'
+  | 'view_once_consumed'
+  | 'view_once_expired'
   | 'internal';
 
 export class AppError extends Error {
@@ -85,5 +88,12 @@ export const errors = {
     new AppError(429, 'verification_attempts_exceeded', 'Too many wrong codes. Request a new one.', {
       headers: { 'retry-after': String(Math.max(1, Math.ceil(retryAfterSeconds))) },
     }),
+  viewOnce: (
+    message = 'View-once media cannot be downloaded; the recipient opens it with POST /messages/:id/open',
+  ) => new AppError(403, 'view_once', message),
+  viewOnceConsumed: (message = 'This view-once photo has already been opened') =>
+    new AppError(410, 'view_once_consumed', message),
+  viewOnceExpired: (message = 'This view-once photo expired before it was opened') =>
+    new AppError(410, 'view_once_expired', message),
   internal: (message = 'Internal server error') => new AppError(500, 'internal', message),
 };

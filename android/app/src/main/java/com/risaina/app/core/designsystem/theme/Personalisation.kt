@@ -2,6 +2,7 @@ package com.risaina.app.core.designsystem.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 
 /**
  * Personal look. Each person picks their own accent and background; it is stored on their phone
@@ -34,24 +35,54 @@ enum class BackgroundStyle(val label: String) {
     PHOTO("Our photo"),
 }
 
-internal fun ColorScheme.withAccent(a: AccentTheme, dark: Boolean): ColorScheme =
-    if (a == AccentTheme.ROSEWOOD) this else if (dark) copy(
-        primary = a.darkPrimary,
-        primaryContainer = a.darkContainer,
-        onPrimaryContainer = a.darkPrimary,
+/**
+ * Whole-app recolouring. Rosewood returns the hand-tuned original scheme. Other accents derive
+ * every tinted role from the accent: primary + secondary families, the five surface-container
+ * steps (cards, chips, tiles), background, outlines and the warm "overline" accent. Neutral text
+ * colours stay neutral so contrast is preserved.
+ */
+internal fun ColorScheme.withAccent(a: AccentTheme, dark: Boolean): ColorScheme {
+    if (a == AccentTheme.ROSEWOOD) return this
+    val base = if (dark) Color(0xFF121014) else Color(0xFFFCFAF8)
+    fun tint(amount: Float) = lerp(base, if (dark) a.heroStart else a.lightContainer, amount)
+    return if (dark) copy(
+        primary = a.darkPrimary, onPrimary = Color(0xFF101014),
+        primaryContainer = a.darkContainer, onPrimaryContainer = a.darkPrimary,
+        secondary = lerp(a.darkPrimary, Color.White, 0.25f), onSecondary = Color(0xFF101014),
+        secondaryContainer = lerp(a.darkContainer, base, 0.35f), onSecondaryContainer = a.darkPrimary,
+        tertiary = a.pingFill, onTertiary = Color.White,
+        tertiaryContainer = tint(0.55f), onTertiaryContainer = a.darkPrimary,
+        background = tint(0.10f), surface = tint(0.10f),
+        surfaceVariant = tint(0.32f),
+        surfaceContainerLowest = tint(0.06f), surfaceContainerLow = tint(0.16f), surfaceContainer = tint(0.24f),
+        surfaceContainerHigh = tint(0.34f), surfaceContainerHighest = tint(0.44f),
+        outline = lerp(a.darkPrimary, base, 0.55f), outlineVariant = tint(0.48f),
         inversePrimary = a.lightPrimary,
-        tertiary = a.pingFill,
     ) else copy(
-        primary = a.lightPrimary,
-        primaryContainer = a.lightContainer,
-        onPrimaryContainer = a.onLightContainer,
+        primary = a.lightPrimary, onPrimary = Color.White,
+        primaryContainer = a.lightContainer, onPrimaryContainer = a.onLightContainer,
+        secondary = lerp(a.lightPrimary, Color.Black, 0.12f), onSecondary = Color.White,
+        secondaryContainer = lerp(a.lightContainer, Color.White, 0.35f), onSecondaryContainer = a.onLightContainer,
+        tertiary = a.heroStart, onTertiary = Color.White,
+        tertiaryContainer = tint(0.55f), onTertiaryContainer = a.onLightContainer,
+        background = tint(0.10f), surface = tint(0.10f),
+        surfaceVariant = tint(0.35f),
+        surfaceContainerLowest = Color.White, surfaceContainerLow = tint(0.18f), surfaceContainer = tint(0.28f),
+        surfaceContainerHigh = tint(0.42f), surfaceContainerHighest = tint(0.58f),
+        outline = lerp(a.lightPrimary, base, 0.6f), outlineVariant = tint(0.7f),
         inversePrimary = a.lightContainer,
-        tertiary = a.heroStart,
     )
+}
 
-internal fun RisainaColors.withAccent(a: AccentTheme, dark: Boolean): RisainaColors = copy(
-    pingGlow = if (dark) a.darkPrimary else a.pingFill,
-    heroGradientStart = a.heroStart,
-    heroGradientEnd = a.heroEnd,
-    pingFill = a.pingFill,
-)
+internal fun RisainaColors.withAccent(a: AccentTheme, dark: Boolean): RisainaColors =
+    if (a == AccentTheme.ROSEWOOD) this else copy(
+        pingGlow = if (dark) a.darkPrimary else a.pingFill,
+        heroGradientStart = a.heroStart,
+        heroGradientEnd = a.heroEnd,
+        pingFill = a.pingFill,
+        accentWarm = if (dark) lerp(a.darkPrimary, Color.White, 0.2f) else a.lightPrimary,
+        divider = lerp(if (dark) Color(0xFF121014) else Color(0xFFFCFAF8), if (dark) a.heroStart else a.lightContainer, 0.6f),
+        shimmer = a.pingFill.copy(alpha = 0.2f),
+        heroAccent = lerp(a.pingFill, Color.White, 0.55f),
+        heroAccentSoft = lerp(a.pingFill, Color.White, 0.7f),
+    )

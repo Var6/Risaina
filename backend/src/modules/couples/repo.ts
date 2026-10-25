@@ -59,6 +59,10 @@ export class CoupleRepo {
     );
   }
 
+  async deleteWidgetBoards(coupleId: ObjectId): Promise<void> {
+    await this.db.widgetBoards.deleteMany({ coupleId });
+  }
+
   async revokeOpenInvitations(coupleId: ObjectId, now: Date): Promise<void> {
     await this.db.invitations.updateMany(
       { coupleId, status: 'open' },

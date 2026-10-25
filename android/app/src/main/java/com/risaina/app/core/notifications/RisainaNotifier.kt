@@ -62,7 +62,8 @@ class RisainaNotifier @Inject constructor(
                     else -> p.message ?: p.type.defaultMessage.ifBlank { "Tap to see" }
                 }
                 post(
-                    id = p.id.hashCode(),
+                    id = PING_NOTIFICATION_ID,
+                    onlyAlertOnce = true,
                     channel = if (quiet) NotificationChannels.PINGS_QUIET else NotificationChannels.PINGS,
                     title = title, body = body, deepLink = "risaina://app/ping/${p.id}",
                     category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
@@ -72,6 +73,7 @@ class RisainaNotifier @Inject constructor(
                 val m = item.message
                 val body = when {
                     !prefs.previewInNotifications -> "New message"
+                    m.type == MessageType.PHOTO && m.viewOnce -> "Sent you a view-once photo"
                     m.type == MessageType.PHOTO -> "Sent you a photo"
                     m.type == MessageType.VOICE -> "Sent you a voice note"
                     else -> m.text ?: "New message"
@@ -83,6 +85,8 @@ class RisainaNotifier @Inject constructor(
                     category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
                 )
             }
+            Incoming.WidgetChanged -> Unit
+            is Incoming.Sos -> Unit // SosAlert already rang
             Incoming.Unlinked -> post(
                 id = 9001, channel = NotificationChannels.SYSTEM, title = "Risaina",
                 body = "Your pairing has ended.", deepLink = "risaina://app/home",
@@ -91,7 +95,28 @@ class RisainaNotifier @Inject constructor(
         }
     }
 
-    private fun post(id: Int, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int) {
+    /**
+     * Called straight from the FCM service, before any network sync, so the partner's phone buzzes
+     * within a second. Content is generic (the push carries no content); the sync that follows
+     * updates the same notification silently with the real ping.
+     */
+    suspend fun notifyPingArrivedFast() {
+        if (!canPost()) return
+        val prefs = preferencesStore.current()
+        if (!prefs.notificationsEnabled || appInForeground()) return
+        val partner = coupleDao.partner()?.displayName ?: "Your partner"
+        val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
+        post(
+            id = PING_NOTIFICATION_ID,
+            channel = if (quiet) NotificationChannels.PINGS_QUIET else NotificationChannels.PINGS,
+            title = "$partner is thinking of you", body = "Tap to see", deepLink = "risaina://app/home",
+            category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
+        )
+    }
+
+    companion object { const val PING_NOTIFICATION_ID = 4242 }
+
+    private fun post(id: Int, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int, onlyAlertOnce: Boolean = false) {
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(deepLink)).apply {
             setPackage(context.packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -105,6 +130,8 @@ class RisainaNotifier @Inject constructor(
             .setCategory(category)
             .setPriority(priority)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(onlyAlertOnce)
+            .setVibrate(if (channel == NotificationChannels.PINGS) longArrayOf(0, 40, 60, 40, 60, 90) else null)
             .setContentIntent(pending)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(

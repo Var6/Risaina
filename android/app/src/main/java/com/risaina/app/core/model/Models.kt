@@ -20,7 +20,11 @@ data class Partner(
     val birthday: String? = null,
     /** IANA zone, or null when the partner doesn't share their local time. */
     val timeZone: String? = null,
+    /** City they chose to share for weather (never GPS). */
+    val city: City? = null,
 )
+
+data class City(val name: String, val latitude: Double, val longitude: Double)
 
 enum class CoupleStatus { PENDING, ACTIVE, ENDED }
 
@@ -93,6 +97,9 @@ data class Message(
     val sendState: MessageSendState,
     val localMediaPath: String? = null,
     val uploadProgress: Float? = null,
+    val viewOnce: Boolean = false,
+    val openedAt: Instant? = null,
+    val viewOnceExpired: Boolean = false,
 )
 
 enum class MediaCategory(val wire: String) {
@@ -171,6 +178,13 @@ data class Preferences(
     val accent: String = "ROSEWOOD",
     val background: String = "GLOW",
     val shareLocalTime: Boolean = true,
+    /** Chat background on this phone only: DEFAULT, PAPER, HEARTS, NIGHT, GLOW or PHOTO. */
+    val chatWallpaper: String = "DEFAULT",
+    /** Opt-in persistent card on the lock screen with the partner's photo and note. */
+    val lockScreenCard: Boolean = false,
+    /** Show the partner's local time on Home (weather is shown by default instead). */
+    val showPartnerTime: Boolean = false,
+    val shareWeather: Boolean = true,
 )
 
 enum class DarkMode { SYSTEM, LIGHT, DARK }
@@ -197,6 +211,7 @@ data class Session(
 data class Profile(
     val userId: String, val displayName: String, val avatarMediaId: String?, val emailVerified: Boolean = true,
     val birthday: String? = null, val hasPassword: Boolean = true,
+    val city: City? = null,
 )
 
 data class InvitationCreated(val id: String, val code: String, val expiresAt: Instant)

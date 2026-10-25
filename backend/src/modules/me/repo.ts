@@ -9,7 +9,9 @@ import type {
   MilestoneDoc,
   PingDoc,
   Preferences,
+  SosDoc,
   UserDoc,
+  WidgetBoardDoc,
 } from '../../db/types.js';
 
 export class MeRepo {
@@ -75,6 +77,10 @@ export class MeRepo {
     );
   }
 
+  async deleteWidgetBoards(userId: ObjectId): Promise<void> {
+    await this.db.widgetBoards.deleteMany({ authorId: userId });
+  }
+
   async anonymise(userId: ObjectId, now: Date): Promise<void> {
     await this.db.users.updateOne(
       { _id: userId },
@@ -88,6 +94,7 @@ export class MeRepo {
           activeCoupleId: null,
           birthday: null,
           timeZone: null,
+          city: null,
           deletedAt: now,
           updatedAt: now,
         },
@@ -121,6 +128,14 @@ export class MeRepo {
       .sort({ pinned: -1, updatedAt: -1 })
       .limit(limit)
       .toArray();
+  }
+
+  sos(coupleId: ObjectId, limit: number): Promise<SosDoc[]> {
+    return this.db.sos.find({ coupleId }).sort({ createdAt: -1 }).limit(limit).toArray();
+  }
+
+  widgetBoards(coupleId: ObjectId): Promise<WidgetBoardDoc[]> {
+    return this.db.widgetBoards.find({ coupleId }).limit(2).toArray();
   }
 
   milestones(coupleId: ObjectId, limit: number): Promise<MilestoneDoc[]> {

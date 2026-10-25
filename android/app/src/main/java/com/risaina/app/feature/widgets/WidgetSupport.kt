@@ -136,6 +136,7 @@ class GlanceWidgetRefresher @Inject constructor(@ApplicationContext private val 
         EmojiWidget().updateAll(context)
         CountdownWidget().updateAll(context)
         VoiceNoteWidget().updateAll(context)
+        GiftWidget().updateAll(context)
     }
 }
 

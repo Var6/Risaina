@@ -14,6 +14,26 @@
       }
     },
     "schemas": {
+      "CityInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "latitude",
+          "longitude"
+        ],
+        "description": "Coordinates rounded to 2 decimals"
+      },
       "ErrorEnvelopeInput": {
         "type": "object",
         "properties": {
@@ -91,6 +111,21 @@
           "shareLocalTime": {
             "type": "boolean",
             "description": "When false the partner sees timeZone: null"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CityInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Weather city; null when unset"
+          },
+          "shareWeather": {
+            "type": "boolean",
+            "description": "When false the partner sees city: null"
           }
         },
         "required": [
@@ -102,7 +137,9 @@
           "hasPassword",
           "birthday",
           "timeZone",
-          "shareLocalTime"
+          "shareLocalTime",
+          "city",
+          "shareWeather"
         ]
       },
       "PartnerInput": {
@@ -141,6 +178,17 @@
               "string",
               "null"
             ]
+          },
+          "city": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CityInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when unset or the partner turned shareWeather off"
           }
         },
         "required": [
@@ -148,7 +196,8 @@
           "displayName",
           "avatarMediaId",
           "birthday",
-          "timeZone"
+          "timeZone",
+          "city"
         ]
       },
       "SharedPreferencesInput": {
@@ -551,6 +600,27 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "viewOnce": {
+            "type": "boolean",
+            "description": "View-once photo (only the recipient can open it, once)"
+          },
+          "openedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the recipient opened a view-once photo"
+          },
+          "viewOnceExpired": {
+            "type": "boolean",
+            "description": "True when a view-once photo was purged unopened (openedAt stays null)"
           }
         },
         "required": [
@@ -565,7 +635,10 @@
           "editedAt",
           "deletedAt",
           "readAt",
-          "idempotencyKey"
+          "idempotencyKey",
+          "viewOnce",
+          "openedAt",
+          "viewOnceExpired"
         ]
       },
       "MediaInput": {
@@ -727,6 +800,19 @@
                 "type": "null"
               }
             ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Chat photo message this memory was auto-created from; null for manual memories"
           }
         },
         "required": [
@@ -738,7 +824,8 @@
           "takenAt",
           "pinned",
           "createdAt",
-          "deletedAt"
+          "deletedAt",
+          "sourceMessageId"
         ]
       },
       "MilestoneInput": {
@@ -916,6 +1003,117 @@
           "updatedAt"
         ]
       },
+      "WidgetBoardInput": {
+        "type": "object",
+        "properties": {
+          "authorId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10",
+            "description": "Who set it; the audience is the other member"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emoji": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mood": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "photoMediaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "authorId",
+          "note",
+          "emoji",
+          "mood",
+          "photoMediaId",
+          "updatedAt"
+        ]
+      },
+      "SosInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "senderId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "recipientId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "senderId",
+          "recipientId",
+          "message",
+          "createdAt",
+          "acknowledgedAt"
+        ]
+      },
       "EventInput": {
         "type": "object",
         "properties": {
@@ -943,6 +1141,7 @@
               "message.created",
               "message.read",
               "message.deleted",
+              "message.opened",
               "media.ready",
               "memory.created",
               "memory.updated",
@@ -955,7 +1154,10 @@
               "partner.updated",
               "list.created",
               "list.updated",
-              "list.deleted"
+              "list.deleted",
+              "widget.updated",
+              "sos.raised",
+              "sos.acknowledged"
             ]
           },
           "actorId": {
@@ -985,6 +1187,27 @@
           "payload",
           "createdAt"
         ]
+      },
+      "City": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "latitude",
+          "longitude"
+        ],
+        "additionalProperties": false,
+        "description": "Coordinates rounded to 2 decimals"
       },
       "ErrorEnvelope": {
         "type": "object",
@@ -1065,6 +1288,21 @@
           "shareLocalTime": {
             "type": "boolean",
             "description": "When false the partner sees timeZone: null"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/City"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Weather city; null when unset"
+          },
+          "shareWeather": {
+            "type": "boolean",
+            "description": "When false the partner sees city: null"
           }
         },
         "required": [
@@ -1076,7 +1314,9 @@
           "hasPassword",
           "birthday",
           "timeZone",
-          "shareLocalTime"
+          "shareLocalTime",
+          "city",
+          "shareWeather"
         ],
         "additionalProperties": false
       },
@@ -1116,6 +1356,17 @@
               "string",
               "null"
             ]
+          },
+          "city": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/City"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when unset or the partner turned shareWeather off"
           }
         },
         "required": [
@@ -1123,7 +1374,8 @@
           "displayName",
           "avatarMediaId",
           "birthday",
-          "timeZone"
+          "timeZone",
+          "city"
         ],
         "additionalProperties": false
       },
@@ -1533,6 +1785,27 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "viewOnce": {
+            "type": "boolean",
+            "description": "View-once photo (only the recipient can open it, once)"
+          },
+          "openedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the recipient opened a view-once photo"
+          },
+          "viewOnceExpired": {
+            "type": "boolean",
+            "description": "True when a view-once photo was purged unopened (openedAt stays null)"
           }
         },
         "required": [
@@ -1547,7 +1820,10 @@
           "editedAt",
           "deletedAt",
           "readAt",
-          "idempotencyKey"
+          "idempotencyKey",
+          "viewOnce",
+          "openedAt",
+          "viewOnceExpired"
         ],
         "additionalProperties": false
       },
@@ -1711,6 +1987,19 @@
                 "type": "null"
               }
             ]
+          },
+          "sourceMessageId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Chat photo message this memory was auto-created from; null for manual memories"
           }
         },
         "required": [
@@ -1722,7 +2011,8 @@
           "takenAt",
           "pinned",
           "createdAt",
-          "deletedAt"
+          "deletedAt",
+          "sourceMessageId"
         ],
         "additionalProperties": false
       },
@@ -1904,6 +2194,119 @@
         ],
         "additionalProperties": false
       },
+      "WidgetBoard": {
+        "type": "object",
+        "properties": {
+          "authorId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10",
+            "description": "Who set it; the audience is the other member"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emoji": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mood": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "photoMediaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "authorId",
+          "note",
+          "emoji",
+          "mood",
+          "photoMediaId",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "Sos": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "senderId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "recipientId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "senderId",
+          "recipientId",
+          "message",
+          "createdAt",
+          "acknowledgedAt"
+        ],
+        "additionalProperties": false
+      },
       "Event": {
         "type": "object",
         "properties": {
@@ -1931,6 +2334,7 @@
               "message.created",
               "message.read",
               "message.deleted",
+              "message.opened",
               "media.ready",
               "memory.created",
               "memory.updated",
@@ -1943,7 +2347,10 @@
               "partner.updated",
               "list.created",
               "list.updated",
-              "list.deleted"
+              "list.deleted",
+              "widget.updated",
+              "sos.raised",
+              "sos.acknowledged"
             ]
           },
           "actorId": {
@@ -2967,6 +3374,43 @@
                   },
                   "shareLocalTime": {
                     "type": "boolean"
+                  },
+                  "city": {
+                    "description": "{ name 1–80, latitude -90..90, longitude -180..180 } (rounded to 2 decimals); null clears",
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "latitude": {
+                            "type": "number",
+                            "minimum": -90,
+                            "maximum": 90
+                          },
+                          "longitude": {
+                            "type": "number",
+                            "minimum": -180,
+                            "maximum": 180
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "latitude",
+                          "longitude"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "shareWeather": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -3328,6 +3772,19 @@
                         "$ref": "#/components/schemas/List"
                       }
                     },
+                    "sos": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Sos"
+                      }
+                    },
+                    "widgetBoards": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WidgetBoard"
+                      },
+                      "description": "Both boards of the couple (authorId tells whose)"
+                    },
                     "truncated": {
                       "type": "boolean"
                     }
@@ -3341,6 +3798,8 @@
                     "memories",
                     "milestones",
                     "lists",
+                    "sos",
+                    "widgetBoards",
                     "truncated"
                   ],
                   "additionalProperties": false
@@ -4445,7 +4904,7 @@
         "tags": [
           "Messages"
         ],
-        "description": "text required for text|emoji; mediaId required for photo|voice and must be ready, owned by the sender and of the matching category.",
+        "description": "text required for text|emoji; mediaId required for photo|voice and must be ready, owned by the sender and of the matching category. viewOnce: true only for photo (400 otherwise); its media must not already be used by a message, memory or widget board (409 conflict). A non view-once photo also creates a memory (memory.created, sourceMessageId = message id).",
         "requestBody": {
           "required": true,
           "content": {
@@ -4475,6 +4934,10 @@
                     "type": "string",
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+                  },
+                  "viewOnce": {
+                    "description": "View-once photo. true is only allowed for type photo (else 400)",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -4755,9 +5218,127 @@
         }
       }
     },
+    "/api/v1/messages/{id}/open": {
+      "post": {
+        "summary": "Recipient opens a view-once photo (once): short-lived download URL",
+        "tags": [
+          "Messages"
+        ],
+        "description": "First call: sets openedAt, emits message.opened { messageId, openedAt } and returns { url, expiresAt, message } (URL TTL VIEW_ONCE_URL_TTL_SECONDS, default 120). Later calls: 410 view_once_consumed. Purged unopened: 410 view_once_expired. Not a view-once photo: 400. Sender: 403. Deleted or other couple: 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "description": "Signed GET URL for the photo; valid once-ish for a short TTL"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "description": "ISO-8601 UTC timestamp",
+                      "example": "2026-10-25T12:00:00.000Z"
+                    },
+                    "message": {
+                      "$ref": "#/components/schemas/Message"
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "expiresAt",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/messages/{id}": {
       "delete": {
-        "summary": "Sender soft-deletes a message (media object deleted)",
+        "summary": "Sender soft-deletes a message (media object deleted; its auto-memory soft-deleted)",
         "tags": [
           "Messages"
         ],
@@ -5135,6 +5716,7 @@
         "tags": [
           "Media"
         ],
+        "description": "View-once media: 403 view_once for both members (use POST /messages/:id/open).",
         "parameters": [
           {
             "schema": {
@@ -6452,6 +7034,473 @@
         }
       }
     },
+    "/api/v1/widget-board": {
+      "get": {
+        "summary": "Widget boards: mine (what I show my partner) and forMe (what my partner shows me)",
+        "tags": [
+          "Widget"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mine": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/WidgetBoard"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "What I set for my partner"
+                    },
+                    "forMe": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/WidgetBoard"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "What my partner set for me"
+                    }
+                  },
+                  "required": [
+                    "mine",
+                    "forMe"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set (part of) what my partner's widgets show",
+        "tags": [
+          "Widget"
+        ],
+        "description": "Any subset of { note, emoji, mood, photoMediaId }; omitted fields keep their value, null clears. Emits widget.updated { board } (pushed to the partner). 30 writes per user per minute.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "description": "≤ 140 chars; null or \"\" clears",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 140
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "emoji": {
+                    "description": "1–2 grapheme clusters; null clears",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mood": {
+                    "description": "≤ 40 chars; null or \"\" clears",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "photoMediaId": {
+                    "description": "Ready photo|wallpaper media of the same couple, not view-once; null clears. Fetched with GET /media/:id/url",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{24}$",
+                        "example": "665f1c2e9b1d4a3f8c2e7a10"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "board": {
+                      "$ref": "#/components/schemas/WidgetBoard"
+                    }
+                  },
+                  "required": [
+                    "board"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sos": {
+      "post": {
+        "summary": "Raise an SOS to the partner (always pushed, even in quiet hours)",
+        "tags": [
+          "SOS"
+        ],
+        "description": "At most 3 per sender per 10 minutes (429 rate_limited with Retry-After).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "description": "≤ 140 chars; \"\" is stored as null",
+                    "type": "string",
+                    "maxLength": 140
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sos": {
+                      "$ref": "#/components/schemas/Sos"
+                    }
+                  },
+                  "required": [
+                    "sos"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Recent SOS alerts of the couple (newest first, max 20)",
+        "tags": [
+          "SOS"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Sos"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sos/{id}/ack": {
+      "post": {
+        "summary": "Recipient acknowledges an SOS (idempotent)",
+        "tags": [
+          "SOS"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sos": {
+                      "$ref": "#/components/schemas/Sos"
+                    }
+                  },
+                  "required": [
+                    "sos"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/events": {
       "get": {
         "summary": "Events newer than `since` (missed-event recovery)",
@@ -6687,6 +7736,12 @@
     },
     {
       "name": "Lists"
+    },
+    {
+      "name": "Widget"
+    },
+    {
+      "name": "SOS"
     },
     {
       "name": "Events"

@@ -46,6 +46,33 @@ export class MessageRepo {
     );
   }
 
+  /** Is this media already attached to a live message, memory or widget board of the couple? */
+  async mediaInUse(mediaId: ObjectId, coupleId: ObjectId): Promise<boolean> {
+    const [msg, mem, board] = await Promise.all([
+      this.db.messages.findOne({ mediaId, coupleId, deletedAt: null }, { projection: { _id: 1 } }),
+      this.db.memories.findOne({ mediaId, coupleId, deletedAt: null }, { projection: { _id: 1 } }),
+      this.db.widgetBoards.findOne({ photoMediaId: mediaId, coupleId }, { projection: { _id: 1 } }),
+    ]);
+    return Boolean(msg || mem || board);
+  }
+
+  async markMediaViewOnce(id: ObjectId): Promise<void> {
+    await this.db.media.updateOne({ _id: id }, { $set: { viewOnce: true, openedAt: null } });
+  }
+
+  /** First open wins: sets openedAt only while it is still null/absent. */
+  async markOpened(id: ObjectId, now: Date): Promise<MessageDoc | null> {
+    return this.db.messages.findOneAndUpdate(
+      { _id: id, openedAt: null, deletedAt: null },
+      { $set: { openedAt: now } },
+      { returnDocument: 'after' },
+    );
+  }
+
+  async markMediaOpened(id: ObjectId, now: Date): Promise<void> {
+    await this.db.media.updateOne({ _id: id }, { $set: { openedAt: now } });
+  }
+
   async markMediaObjectDeleted(id: ObjectId): Promise<void> {
     await this.db.media.updateOne({ _id: id }, { $set: { objectDeleted: true } });
   }

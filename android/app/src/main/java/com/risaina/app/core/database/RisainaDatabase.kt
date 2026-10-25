@@ -17,7 +17,7 @@ import javax.inject.Singleton
         PingEntity::class, MessageEntity::class, MediaEntity::class, MemoryEntity::class,
         MilestoneEntity::class, PartnerEntity::class, CoupleEntity::class, OutboxEntity::class, ListEntity::class,
     ],
-    version = 2,
+    version = 4,
     exportSchema = true,
 )
 abstract class RisainaDatabase : RoomDatabase() {

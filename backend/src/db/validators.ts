@@ -84,6 +84,16 @@ export const VALIDATORS: Record<string, Document> = {
         birthday: { bsonType: ['string', 'null'], pattern: '^(\\d{4}|-)-\\d{2}-\\d{2}$' },
         timeZone: { bsonType: ['string', 'null'], minLength: 1, maxLength: 64 },
         shareLocalTime: bool,
+        city: {
+          bsonType: ['object', 'null'],
+          required: ['name', 'latitude', 'longitude'],
+          properties: {
+            name: { bsonType: 'string', minLength: 1, maxLength: 80 },
+            latitude: { bsonType: ['double', 'int', 'long'], minimum: -90, maximum: 90 },
+            longitude: { bsonType: ['double', 'int', 'long'], minimum: -180, maximum: 180 },
+          },
+        },
+        shareWeather: bool,
         createdAt: date,
         updatedAt: date,
         deletedAt: nullableDate,
@@ -217,6 +227,10 @@ export const VALIDATORS: Record<string, Document> = {
         deletedAt: nullableDate,
         readAt: nullableDate,
         idempotencyKey: string,
+        // optional view-once fields (added after v1; never in `required`)
+        viewOnce: bool,
+        openedAt: nullableDate,
+        viewOnceExpiredAt: nullableDate,
       },
     },
   },
@@ -252,6 +266,9 @@ export const VALIDATORS: Record<string, Document> = {
         readyAt: nullableDate,
         deletedAt: nullableDate,
         objectDeleted: bool,
+        // optional view-once fields (added after v1; never in `required`)
+        viewOnce: bool,
+        openedAt: nullableDate,
       },
     },
   },
@@ -285,6 +302,7 @@ export const VALIDATORS: Record<string, Document> = {
         createdAt: date,
         updatedAt: date,
         deletedAt: nullableDate,
+        sourceMessageId: nullableObjectId, // optional (auto-memories from chat photos)
       },
     },
   },
@@ -348,6 +366,36 @@ export const VALIDATORS: Record<string, Document> = {
         createdAt: date,
         updatedAt: date,
         deletedAt: nullableDate,
+      },
+    },
+  },
+  [COLLECTION_NAMES.widgetBoards]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: ['coupleId', 'authorId', 'note', 'emoji', 'mood', 'photoMediaId', 'createdAt', 'updatedAt'],
+      properties: {
+        coupleId: objectId,
+        authorId: objectId,
+        note: { bsonType: ['string', 'null'], maxLength: 140 },
+        emoji: { bsonType: ['string', 'null'], minLength: 1, maxLength: 16 },
+        mood: { bsonType: ['string', 'null'], maxLength: 40 },
+        photoMediaId: nullableObjectId,
+        createdAt: date,
+        updatedAt: date,
+      },
+    },
+  },
+  [COLLECTION_NAMES.sos]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: ['coupleId', 'senderId', 'recipientId', 'message', 'createdAt', 'acknowledgedAt'],
+      properties: {
+        coupleId: objectId,
+        senderId: objectId,
+        recipientId: objectId,
+        message: { bsonType: ['string', 'null'], maxLength: 140 },
+        createdAt: date,
+        acknowledgedAt: nullableDate,
       },
     },
   },

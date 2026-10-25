@@ -47,7 +47,12 @@ class PingRepository @Inject constructor(
         pings.firstOrNull { it.senderId != me }?.toDomain()
     }
 
-    /** Seconds remaining before the next ping may be sent; 0 when ready. */
+    /** When the next ping may be sent (null = now). Combine with a clock to show a live countdown. */
+    val cooldownEndsAt: Flow<java.time.Instant?> = combine(sessionStore.lastPingSentAt, preferencesStore.preferences) { last, prefs ->
+        last?.plusSeconds(prefs.pingCooldownSeconds.toLong())
+    }
+
+    /** Seconds remaining right now; only used for the send-time check. */
     val cooldownRemaining: Flow<Long> = combine(sessionStore.lastPingSentAt, preferencesStore.preferences) { last, prefs ->
         PingRules.cooldownRemaining(last, prefs.pingCooldownSeconds, time.now())
     }

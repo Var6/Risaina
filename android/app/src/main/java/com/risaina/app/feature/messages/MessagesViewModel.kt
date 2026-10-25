@@ -37,7 +37,8 @@ import java.io.File
 import javax.inject.Inject
 
 data class MessagesUiState(
-    val messages: List<Message> = emptyList(),      // oldest → newest
+    /** Newest first: the screen uses reverseLayout, so index 0 sits at the bottom, under older ones. */
+    val messages: List<Message> = emptyList(),
     val myId: String? = null,
     val partner: Partner? = null,
     val composer: String = "",
@@ -48,6 +49,8 @@ data class MessagesUiState(
     val recorder: VoiceRecorder.State = VoiceRecorder.State.Idle,
     val playback: PlaybackState = PlaybackState(),
     val socket: SocketState = SocketState.DISCONNECTED,
+    val wallpaper: String = "DEFAULT",
+    val wallpaperPhoto: File? = null,
 )
 
 private data class Local(
@@ -68,7 +71,11 @@ class MessagesViewModel @Inject constructor(
     private val syncManager: EventSyncManager,
     val recorder: VoiceRecorder,
     val player: VoicePlaybackController,
+    private val preferencesStore: com.risaina.app.core.datastore.PreferencesStore,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
+    private val wallpaperFile get() = File(appContext.filesDir, "chat_wallpaper.jpg")
+    private val wallpaperVersion = MutableStateFlow(0)
 
     private val local = MutableStateFlow(Local())
     private val effects = Channel<String>(Channel.BUFFERED)
@@ -77,17 +84,40 @@ class MessagesViewModel @Inject constructor(
     val state: StateFlow<MessagesUiState> = combine(
         messageRepository.recent(300), sessionStore.session, coupleRepository.partner, local,
         combine(recorder.state, player.state, syncManager.socketState) { r, p, s -> Triple(r, p, s) },
-    ) { messages, session, partner, l, (rec, play, socket) ->
+        preferencesStore.preferences, wallpaperVersion,
+    ) { arr ->
+        @Suppress("UNCHECKED_CAST") val messages = arr[0] as List<Message>
+        val session = arr[1] as com.risaina.app.core.model.Session?
+        val partner = arr[2] as Partner?
+        val l = arr[3] as Local
+        @Suppress("UNCHECKED_CAST") val (rec, play, socket) = arr[4] as Triple<VoiceRecorder.State, PlaybackState, SocketState>
+        val prefs = arr[5] as com.risaina.app.core.model.Preferences
         MessagesUiState(
-            messages = messages.asReversed(), myId = session?.userId, partner = partner,
+            messages = messages, myId = session?.userId, partner = partner,
             composer = l.composer, sendingMedia = l.sendingMedia, canLoadMore = l.canLoadMore, loadingMore = l.loadingMore,
             showRecorder = l.showRecorder, recorder = rec, playback = play, socket = socket,
+            wallpaper = prefs.chatWallpaper, wallpaperPhoto = wallpaperFile.takeIf { it.exists() },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MessagesUiState())
 
     init { viewModelScope.launch { messageRepository.refresh() } }
 
     fun onComposer(v: String) = local.update { it.copy(composer = v) }
+
+    fun setWallpaper(style: String) { viewModelScope.launch { preferencesStore.update { it.copy(chatWallpaper = style) } } }
+
+    /** Copies a downscaled version into private storage so the background survives the photo being deleted. */
+    fun setWallpaperPhoto(uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val c = imageCompressor.compress(uri, maxEdge = 1600, quality = 80)
+                c.file.copyTo(wallpaperFile, overwrite = true); c.file.delete()
+            }.onSuccess {
+                preferencesStore.update { it.copy(chatWallpaper = "PHOTO") }
+                wallpaperVersion.value++
+            }.onFailure { effects.trySend("Couldn't use that photo") }
+        }
+    }
 
     fun send() {
         val text = local.value.composer.trim()
@@ -109,7 +139,7 @@ class MessagesViewModel @Inject constructor(
         }
     }
 
-    fun sendPhoto(uri: Uri) {
+    fun sendPhoto(uri: Uri, viewOnce: Boolean = false) {
         viewModelScope.launch {
             local.update { it.copy(sendingMedia = 0f) }
             try {
@@ -121,7 +151,7 @@ class MessagesViewModel @Inject constructor(
                 when (up) {
                     is AppResult.Success -> {
                         val local = mediaRepository.localFile(up.value.id)
-                        messageRepository.sendMedia(MessageType.PHOTO, up.value.id, local?.absolutePath)
+                        messageRepository.sendMedia(MessageType.PHOTO, up.value.id, local?.absolutePath, viewOnce)
                     }
                     is AppResult.Failure -> effects.trySend(up.error.message ?: "Upload failed")
                 }
@@ -181,6 +211,14 @@ class MessagesViewModel @Inject constructor(
         message.localMediaPath?.let { p -> File(p).takeIf(File::exists)?.let { return it } }
         val id = message.mediaId ?: return null
         return mediaRepository.ensureCached(id, "image/jpeg").getOrNull() ?: mediaRepository.resolveUrl(id).getOrNull()
+    }
+
+    /** View-once: returns a one-time URL (or an error message) for the full-screen viewer. */
+    suspend fun openViewOnce(message: Message): Result<String> = when (val r = messageRepository.openViewOnce(message.id)) {
+        is AppResult.Success -> Result.success(r.value)
+        is AppResult.Failure -> Result.failure(IllegalStateException(
+            if ((r.error as? com.risaina.app.core.common.AppError.Conflict)?.code == "view_once_consumed") "Already opened" else r.error.message ?: "Couldn't open",
+        ))
     }
 
     fun markRead(message: Message) {

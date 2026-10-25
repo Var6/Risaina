@@ -34,6 +34,9 @@ sealed interface Incoming {
     data class NewPing(val ping: Ping) : Incoming
     data class NewMessage(val message: Message) : Incoming
     data object Unlinked : Incoming
+    /** Partner changed what my widgets show (no notification; widgets refresh). */
+    data object WidgetChanged : Incoming
+    data class Sos(val id: String) : Incoming
 }
 
 /**
@@ -54,6 +57,9 @@ class EventReducer @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val coupleRepository: CoupleRepository,
     private val listDao: com.risaina.app.core.database.ListDao,
+    private val widgetBoardRepository: com.risaina.app.core.data.WidgetBoardRepository,
+    private val sosRepository: com.risaina.app.core.data.SosRepository,
+    private val sosAlert: com.risaina.app.core.notifications.SosAlert,
 ) {
     suspend fun apply(event: EventDto): List<Incoming> {
         val me = sessionStore.current()?.userId ?: return emptyList()
@@ -85,9 +91,12 @@ class EventReducer @Inject constructor(
                 if (msg.senderId != me && local == null) out += Incoming.NewMessage(msg.toEntity().toDomain())
             }
             "message.read" -> p.str("messageId")?.let { id -> p.instant("readAt")?.let { messageDao.markRead(id, it) } }
+            "message.opened" -> p.str("messageId")?.let { id ->
+                messageDao.byId(id)?.let { e -> messageDao.upsert(e.copy(openedAt = p.instant("openedAt") ?: Instant.now().toEpochMilli())) }
+            }
             "message.deleted" -> p.str("messageId")?.let { id -> messageDao.markDeleted(id, p.instant("deletedAt") ?: Instant.now().toEpochMilli()) }
             "media.ready" -> p.obj("media")?.let { mediaRepository.remember(json.decodeFromJsonElement(MediaDto.serializer(), it)) }
-            "memory.created", "memory.updated" -> p.obj("memory")?.let { memoryDao.upsert(json.decodeFromJsonElement(MemoryDto.serializer(), it).toEntity()) }
+            "memory.updated" -> p.obj("memory")?.let { memoryDao.upsert(json.decodeFromJsonElement(MemoryDto.serializer(), it).toEntity()) }
             "memory.deleted" -> p.str("memoryId")?.let { memoryDao.markDeleted(it, p.instant("deletedAt") ?: Instant.now().toEpochMilli()) }
             "milestone.created", "milestone.updated" -> p.obj("milestone")?.let { milestoneDao.upsert(json.decodeFromJsonElement(MilestoneDto.serializer(), it).toEntity()) }
             "milestone.deleted" -> p.str("milestoneId")?.let { milestoneDao.delete(it) }
@@ -105,6 +114,27 @@ class EventReducer @Inject constructor(
                 listDao.upsert(json.decodeFromJsonElement(com.risaina.app.core.network.SharedListDto.serializer(), it).toEntity(json))
             }
             "list.deleted" -> p.str("listId")?.let { listDao.delete(it) }
+            "widget.updated" -> p.obj("board")?.let {
+                val board = json.decodeFromJsonElement(com.risaina.app.core.network.WidgetBoardDto.serializer(), it)
+                if (event.actorId == me) widgetBoardRepository.store(board, null, replaceMine = true, replaceForMe = false)
+                else { widgetBoardRepository.store(null, board, replaceMine = false, replaceForMe = true); out += Incoming.WidgetChanged }
+            }
+            "memory.created" -> {
+                p.obj("memory")?.let { memoryDao.upsert(json.decodeFromJsonElement(MemoryDto.serializer(), it).toEntity()) }
+            }
+            "sos.raised" -> p.obj("sos")?.let {
+                val sos = json.decodeFromJsonElement(com.risaina.app.core.network.SosDto.serializer(), it)
+                sosRepository.upsert(sos)
+                if (sos.recipientId == me && sos.acknowledgedAt == null) {
+                    // Ring (or update the ringing alert with the message) whether or not the app is open.
+                    sosAlert.show(coupleDao.partner()?.displayName ?: "your partner", sos.message, sos.id)
+                    out += Incoming.Sos(sos.id)
+                }
+            }
+            "sos.acknowledged" -> {
+                val id = p.str("sosId"); val at = p.str("acknowledgedAt")
+                if (id != null && at != null) sosRepository.markAcknowledged(id, at)
+            }
             "couple.unlinked" -> { out += Incoming.Unlinked }
         }
         sessionStore.setLastEventSeq(event.seq)

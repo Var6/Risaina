@@ -38,6 +38,7 @@ class AuthRepository @Inject constructor(
     private val coupleRepository: CoupleRepository,
     private val deviceRegistrar: DeviceRegistrar,
     private val googleSignOut: GoogleSignOut,
+    private val widgetBoardRepository: WidgetBoardRepository,
 ) {
     val isSignedIn: Flow<Boolean> = sessionStore.session.map { it != null }
 
@@ -120,6 +121,7 @@ class AuthRepository @Inject constructor(
         sessionStore.clear()
         db.clearAllContent()
         widgetSnapshotStore.clear()
+        widgetBoardRepository.clear()
         preferencesStore.setOnboardingDone(true) // returning users skip the welcome carousel
     }
 }

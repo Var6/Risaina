@@ -49,12 +49,22 @@ export const INDEXES: Record<string, IndexDescription[]> = {
   [COLLECTION_NAMES.messages]: [
     { key: { coupleId: 1, createdAt: -1, _id: -1 }, name: 'coupleId_createdAt_desc' },
     { key: { senderId: 1, idempotencyKey: 1 }, unique: true, name: 'sender_idempotency_unique' },
+    // view-once send: is this media already attached to another message?
+    { key: { mediaId: 1 }, name: 'mediaId', partialFilterExpression: { mediaId: { $type: 'objectId' } } },
+    // cleanup: unopened view-once photos older than N days
+    {
+      key: { openedAt: 1, createdAt: 1 },
+      name: 'viewOnce_openedAt_createdAt',
+      partialFilterExpression: { viewOnce: true },
+    },
   ],
   [COLLECTION_NAMES.media]: [
     { key: { coupleId: 1, status: 1, createdAt: -1 }, name: 'coupleId_status_createdAt' },
     { key: { status: 1, createdAt: 1 }, name: 'status_createdAt' }, // abandoned-pending cleanup
     { key: { status: 1, objectDeleted: 1 }, name: 'status_objectDeleted' }, // deferred object deletion
     { key: { ownerId: 1 }, name: 'ownerId' }, // account deletion cascade
+    // cleanup: opened view-once media whose download URL has expired
+    { key: { openedAt: 1 }, name: 'viewOnce_openedAt', partialFilterExpression: { viewOnce: true } },
   ],
   [COLLECTION_NAMES.deviceTokens]: [
     { key: { userId: 1 }, name: 'userId' }, // outbox fan-out
@@ -67,6 +77,12 @@ export const INDEXES: Record<string, IndexDescription[]> = {
       key: { coupleId: 1, deletedAt: 1, pinned: 1, createdAt: -1 },
       name: 'coupleId_deletedAt_pinned_createdAt',
     },
+    // message delete → its auto-created memory
+    {
+      key: { sourceMessageId: 1 },
+      name: 'sourceMessageId',
+      partialFilterExpression: { sourceMessageId: { $type: 'objectId' } },
+    },
   ],
   [COLLECTION_NAMES.milestones]: [{ key: { coupleId: 1, date: 1 }, name: 'coupleId_date' }],
   [COLLECTION_NAMES.lists]: [
@@ -75,6 +91,15 @@ export const INDEXES: Record<string, IndexDescription[]> = {
       key: { coupleId: 1, deletedAt: 1, pinned: -1, updatedAt: -1 },
       name: 'coupleId_deletedAt_pinned_updatedAt',
     },
+  ],
+  [COLLECTION_NAMES.widgetBoards]: [
+    // one board per author per couple; GET /widget-board reads both of the couple
+    { key: { coupleId: 1, authorId: 1 }, unique: true, name: 'coupleId_authorId_unique' },
+    { key: { authorId: 1 }, name: 'authorId' }, // account deletion cascade
+  ],
+  [COLLECTION_NAMES.sos]: [
+    { key: { coupleId: 1, createdAt: -1 }, name: 'coupleId_createdAt_desc' }, // GET /sos
+    { key: { senderId: 1, createdAt: -1 }, name: 'senderId_createdAt_desc' }, // 3 per 10 min limit
   ],
   [COLLECTION_NAMES.events]: [
     { key: { coupleId: 1, seq: 1 }, unique: true, name: 'coupleId_seq_unique' }, // sync replay, GET /events

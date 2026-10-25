@@ -80,7 +80,7 @@ fun TimelineScreen(onBack: () -> Unit, vm: TimelineViewModel = hiltViewModel()) 
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             HeroPanel(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(22.dp)) {
-                    Text("TOGETHER", style = RisainaTextStyles.overline, color = Palette.SoftChampagne)
+                    Text("TOGETHER", style = RisainaTextStyles.overline, color = Risaina.colors.heroAccent)
                     Spacer(Modifier.height(6.dp))
                     Text(s.together ?: "Set your start date", style = MaterialTheme.typography.displaySmall, color = Palette.WarmIvory)
                     Spacer(Modifier.height(6.dp))

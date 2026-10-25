@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         SyncWorker.schedulePeriodic(applicationContext)
-        appViewModel.onDeepLink(intent?.data)
+        // A link that launched the app is opened by NavHost itself; only later links are forwarded.
 
         setContent {
             val state by appViewModel.uiState.collectAsStateWithLifecycle()

@@ -8,8 +8,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Requested only when the user starts a voice recording (see VoiceRecorder). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Used only by Wallpaper Studio after an explicit "Apply" confirmation. -->
-    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Lets the user allow SOS alerts through Do Not Disturb (they grant it in system settings). -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <!-- Lets an SOS open full-screen on a locked phone where the system allows it. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:name=".RisainaApp"
@@ -107,6 +109,16 @@
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_voice_note" />
+        </receiver>
+
+        <receiver
+            android:name=".feature.widgets.GiftWidgetReceiver"
+            android:exported="true"
+            android:label="Risaina gift">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_gift" />
         </receiver>
 
         <!-- WorkManager: disable the automatic initializer so Hilt can provide the worker factory. -->

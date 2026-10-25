@@ -21,7 +21,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,7 +43,8 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
     val canPin = remember { manager?.isRequestPinAppWidgetSupported == true }
     val widgets = remember {
         listOf(
-            WidgetInfo("Photo", "Your pinned memory with its caption.", "🖼", PhotoWidgetReceiver::class.java),
+            WidgetInfo("Gift", "The latest gift from your partner. Great on the lock screen.", "🎁", GiftWidgetReceiver::class.java),
+            WidgetInfo("Photo", "The latest photo your partner sent in chat.", "🖼", PhotoWidgetReceiver::class.java),
             WidgetInfo("Love note", "The latest note, with who sent it and when.", "✉️", LoveNoteWidgetReceiver::class.java),
             WidgetInfo("Touch Ping", "One tap sends “thinking of you”.", "💭", TouchPingWidgetReceiver::class.java),
             WidgetInfo("Emoji", "The latest symbol you received.", "✨", EmojiWidgetReceiver::class.java),
@@ -83,6 +86,8 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(16.dp))
+            LockScreenSection()
+            Spacer(Modifier.height(16.dp))
             Text("What widgets may show is controlled in Settings → Privacy. Photos and note text can be hidden there.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
             Spacer(Modifier.height(40.dp))
         }
@@ -92,4 +97,31 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
 private fun requestPin(context: Context, manager: AppWidgetManager?, receiver: Class<*>) {
     manager ?: return
     runCatching { manager.requestPinAppWidget(ComponentName(context, receiver), null, null) }
+}
+
+
+/**
+ * Lock screen: real lock-screen widgets exist only on some Android versions and launchers, so the
+ * widgets declare the "keyguard" category for those, and every phone gets the opt-in card.
+ */
+@Composable
+private fun LockScreenSection(vm: com.risaina.app.feature.settings.SettingsViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()) {
+    val s by vm.state.collectAsStateWithLifecycle()
+    RisainaCard(Modifier.fillMaxWidth()) {
+        Text("On your lock screen", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Turn on the lock-screen card to see your partner's photo, note and emoji every time you pick up your phone. It's silent and only shows what they chose for your widgets.",
+            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Text("Lock-screen card", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(checked = s.prefs.lockScreenCard, onCheckedChange = { v -> vm.update { it.copy(lockScreenCard = v) }; vm.refreshLockCard() })
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Lock-screen widgets: if your phone lets you add widgets to the lock screen (newer Android versions and some Samsung phones: long-press the lock screen → Widgets), Risaina's widgets appear there too.",
+            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
+        )
+    }
 }

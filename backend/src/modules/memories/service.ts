@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import type { AppContext } from '../../app-context.js';
-import type { CoupleDoc, MemoryDoc } from '../../db/types.js';
+import type { CoupleDoc, MemoryDoc, MessageDoc } from '../../db/types.js';
 import { errors } from '../../lib/errors.js';
 import { newId } from '../../lib/ids.js';
 import { decodeCursor, pageResult } from '../../lib/pagination.js';
@@ -24,16 +24,48 @@ export class MemoryService {
     const media = await this.repo.findMedia(new ObjectId(input.mediaId));
     if (!media?.coupleId.equals(couple._id)) throw errors.notFound('Media');
     if (media.category !== 'photo') throw errors.validation('Memories require a photo upload');
+    if (media.viewOnce) throw errors.validation('View-once photos cannot become memories');
     if (media.status !== 'ready') throw errors.mediaNotReady();
 
-    const now = this.ctx.now();
-    const doc: MemoryDoc = {
-      _id: newId(),
-      coupleId: couple._id,
+    return this.insertAndEmit(couple, {
       createdBy: uid,
       mediaId: media._id,
       caption: input.caption && input.caption.length > 0 ? input.caption : null,
       takenAt: input.takenAt ? new Date(input.takenAt) : null,
+      sourceMessageId: null,
+    });
+  }
+
+  /**
+   * Auto-memory for a (non view-once) chat photo: same media, no caption, takenAt = message time,
+   * createdBy = sender. The memory never owns the media: the message's lifecycle decides that.
+   */
+  async createFromMessage(couple: CoupleDoc, message: MessageDoc): Promise<{ memory: MemoryDto } | null> {
+    if (message.type !== 'photo' || message.viewOnce || !message.mediaId) return null;
+    return this.insertAndEmit(couple, {
+      createdBy: message.senderId,
+      mediaId: message.mediaId,
+      caption: null,
+      takenAt: message.createdAt,
+      sourceMessageId: message._id,
+    });
+  }
+
+  /** Soft-deletes the auto-memory of a deleted message (emits memory.deleted). */
+  async deleteForMessage(couple: CoupleDoc, messageId: ObjectId, actorId: ObjectId): Promise<void> {
+    const memory = await this.repo.findBySourceMessage(messageId, couple._id);
+    if (memory) await this.softDeleteAndEmit(couple, memory._id, actorId);
+  }
+
+  private async insertAndEmit(
+    couple: CoupleDoc,
+    fields: Pick<MemoryDoc, 'createdBy' | 'mediaId' | 'caption' | 'takenAt' | 'sourceMessageId'>,
+  ): Promise<{ memory: MemoryDto }> {
+    const now = this.ctx.now();
+    const doc: MemoryDoc = {
+      _id: newId(),
+      coupleId: couple._id,
+      ...fields,
       pinned: false,
       createdAt: now,
       updatedAt: now,
@@ -44,7 +76,7 @@ export class MemoryService {
     await this.ctx.events.emit({
       coupleId: couple._id,
       type: 'memory.created',
-      actorId: uid,
+      actorId: fields.createdBy,
       payload: { memory: dto },
     });
     return { memory: dto };
@@ -78,15 +110,23 @@ export class MemoryService {
     return { memory: dto };
   }
 
+  /**
+   * Soft delete only. The media object is deliberately left alone: it may still be shown by the chat
+   * message it came from (auto-memories) or by another memory / widget board.
+   */
   async delete(couple: CoupleDoc, userId: string, id: ObjectId): Promise<void> {
     const existing = await this.repo.findInCouple(id, couple._id);
     if (!existing) throw errors.notFound('Memory');
+    await this.softDeleteAndEmit(couple, id, new ObjectId(userId));
+  }
+
+  private async softDeleteAndEmit(couple: CoupleDoc, id: ObjectId, actorId: ObjectId): Promise<void> {
     const deleted = await this.repo.softDelete(id, this.ctx.now());
     if (deleted?.deletedAt) {
       await this.ctx.events.emit({
         coupleId: couple._id,
         type: 'memory.deleted',
-        actorId: new ObjectId(userId),
+        actorId,
         payload: { memoryId: deleted._id.toHexString(), deletedAt: deleted.deletedAt.toISOString() },
       });
     }

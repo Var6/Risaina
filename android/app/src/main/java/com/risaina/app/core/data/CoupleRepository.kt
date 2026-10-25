@@ -47,6 +47,7 @@ class CoupleRepository @Inject constructor(
     private val preferencesStore: PreferencesStore,
     private val widgetSnapshotStore: WidgetSnapshotStore,
     private val db: RisainaDatabase,
+    private val widgetBoardRepository: dagger.Lazy<WidgetBoardRepository>,
 ) {
     private val invitation = MutableStateFlow<InvitationSummary?>(null)
     private val loaded = MutableStateFlow(false)
@@ -75,6 +76,7 @@ class CoupleRepository @Inject constructor(
             val me = res.value
             sessionStore.saveProfile(me.user.displayName, me.user.avatarMediaId, me.user.emailVerified)
             sessionStore.saveExtras(me.user.birthday, me.user.hasPassword, me.user.timeZone)
+            sessionStore.saveCity(me.user.city?.let { com.risaina.app.core.model.City(it.name, it.latitude, it.longitude) })
             syncTimeZone(me.user.timeZone, me.user.shareLocalTime)
             coupleDao.replace(me.couple?.toEntity(), me.partner?.toEntity())
             sessionStore.setActiveCoupleId(me.couple?.takeIf { it.status.equals("active", true) }?.id)
@@ -143,6 +145,21 @@ class CoupleRepository @Inject constructor(
         return res.map { }
     }
 
+    /** City for my partner's weather view. Coordinates are rounded to ~1 km by the server. */
+    suspend fun updateCity(city: com.risaina.app.core.model.City?): AppResult<Unit> {
+        val body = kotlinx.serialization.json.buildJsonObject {
+            if (city == null) put("city", kotlinx.serialization.json.JsonNull)
+            else put("city", kotlinx.serialization.json.buildJsonObject {
+                put("name", kotlinx.serialization.json.JsonPrimitive(city.name))
+                put("latitude", kotlinx.serialization.json.JsonPrimitive(city.latitude))
+                put("longitude", kotlinx.serialization.json.JsonPrimitive(city.longitude))
+            })
+        }
+        val res = apiCall { api.patchMeRaw(body) }
+        if (res is AppResult.Success) sessionStore.saveCity(res.value.user.city?.let { com.risaina.app.core.model.City(it.name, it.latitude, it.longitude) })
+        return res.map { }
+    }
+
     suspend fun setShareLocalTime(share: Boolean): AppResult<Unit> =
         apiCall { api.patchMe(PatchMeRequest(shareLocalTime = share, timeZone = if (share) java.time.ZoneId.systemDefault().id else null)) }.map { }
 
@@ -162,6 +179,7 @@ class CoupleRepository @Inject constructor(
     suspend fun onUnlinked() {
         db.clearAllContent()
         widgetSnapshotStore.clear()
+        widgetBoardRepository.get().clear()
         sessionStore.setActiveCoupleId(null)
         invitation.value = null
         refreshMe()

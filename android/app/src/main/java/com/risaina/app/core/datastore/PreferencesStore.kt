@@ -46,6 +46,10 @@ class PreferencesStore @Inject constructor(@ApplicationContext private val conte
         val accent = stringPreferencesKey("accent")
         val background = stringPreferencesKey("background")
         val shareLocalTime = booleanPreferencesKey("share_local_time")
+        val chatWallpaper = stringPreferencesKey("chat_wallpaper")
+        val lockScreenCard = booleanPreferencesKey("lock_screen_card")
+        val showPartnerTime = booleanPreferencesKey("show_partner_time")
+        val shareWeather = booleanPreferencesKey("share_weather")
         val onboardingDone = booleanPreferencesKey("onboarding_done")
         val notificationPromptShown = booleanPreferencesKey("notification_prompt_shown")
     }
@@ -76,6 +80,10 @@ class PreferencesStore @Inject constructor(@ApplicationContext private val conte
             accent = p[K.accent] ?: d.accent,
             background = p[K.background] ?: d.background,
             shareLocalTime = p[K.shareLocalTime] ?: d.shareLocalTime,
+            chatWallpaper = p[K.chatWallpaper] ?: d.chatWallpaper,
+            lockScreenCard = p[K.lockScreenCard] ?: d.lockScreenCard,
+            showPartnerTime = p[K.showPartnerTime] ?: d.showPartnerTime,
+            shareWeather = p[K.shareWeather] ?: d.shareWeather,
         )
     }
 
@@ -106,6 +114,10 @@ class PreferencesStore @Inject constructor(@ApplicationContext private val conte
             p[K.accent] = next.accent
             p[K.background] = next.background
             p[K.shareLocalTime] = next.shareLocalTime
+            p[K.chatWallpaper] = next.chatWallpaper
+            p[K.lockScreenCard] = next.lockScreenCard
+            p[K.showPartnerTime] = next.showPartnerTime
+            p[K.shareWeather] = next.shareWeather
         }
     }
 

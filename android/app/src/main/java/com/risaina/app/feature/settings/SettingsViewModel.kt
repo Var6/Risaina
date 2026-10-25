@@ -64,6 +64,8 @@ class SettingsViewModel @Inject constructor(
     private val api: RisainaApi,
     private val json: Json,
     pushAvailability: PushAvailability,
+    private val widgetSnapshotUpdater: com.risaina.app.core.sync.WidgetSnapshotUpdater,
+    private val weatherRepository: com.risaina.app.core.data.WeatherRepository,
 ) : ViewModel() {
     private val busy = MutableStateFlow(false)
     private val avatar = MutableStateFlow<File?>(null)
@@ -91,6 +93,22 @@ class SettingsViewModel @Inject constructor(
             if (r is AppResult.Failure) effects.trySend("Saved on this phone; will sync to the server when online")
         }
     }
+
+    suspend fun searchCities(q: String) = weatherRepository.searchCities(q)
+
+    fun updateCity(city: com.risaina.app.core.model.City?) {
+        viewModelScope.launch { busy.value = true; coupleRepository.updateCity(city).onFailure { effects.trySend(it.message ?: "Couldn't save") }; busy.value = false }
+    }
+
+    fun setShareWeather(share: Boolean) {
+        update { it.copy(shareWeather = share) }
+        viewModelScope.launch {
+            val body = kotlinx.serialization.json.buildJsonObject { put("shareWeather", kotlinx.serialization.json.JsonPrimitive(share)) }
+            apiCall { api.patchMeRaw(body) }.onFailure { effects.trySend(it.message ?: "Couldn't save") }
+        }
+    }
+
+    fun refreshLockCard() { viewModelScope.launch { kotlinx.coroutines.delay(300); widgetSnapshotUpdater.recompute() } }
 
     fun updateBirthday(birthday: String?) {
         viewModelScope.launch { busy.value = true; coupleRepository.updateBirthday(birthday).onFailure { effects.trySend(it.message ?: "Couldn't save") }; busy.value = false }

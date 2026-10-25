@@ -173,6 +173,7 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         }
         if (s.prefs.background == "PHOTO") Text("Uses your pinned memory. Pin one in Memories.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
         ToggleRow("Reduce motion", "Shorter, simpler animations", s.prefs.reducedMotion, { v -> vm.update { it.copy(reducedMotion = v) } })
+        ToggleRow("Show my partner's local time", "Home shows their weather; turn this on to see their clock too", s.prefs.showPartnerTime, { v -> vm.update { it.copy(showPartnerTime = v) } })
         Spacer(Modifier.height(8.dp))
         SectionHeader("Relationship")
         Row(LinkIcon, "Dates & milestones", "Start date, next visit, anniversaries", nav.timeline)
@@ -225,6 +226,23 @@ fun NotificationSettingsScreen(onBack: () -> Unit, onRequestPermission: () -> Un
             }
         }
         Spacer(Modifier.height(12.dp))
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        RisainaCard(Modifier.fillMaxWidth(), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Text("Not getting pings when the app is closed?", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(4.dp))
+            Text("Some phones (Xiaomi, Oppo, Vivo, Realme, OnePlus, Samsung) stop apps in the background. Set Risaina's battery use to “Unrestricted”, and on Xiaomi/Oppo/Vivo also turn on “Autostart”.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+            Spacer(Modifier.height(8.dp))
+            OutlineButton("Let SOS ring through Do Not Disturb", onClick = {
+                runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            })
+            Spacer(Modifier.height(6.dp))
+            OutlineButton("Open battery settings", onClick = {
+                runCatching {
+                    ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + ctx.packageName)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            })
+        }
+        Spacer(Modifier.height(12.dp))
         ToggleRow("Notifications", "Master switch for pings and messages", p.notificationsEnabled, { v -> vm.update { it.copy(notificationsEnabled = v) } })
         ToggleRow("Show previews", "Off: notifications say only that something arrived", p.previewInNotifications, { v -> vm.update { it.copy(previewInNotifications = v) } })
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -272,6 +290,7 @@ fun PrivacySettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewMo
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         SectionHeader("Your partner sees")
         ToggleRow("My local time", "Shows your partner what time it is for you", p.shareLocalTime, { v -> vm.setShareLocalTime(v) })
+        ToggleRow("My city's weather", "Shows your partner the weather where you are (city only, never GPS)", p.shareWeather, { v -> vm.setShareWeather(v) })
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         SectionHeader("Notifications")
         ToggleRow("Show previews", "Off: lock screen shows only “New activity”", p.previewInNotifications, { v -> vm.update { it.copy(previewInNotifications = v) } })
@@ -340,6 +359,8 @@ fun ProfileScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
             if (d != null) vm.updateBirthday(d.toString())
         }
         Spacer(Modifier.height(16.dp))
+        CityPicker(current = s.profile?.city?.name, onSearch = vm::searchCities, onPick = vm::updateCity)
+        Spacer(Modifier.height(16.dp))
         PrimaryButton("Save", onClick = { vm.updateName(name) }, loading = s.busy, enabled = name.trim().length >= 2 && name.trim() != s.profile?.displayName, modifier = Modifier.fillMaxWidth())
     }
 }
@@ -379,3 +400,32 @@ private fun AccentPicker(selected: String, onPick: (String) -> Unit) {
     }
 }
 
+
+
+/** "My city": search by name (Open-Meteo geocoding). Only the chosen city is shared, never GPS. */
+@Composable
+private fun CityPicker(current: String?, onSearch: suspend (String) -> List<com.risaina.app.core.model.City>, onPick: (com.risaina.app.core.model.City?) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Text("My city", style = MaterialTheme.typography.titleSmall)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(current ?: "Not set · your partner sees your weather when you add it", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        GhostButton(if (current == null) "Add" else "Change", onClick = { open = true })
+        if (current != null) GhostButton("Remove", onClick = { onPick(null) })
+    }
+    if (open) {
+        var q by remember { mutableStateOf("") }
+        var results by remember { mutableStateOf<List<com.risaina.app.core.model.City>>(emptyList()) }
+        LaunchedEffect(q) { kotlinx.coroutines.delay(350); results = onSearch(q) }
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text("Where are you?") },
+            text = {
+                Column {
+                    RisainaTextField(q, { q = it }, "City", placeholder = "e.g. Bengaluru")
+                    results.forEach { c -> TextButton(onClick = { onPick(c); open = false }) { Text(c.name) } }
+                }
+            },
+            confirmButton = {}, dismissButton = { TextButton(onClick = { open = false }) { Text("Cancel") } },
+        )
+    }
+}

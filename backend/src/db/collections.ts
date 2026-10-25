@@ -13,7 +13,9 @@ import type {
   PasswordResetDoc,
   PingDoc,
   SessionDoc,
+  SosDoc,
   UserDoc,
+  WidgetBoardDoc,
 } from './types.js';
 
 export const COLLECTION_NAMES = {
@@ -31,6 +33,8 @@ export const COLLECTION_NAMES = {
   milestones: 'milestones',
   events: 'events',
   lists: 'lists',
+  widgetBoards: 'widgetBoards',
+  sos: 'sos',
 } as const;
 
 export interface Collections {
@@ -48,6 +52,8 @@ export interface Collections {
   milestones: Collection<MilestoneDoc>;
   events: Collection<EventDoc>;
   lists: Collection<ListDoc>;
+  widgetBoards: Collection<WidgetBoardDoc>;
+  sos: Collection<SosDoc>;
 }
 
 export function getCollections(db: Db): Collections {
@@ -66,5 +72,7 @@ export function getCollections(db: Db): Collections {
     milestones: db.collection<MilestoneDoc>(COLLECTION_NAMES.milestones),
     events: db.collection<EventDoc>(COLLECTION_NAMES.events),
     lists: db.collection<ListDoc>(COLLECTION_NAMES.lists),
+    widgetBoards: db.collection<WidgetBoardDoc>(COLLECTION_NAMES.widgetBoards),
+    sos: db.collection<SosDoc>(COLLECTION_NAMES.sos),
   };
 }

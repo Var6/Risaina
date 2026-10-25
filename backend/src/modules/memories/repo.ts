@@ -34,6 +34,11 @@ export class MemoryRepo {
     );
   }
 
+  /** The live memory auto-created from a chat photo message, if any. */
+  findBySourceMessage(messageId: ObjectId, coupleId: ObjectId): Promise<MemoryDoc | null> {
+    return this.db.memories.findOne({ sourceMessageId: messageId, coupleId, deletedAt: null });
+  }
+
   list(
     coupleId: ObjectId,
     limit: number,

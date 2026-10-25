@@ -8,7 +8,9 @@ import type {
   MilestoneDoc,
   PingDoc,
   Preferences,
+  SosDoc,
   UserDoc,
+  WidgetBoardDoc,
 } from '../../db/types.js';
 import { iso, isoOrNull } from '../../lib/time.js';
 import type {
@@ -22,7 +24,9 @@ import type {
   PartnerDto,
   PingDto,
   PreferencesDto,
+  SosDto,
   UserDto,
+  WidgetBoardDto,
 } from './schemas.js';
 
 export type {
@@ -36,7 +40,9 @@ export type {
   PartnerDto,
   PingDto,
   PreferencesDto,
+  SosDto,
   UserDto,
+  WidgetBoardDto,
 };
 
 export function toUserDto(u: UserDoc): UserDto {
@@ -50,6 +56,8 @@ export function toUserDto(u: UserDoc): UserDto {
     birthday: u.birthday ?? null,
     timeZone: u.timeZone ?? null,
     shareLocalTime: u.shareLocalTime ?? true,
+    city: u.city ? { ...u.city } : null,
+    shareWeather: u.shareWeather ?? true,
   };
 }
 
@@ -61,6 +69,7 @@ export function toPartnerDto(u: UserDoc): PartnerDto {
     avatarMediaId: u.avatarMediaId ? u.avatarMediaId.toHexString() : null,
     birthday: u.birthday ?? null,
     timeZone: (u.shareLocalTime ?? true) ? (u.timeZone ?? null) : null,
+    city: (u.shareWeather ?? true) && u.city ? { ...u.city } : null,
   };
 }
 
@@ -143,6 +152,9 @@ export function toMessageDto(m: MessageDoc): MessageDto {
     deletedAt: isoOrNull(m.deletedAt),
     readAt: isoOrNull(m.readAt),
     idempotencyKey: m.idempotencyKey,
+    viewOnce: m.viewOnce ?? false,
+    openedAt: isoOrNull(m.openedAt),
+    viewOnceExpired: m.viewOnceExpiredAt instanceof Date,
   };
 }
 
@@ -173,6 +185,30 @@ export function toMemoryDto(m: MemoryDoc): MemoryDto {
     pinned: m.pinned,
     createdAt: iso(m.createdAt),
     deletedAt: isoOrNull(m.deletedAt),
+    sourceMessageId: m.sourceMessageId ? m.sourceMessageId.toHexString() : null,
+  };
+}
+
+export function toWidgetBoardDto(b: WidgetBoardDoc): WidgetBoardDto {
+  return {
+    authorId: b.authorId.toHexString(),
+    note: b.note,
+    emoji: b.emoji,
+    mood: b.mood,
+    photoMediaId: b.photoMediaId ? b.photoMediaId.toHexString() : null,
+    updatedAt: iso(b.updatedAt),
+  };
+}
+
+export function toSosDto(s: SosDoc): SosDto {
+  return {
+    id: s._id.toHexString(),
+    coupleId: s.coupleId.toHexString(),
+    senderId: s.senderId.toHexString(),
+    recipientId: s.recipientId.toHexString(),
+    message: s.message,
+    createdAt: iso(s.createdAt),
+    acknowledgedAt: isoOrNull(s.acknowledgedAt),
   };
 }
 
