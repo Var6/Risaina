@@ -34,6 +34,10 @@ suspend fun HttpResponse.toAppError(): AppError {
         HttpStatusCode.TooManyRequests -> AppError.RateLimited(headers["Retry-After"]?.toIntOrNull())
         HttpStatusCode.BadRequest, HttpStatusCode.UnprocessableEntity -> AppError.Validation(message ?: "Please check what you entered")
         HttpStatusCode.PayloadTooLarge -> AppError.Validation(message ?: "That file is too large")
-        else -> if (status.value >= 500) AppError.Server() else AppError.Unknown(IllegalStateException("HTTP ${status.value}"))
+        else -> when {
+            body?.code == "google_not_configured" -> AppError.Conflict("google_not_configured", "Google sign-in isn't enabled on the server yet")
+            status.value >= 500 -> AppError.Server()
+            else -> AppError.Unknown(IllegalStateException("HTTP ${status.value}"))
+        }
     }
 }

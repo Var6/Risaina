@@ -95,6 +95,11 @@ fun SignInScreen(onBack: (() -> Unit)?, onGoToSignUp: () -> Unit, onForgot: () -
         FormError(s.formError)
         Spacer(Modifier.height(20.dp))
         PrimaryButton("Sign in", onClick = vm::signIn, loading = s.loading, modifier = Modifier.fillMaxWidth())
+        if (GoogleSignIn.configured) {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            Spacer(Modifier.height(10.dp))
+            com.risaina.app.core.designsystem.components.OutlineButton("Continue with Google", onClick = { vm.google(ctx) }, enabled = !s.googleLoading, modifier = Modifier.fillMaxWidth())
+        }
         Spacer(Modifier.height(4.dp))
         GhostButton("Forgot password?", onClick = onForgot, modifier = Modifier.fillMaxWidth())
         GhostButton("Create an account", onClick = onGoToSignUp, modifier = Modifier.fillMaxWidth())
@@ -125,5 +130,24 @@ private fun FormError(text: String?) {
     if (text != null) {
         Spacer(Modifier.height(8.dp))
         Text(text, style = RisainaTextStyles.timestamp.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize), color = MaterialTheme.colorScheme.error)
+    }
+}
+
+
+/** Six-digit email verification. Never blocks using the app; reachable from Home and Settings. */
+@Composable
+fun VerifyEmailScreen(onBack: () -> Unit, vm: AuthViewModel = hiltViewModel()) {
+    val s by vm.state.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(s.verified) { if (s.verified) onBack() }
+    AuthFrame("Confirm your email", "We sent a 6-digit code. It helps you recover your account if you ever lose this phone.", onBack) {
+        RisainaTextField(
+            s.verifyCode, vm::onVerifyCode, "Code", error = s.verifyError, placeholder = "123456",
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+        )
+        Spacer(Modifier.height(20.dp))
+        PrimaryButton("Confirm", onClick = vm::verify, loading = s.loading, enabled = s.verifyCode.length == 6, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(4.dp))
+        GhostButton("Send a new code", onClick = vm::resend, modifier = Modifier.fillMaxWidth())
+        if (s.verifyInfo != null) Text(s.verifyInfo!!, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
     }
 }

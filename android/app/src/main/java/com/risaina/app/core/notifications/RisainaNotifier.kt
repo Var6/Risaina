@@ -50,8 +50,17 @@ class RisainaNotifier @Inject constructor(
         when (item) {
             is Incoming.NewPing -> {
                 val p = item.ping
-                val title = if (prefs.previewInNotifications) "${p.emoji}  ${p.type.label} from $partner" else "$partner sent you a ping"
-                val body = if (prefs.previewInNotifications) (p.message ?: p.type.defaultMessage.ifBlank { "Tap to see" }) else "Tap to see"
+                val gift = com.risaina.app.feature.ping.Expressions.isGift(p.message)
+                val title = when {
+                    !prefs.previewInNotifications -> "$partner sent you something"
+                    gift -> "${p.emoji}  $partner sent you a gift"
+                    else -> "${p.emoji}  ${p.type.label} from $partner"
+                }
+                val body = when {
+                    !prefs.previewInNotifications -> "Tap to see"
+                    gift -> com.risaina.app.feature.ping.Expressions.giftLine(p.message)!!
+                    else -> p.message ?: p.type.defaultMessage.ifBlank { "Tap to see" }
+                }
                 post(
                     id = p.id.hashCode(),
                     channel = if (quiet) NotificationChannels.PINGS_QUIET else NotificationChannels.PINGS,

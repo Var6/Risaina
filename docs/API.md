@@ -177,3 +177,193 @@ Push (FCM data message) payload mirrors a minimal event: `{ type, eventId, coupl
 
 `actorId` is the user who caused the event. Events are delivered to **both** members; clients
 ignore effects that only concern the actor (for example the sender does not notify itself).
+
+## Auth additions
+
+Added after v1 (Google sign-in, email verification, real mailer). Additive: no existing field or
+route changed shape, except that `DELETE /me` now also accepts `{ confirm: "DELETE" }`.
+
+### `User` shape (all user responses)
+
+```ts
+User { id, displayName, avatarMediaId: string|null, createdAt,
+       emailVerified: boolean,   // confirmed by 6-digit code, or the account came from Google
+       hasPassword: boolean }    // false for Google-only accounts → DELETE /me uses { confirm: "DELETE" }
+```
+
+Returned by `register`, `login`, `google`, `email/verify`, `GET /me`, `PATCH /me` and `/me/export`.
+`emailVerified` is informational: nothing in the app is blocked on it.
+
+### Routes
+
+| Method | Path | Auth | Body | Success |
+|---|---|---|---|---|
+| POST | `/auth/google` | none | `{ idToken: string }` (1–4096 chars) | `200 { user: User, tokens: Tokens, isNewUser: boolean }` — always 200, also when the account was created |
+| POST | `/auth/email/verify` | Bearer | `{ code: string }` (exactly 6 digits; surrounding spaces trimmed) | `200 { user: User }` — idempotent once verified |
+| POST | `/auth/email/resend` | Bearer | `{}` (ignored) | `202 { accepted: true }` |
+| DELETE | `/me` | Bearer | `{ password }` **or** `{ confirm: "DELETE" }` | `204` |
+
+### `POST /auth/google`
+
+Verifies the Google ID token (RS256 against Google's JWKS; `iss` is `accounts.google.com` or
+`https://accounts.google.com`; `aud` must be one of `GOOGLE_CLIENT_IDS`, the **Web** client ID the
+Android app uses as `serverClientId`; `email_verified` must be `true`; `sub` required). Rate limited
+like `/auth/login`.
+
+Account resolution:
+1. account whose Google `sub` matches → sign in (`isNewUser: false`);
+2. else account with the same email (case-insensitive) → Google is linked, email marked verified
+   (`isNewUser: false`). **If that account's email was not verified**, its password is removed and
+   all its sessions are revoked first (account pre-hijacking defence); the user can set a password
+   again with forgot/reset. A verified account keeps its password and sessions;
+3. else a new account: `displayName` from `given_name`, then `name`, then the email local part
+   (max 60 chars), no password, email verified (`isNewUser: true`).
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | missing / empty / > 4096-char `idToken` |
+| 401 | `unauthorized` | bad signature, wrong audience or issuer, expired, malformed (`Invalid Google ID token`); `email_verified` not true (`Your Google account email is not verified`) |
+| 409 | `conflict` | the email already belongs to an account linked to a **different** Google `sub`; or a concurrent sign-in race that persisted after retries |
+| 429 | `rate_limited` | per-IP auth rate limit (`Retry-After`) |
+| 503 | `google_not_configured` | `GOOGLE_CLIENT_IDS` unset on the server |
+
+### Email verification
+
+On `POST /auth/register` the server emails a 6-digit code valid for 30 minutes (registration
+succeeds even if the email cannot be sent). Only the newest code is valid.
+
+`POST /auth/email/verify`:
+
+| Status | `error.code` | When |
+|---|---|---|
+| 200 | — | code correct (or the email was already verified) → `{ user }` with `emailVerified: true` |
+| 400 | `validation_failed` | not exactly 6 digits (does not count as an attempt) |
+| 400 | `verification_code_invalid` | wrong code; `error.details = { attemptsRemaining: number }` (4, 3, 2, 1) |
+| 410 | `verification_code_expired` | the newest code expired, or there is no code — request a new one |
+| 429 | `verification_attempts_exceeded` | the 5th wrong code, and every later try on that code (even the right one); `Retry-After` = seconds until a resend is allowed |
+| 401 | `unauthorized` | missing/invalid bearer token |
+
+`POST /auth/email/resend` (always sends a **new** code; the previous one stops working):
+
+| Status | `error.code` | When |
+|---|---|---|
+| 202 | — | `{ accepted: true }` (also when delivery later fails; failures are only logged) |
+| 409 | `conflict` | email already verified |
+| 429 | `rate_limited` | less than 60 s since the last code, or 5 codes in the last hour (the registration email counts); `Retry-After` in seconds |
+| 401 | `unauthorized` | missing/invalid bearer token |
+
+### `DELETE /me`
+
+- `user.hasPassword === true` → `{ "password": "…" }` (unchanged). `{ confirm }` alone ⇒ `401`.
+- `user.hasPassword === false` (Google-only) → `{ "confirm": "DELETE" }` (exact, uppercase).
+  A `password` ⇒ `401`.
+- Neither field, or `confirm` with any other value ⇒ `400 validation_failed`.
+
+Deleting also frees the Google identity: signing in with the same Google account later creates a
+new, empty account.
+
+### Other behaviour
+
+- `POST /auth/login` on an account without a password returns the same `401 unauthorized`
+  "Invalid email or password" as a wrong password.
+- `POST /auth/password/forgot` / `reset` work for Google-only accounts and add a password.
+- `GET /health` → `checks.google = { status: 'ok' | 'disabled' }`.
+- New error codes: `google_not_configured`, `verification_code_invalid`,
+  `verification_code_expired`, `verification_attempts_exceeded`.
+
+## Profile & shared lists additions
+
+Additive: existing fields keep their shape; `User`, `Partner` and `/me/export` gain fields.
+
+### Profile fields
+
+```ts
+User    { ...as above, birthday: string|null, timeZone: string|null, shareLocalTime: boolean }
+Partner { id, displayName, avatarMediaId: string|null,
+          birthday: string|null,   // 'YYYY-MM-DD' or '--MM-DD' (year private)
+          timeZone: string|null }  // null when unset OR that partner has shareLocalTime = false
+```
+
+`Partner` has this shape everywhere it appears: `GET /me`, `GET /couple`, `POST /invitations/accept`
+and the `partner.updated` event payload. Accounts that never set the fields read
+`birthday: null, timeZone: null, shareLocalTime: true`.
+
+`PATCH /me` body (all optional, `.strict()`; unknown keys ⇒ 400):
+
+```ts
+{ displayName?: string, avatarMediaId?: string|null,
+  birthday?: string|null,       // 'YYYY-MM-DD' (real date, year ≥ 1900, not in the future) or '--MM-DD' (Feb 29 allowed); null clears
+  timeZone?: string|null,       // IANA id (e.g. 'Asia/Kolkata'); fixed offsets like '+05:30' rejected; null clears
+  shareLocalTime?: boolean }
+```
+
+→ `200 { user: User }`. Errors: `400 validation_failed` (e.g. `2026-02-30`, `--13-01`, `Mars/Olympus`),
+`401`, `404 not_found` / `409 media_not_ready` (avatar, unchanged). `timeZone` is stored as sent,
+except that letter case is fixed (`europe/berlin` → `Europe/Berlin`).
+
+`partner.updated` `{ partner: Partner }` is emitted (to the couple, when paired) whenever
+`displayName`, `avatarMediaId`, `birthday`, `timeZone` or `shareLocalTime` actually changes value;
+a PATCH that changes nothing emits nothing.
+
+### Shared lists
+
+Both partners read and edit everything in their couple. All routes: Bearer + active couple
+(`409 not_paired` otherwise). An id from another couple (or a deleted list) ⇒ `404 not_found`; a
+malformed id ⇒ `400 validation_failed`.
+
+```ts
+List     { id, coupleId, createdBy, updatedBy, title, kind: 'note'|'checklist', body: string,
+           items: ListItem[], pinned: boolean, version: number /* ≥ 1 */, createdAt, updatedAt }
+ListItem { id: string, text: string, done: boolean, doneBy: string|null, doneAt: string|null }
+```
+
+| Method | Path | Body | Success |
+|---|---|---|---|
+| GET | `/lists` | | `200 { items: List[] }` — pinned first, then `updatedAt` desc; max 200; deleted excluded |
+| POST | `/lists` | `{ title, kind, body?, items?: [{ text, done? }], pinned? }` | `201 { list }` (`version: 1`) |
+| PATCH | `/lists/:id` | `{ title?, body?, items?: [{ id?, text, done }], pinned?, expectedVersion? }` | `200 { list }` (`version` + 1) |
+| DELETE | `/lists/:id` | | `204` (soft delete) |
+
+Limits: `title` trimmed, 1–120; `body` ≤ 10000 (may be `''`, default `''`); `items` ≤ 200; item
+`text` trimmed, 1–300; item `id` (PATCH) `[A-Za-z0-9_-]{1,32}`, unique within the request; `kind`
+cannot be changed; ≤ 200 lists per couple (`409 conflict` on create beyond that).
+Top-level bodies are strict (unknown keys ⇒ 400). Inside an item, extra keys such as `doneBy` /
+`doneAt` (and `id` on POST) are accepted and ignored, so clients may echo items back as received.
+
+Item rules (server owns `id` when omitted, `doneBy`, `doneAt`):
+- `items` in PATCH **replaces the whole array** (order as sent; omitted items are removed).
+- New item (no `id`, or an `id` not in the list): server assigns a 12-char id if missing; if
+  `done: true` ⇒ `doneBy` = caller, `doneAt` = now, else both `null`. Same on POST.
+- Existing `id`, `done` unchanged ⇒ `doneBy`/`doneAt` preserved (text may change).
+- Flips to `done: true` ⇒ `doneBy` = caller, `doneAt` = now. Flips to `false` ⇒ both `null`.
+
+Concurrency: with `expectedVersion` ≠ current version ⇒
+`409 { error: { code: 'version_conflict', message, details: { list: List /* current */ } } }`.
+Without `expectedVersion` the PATCH applies to the latest state (last write wins).
+
+Rate limit: POST/PATCH/DELETE share **120 per user per minute** (`RATE_LIMIT_LIST_WRITES_PER_MIN`)
+⇒ `429 rate_limited` with `Retry-After`. GET is only subject to the global per-IP limit.
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | body/limits above, malformed id |
+| 401 | `unauthorized` | missing/invalid token |
+| 404 | `not_found` | list not in the caller's couple, or deleted |
+| 409 | `not_paired` | no active couple |
+| 409 | `version_conflict` | PATCH `expectedVersion` mismatch (`details.list` = current) |
+| 409 | `conflict` | 200-lists-per-couple cap (POST) |
+| 429 | `rate_limited` | list write budget exceeded |
+
+Events (both members, like all events):
+
+| Event type | `payload` |
+|---|---|
+| `list.created` / `list.updated` | `{ list: List }` |
+| `list.deleted` | `{ listId }` |
+
+`GET /me/export` adds `lists: List[]` (non-deleted, bounded to 1000, counted in `truncated`).
+
+Note for servers whose MongoDB user lacks `dbAdmin`: a database created by an earlier version keeps
+an `events` validator that rejects `list.*`. The list request still succeeds; the event is sent live
+over the WebSocket but is not stored (absent from `GET /events` and sync replay; no FCM push).
+Clients should refresh `GET /lists` on app open / reconnect rather than rely on replay alone.

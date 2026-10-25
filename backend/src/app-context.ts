@@ -4,6 +4,7 @@ import type { Env } from './config/env.js';
 import type { Collections } from './db/collections.js';
 import type { AttemptLimiter } from './lib/attempt-limiter.js';
 import type { Clock } from './lib/time.js';
+import type { GoogleTokenVerifier } from './modules/auth/google.js';
 import type { TokenService } from './modules/auth/tokens.js';
 import type { WsHub } from './services/events/hub.js';
 import type { EventPublisher } from './services/events/publisher.js';
@@ -25,6 +26,8 @@ export interface AppContext {
   hub: WsHub;
   events: EventPublisher;
   tokens: TokenService;
+  /** null when GOOGLE_CLIENT_IDS is unset: POST /auth/google answers 503 google_not_configured. */
+  google: GoogleTokenVerifier | null;
   inviteLimiter: AttemptLimiter;
   now: Clock;
   logger: Logger;

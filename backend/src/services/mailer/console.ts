@@ -1,10 +1,10 @@
 import type { Logger } from 'pino';
-import type { Mailer, PasswordResetMail } from './types.js';
+import type { EmailVerificationMail, Mailer, PasswordResetMail } from './types.js';
 
 /**
- * The only mailer that exists today (no email provider is configured — see COUNCIL_DECISIONS
- * O-01). In production mode it logs a single non-sensitive line; in development it additionally
- * prints the reset link to stdout so the flow can be exercised by hand.
+ * Development / fallback mailer. It always logs a single non-sensitive line (no recipient, code or
+ * link). In development (`devMode`) it additionally prints the code or reset link to stdout so the
+ * flows can be exercised by hand; never in production.
  */
 export class ConsoleMailer implements Mailer {
   readonly provider = 'console' as const;
@@ -24,6 +24,16 @@ export class ConsoleMailer implements Mailer {
       process.stdout.write(
         `\n[console-mailer] Password reset link (development only):\n  ${mail.resetUrl}\n\n`,
       );
+    }
+  }
+
+  async sendEmailVerification(mail: EmailVerificationMail): Promise<void> {
+    this.logger.info(
+      { kind: 'email_verification', expiresAt: mail.expiresAt.toISOString() },
+      'email verification code queued (console mailer)',
+    );
+    if (this.devMode) {
+      process.stdout.write(`\n[console-mailer] Email verification code (development only): ${mail.code}\n\n`);
     }
   }
 }

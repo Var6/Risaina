@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -61,6 +62,7 @@ data class CountdownInfo(val label: String, val countdown: Countdown, val date: 
 
 data class HomeUiState(
     val myName: String = "",
+    val emailVerified: Boolean = true,
     val myId: String? = null,
     val partner: Partner? = null,
     val couple: Couple? = null,
@@ -72,14 +74,27 @@ data class HomeUiState(
     val latestVoice: Message? = null,
     val recent: List<ActivityItem> = emptyList(),
     val button: PingButtonState = PingButtonState.Idle,
+    /** My most recent ping in the last 10 minutes; its server status stays visible under the button. */
+    val lastSent: Ping? = null,
+    val cooldownSeconds: Long = 0,
     val burstKey: Int = 0,
     val selectedType: PingType = PingType.THINKING_OF_YOU,
     val incoming: Ping? = null,
     val showComposer: Boolean = false,
+    val composerTab: Int = 0,
     val justPaired: Boolean = false,
     val pushConfigured: Boolean = true,
     val unread: Int = 0,
     val socket: SocketState = SocketState.DISCONNECTED,
+    val anniversary: com.risaina.app.core.domain.AnniversaryInfo? = null,
+    val partnerBirthday: com.risaina.app.core.domain.UpcomingBirthday? = null,
+    val myBirthday: com.risaina.app.core.domain.UpcomingBirthday? = null,
+    /** Partner's local time and an optional "tomorrow for them" note, when they share it. */
+    val partnerClock: Pair<String, String?>? = null,
+    val pingsToday: Int = 0,
+    val background: String = "GLOW",
+    val partnerAvatar: File? = null,
+    val askStartDate: Boolean = false,
 )
 
 private data class Local(
@@ -91,8 +106,11 @@ private data class Local(
     val selectedType: PingType = PingType.THINKING_OF_YOU,
     val incoming: Ping? = null,
     val showComposer: Boolean = false,
+    val composerTab: Int = 0,
     val justPaired: Boolean = false,
     val favouriteImage: File? = null,
+    val partnerAvatar: File? = null,
+    val startDateDismissed: Boolean = false,
 )
 
 @HiltViewModel
@@ -107,21 +125,28 @@ class HomeViewModel @Inject constructor(
     private val time: TimeProvider,
     pushAvailability: PushAvailability,
     uiFlags: UiFlags,
+    private val preferencesStore: com.risaina.app.core.datastore.PreferencesStore,
 ) : ViewModel() {
 
     private val local = MutableStateFlow(Local(justPaired = uiFlags.justPaired.also { uiFlags.justPaired = false }))
-    private val ticker: Flow<Instant> = flow { while (true) { emit(time.now()); delay(1_000) } }
+    /** Fast ticks only while a cooldown counts down; otherwise every 30 s (enough for the partner's clock). */
+    private val fastTicks = MutableStateFlow(true)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val ticker: Flow<Instant> = fastTicks.flatMapLatest { fast ->
+        flow { while (true) { emit(time.now()); delay(if (fast) 1_000 else 30_000) } }
+    }
     private val effects = Channel<String>(Channel.BUFFERED)
     val snackbars: Flow<String> = effects.receiveAsFlow()
     private val pushConfigured = pushAvailability.configured
 
-    private data class Content(val partner: Partner?, val couple: Couple?, val myName: String, val myId: String?, val pings: List<Ping>, val messages: List<Message>, val favourite: Memory?, val unread: Int)
+    private data class Content(val partner: Partner?, val couple: Couple?, val myName: String, val myId: String?, val emailVerified: Boolean = true, val pings: List<Ping>, val messages: List<Message>, val favourite: Memory?, val unread: Int, val myBirthday: String? = null, val background: String = "GLOW")
 
     private val content: Flow<Content> = combine(
         coupleRepository.partner, coupleRepository.couple, coupleRepository.profile, pingRepository.recent, messageRepository.recent(30),
-    ) { partner, couple, me, pings, messages -> Content(partner, couple, me?.displayName ?: "", me?.userId, pings, messages, null, 0) }
+    ) { partner, couple, me, pings, messages -> Content(partner, couple, me?.displayName ?: "", me?.userId, me?.emailVerified ?: true, pings, messages, null, 0, me?.birthday) }
         .combine(memoryRepository.favourite) { c, fav -> c.copy(favourite = fav) }
         .combine(messageRepository.unreadCount) { c, n -> c.copy(unread = n) }
+        .combine(preferencesStore.preferences) { c, p -> c.copy(background = p.background) }
 
     val state: StateFlow<HomeUiState> = combine(content, local, pingRepository.cooldownRemaining, ticker, syncManager.socketState) { c, l, cooldown, now, socket ->
         val today = now.atZone(ZoneId.systemDefault()).toLocalDate()
@@ -137,8 +162,9 @@ class HomeViewModel @Inject constructor(
             c.pings.firstOrNull { it.senderId != c.myId }?.let { Moment.FromPing(it) },
             c.messages.firstOrNull { it.senderId != c.myId && it.deletedAt == null }?.let { Moment.FromMessage(it) },
         ).maxByOrNull { it.at }
+        fastTicks.value = cooldown > 0 || l.sending || l.settledUntil?.isAfter(now) == true
         HomeUiState(
-            myName = c.myName, myId = c.myId, partner = c.partner, couple = c.couple,
+            myName = c.myName, emailVerified = c.emailVerified, myId = c.myId, partner = c.partner, couple = c.couple,
             countdown = countdownFor(c.couple, today),
             together = c.couple?.relationshipStartDate?.let { CountdownCalculator.formatTogether(CountdownCalculator.together(it, today)) },
             latestMoment = moment,
@@ -146,8 +172,18 @@ class HomeViewModel @Inject constructor(
             latestVoice = c.messages.firstOrNull { it.type == MessageType.VOICE && it.deletedAt == null },
             recent = recentActivity(c.pings, c.messages, c.myId, c.partner?.displayName),
             button = button, burstKey = l.burstKey, selectedType = l.selectedType,
-            incoming = l.incoming, showComposer = l.showComposer, justPaired = l.justPaired,
+            lastSent = c.pings.firstOrNull { it.senderId == c.myId }?.takeIf { java.time.Duration.between(it.createdAt, now).toMinutes() < 10 },
+            cooldownSeconds = cooldown,
+            incoming = l.incoming, showComposer = l.showComposer, composerTab = l.composerTab, justPaired = l.justPaired,
             pushConfigured = pushConfigured, unread = c.unread, socket = socket,
+            anniversary = c.couple?.relationshipStartDate?.let { com.risaina.app.core.domain.Occasions.anniversary(it, today) },
+            partnerBirthday = com.risaina.app.core.domain.Birthday.parse(c.partner?.birthday)?.let { com.risaina.app.core.domain.Occasions.nextBirthday(it, today) },
+            myBirthday = com.risaina.app.core.domain.Birthday.parse(c.myBirthday)?.let { com.risaina.app.core.domain.Occasions.nextBirthday(it, today) },
+            partnerClock = com.risaina.app.core.domain.Occasions.partnerClock(c.partner?.timeZone, now),
+            pingsToday = c.pings.count { it.createdAt.atZone(ZoneId.systemDefault()).toLocalDate() == today && it.status != com.risaina.app.core.model.PingStatus.FAILED },
+            background = c.background,
+            partnerAvatar = l.partnerAvatar,
+            askStartDate = c.couple != null && c.couple.relationshipStartDate == null && !l.startDateDismissed,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
@@ -159,6 +195,12 @@ class HomeViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            coupleRepository.partner.collect { p ->
+                val file = p?.avatarMediaId?.let { mediaRepository.localFile(it) ?: mediaRepository.ensureCached(it, "image/jpeg").getOrNull() }
+                local.update { it.copy(partnerAvatar = file) }
+            }
+        }
+        viewModelScope.launch {
             memoryRepository.favourite.collect { fav ->
                 val file = fav?.let { mediaRepository.localFile(it.mediaId) ?: mediaRepository.ensureCached(it.mediaId, "image/jpeg").getOrNull() }
                 local.update { it.copy(favouriteImage = file) }
@@ -166,14 +208,20 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** Asked once on Home after pairing; either partner can answer and it shows for both. */
+    fun setStartDate(date: LocalDate?) {
+        if (date == null) return
+        viewModelScope.launch {
+            val c = state.value.couple
+            coupleRepository.updateCouple(date, c?.nextMeetingDate, c?.nextMeetingLabel).onFailure { effects.trySend(it.message ?: "Couldn't save") }
+        }
+    }
+    fun dismissStartDate() = local.update { it.copy(startDateDismissed = true) }
+
     private fun countdownFor(couple: Couple?, today: LocalDate): CountdownInfo? {
         couple ?: return null
         couple.nextMeetingDate?.takeIf { !it.isBefore(today) }?.let {
             return CountdownInfo(couple.nextMeetingLabel ?: "Until we meet", CountdownCalculator.until(it, today), it)
-        }
-        couple.relationshipStartDate?.let {
-            val next = CountdownCalculator.nextAnniversary(it, today)
-            return CountdownInfo("Anniversary", CountdownCalculator.until(next, today), next)
         }
         return null
     }
@@ -196,7 +244,8 @@ class HomeViewModel @Inject constructor(
         send(type, type.defaultEmoji, null)
     }
 
-    fun openComposer() = local.update { it.copy(showComposer = true) }
+    fun openComposer() = local.update { it.copy(showComposer = true, composerTab = 0) }
+    fun openGifts() = local.update { it.copy(showComposer = true, composerTab = 2) }
     fun closeComposer() = local.update { it.copy(showComposer = false) }
 
     fun sendCustom(type: PingType, emoji: String, message: String?) {

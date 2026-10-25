@@ -4,6 +4,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -115,7 +118,7 @@ private fun ToggleRow(title: String, subtitle: String?, checked: Boolean, onChan
     }
 }
 
-data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit)
+data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {})
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel = hiltViewModel()) {
@@ -155,6 +158,20 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
                 }
             }
         }
+        Spacer(Modifier.height(16.dp))
+        Text("Your colour", style = MaterialTheme.typography.titleSmall)
+        Text("Only changes Risaina on your phone. Rosewood is the original.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+        Spacer(Modifier.height(10.dp))
+        AccentPicker(selected = s.prefs.accent, onPick = { a -> vm.update { it.copy(accent = a) } })
+        Spacer(Modifier.height(16.dp))
+        Text("Home background", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(8.dp))
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.risaina.app.core.designsystem.theme.BackgroundStyle.entries.forEach { b ->
+                androidx.compose.material3.FilterChip(selected = s.prefs.background == b.name, onClick = { vm.update { it.copy(background = b.name) } }, label = { Text(b.label) })
+            }
+        }
+        if (s.prefs.background == "PHOTO") Text("Uses your pinned memory. Pin one in Memories.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
         ToggleRow("Reduce motion", "Shorter, simpler animations", s.prefs.reducedMotion, { v -> vm.update { it.copy(reducedMotion = v) } })
         Spacer(Modifier.height(8.dp))
         SectionHeader("Relationship")
@@ -164,6 +181,7 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         }
         Spacer(Modifier.height(8.dp))
         SectionHeader("Account")
+        if (s.profile?.emailVerified == false) Row(com.risaina.app.feature.common.MailIcon, "Confirm your email", "Needed to recover your account", nav.verifyEmail)
         Row(InfoIcon, "About Risaina", "Version ${BuildConfig.VERSION_NAME}", nav.about)
         Row(LogoutIcon, "Sign out", null, { confirmSignOut = true })
     }
@@ -252,6 +270,9 @@ fun PrivacySettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewMo
         ToggleRow("Note text", "Off: the love-note widget shows only that a note arrived", p.widgetPrivacy.showNoteText, { v -> vm.update { it.copy(widgetPrivacy = it.widgetPrivacy.copy(showNoteText = v)) } })
         ToggleRow("Emoji", "The latest received emoji on the emoji widget", p.widgetPrivacy.showEmoji, { v -> vm.update { it.copy(widgetPrivacy = it.widgetPrivacy.copy(showEmoji = v)) } })
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        SectionHeader("Your partner sees")
+        ToggleRow("My local time", "Shows your partner what time it is for you", p.shareLocalTime, { v -> vm.setShareLocalTime(v) })
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
         SectionHeader("Notifications")
         ToggleRow("Show previews", "Off: lock screen shows only “New activity”", p.previewInNotifications, { v -> vm.update { it.copy(previewInNotifications = v) } })
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -275,9 +296,9 @@ fun PrivacySettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewMo
         title = { Text("Delete your account?") },
         text = {
             Column {
-                Text("This is permanent. Enter your password to confirm.")
+                Text("This is permanent. Enter your password to confirm. If you signed in with Google, type DELETE.")
                 Spacer(Modifier.height(12.dp))
-                RisainaTextField(password, { password = it; deleteError = null }, "Password", error = deleteError, visualTransformation = PasswordVisualTransformation())
+                RisainaTextField(password, { password = it; deleteError = null }, "Password or DELETE", error = deleteError, visualTransformation = if (password == "DELETE") androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation())
             }
         },
         confirmButton = { TextButton(onClick = { vm.deleteAccount(password) { deleteError = it } }, enabled = password.isNotBlank() && !s.busy) { Text("Delete forever") } },
@@ -300,6 +321,25 @@ fun ProfileScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
         Spacer(Modifier.height(24.dp))
         RisainaTextField(name, { name = it }, "What should your partner see?", supporting = "Shown on their home screen and widgets")
         Spacer(Modifier.height(16.dp))
+        val bday = com.risaina.app.core.domain.Birthday.parse(s.profile?.birthday)
+        var pickBirthday by remember { mutableStateOf(false) }
+        Text("Birthday", style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                bday?.let { b -> b.monthDay.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM")) + (b.year?.let { ", $it" } ?: "") } ?: "Not set",
+                style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
+            )
+            GhostButton(if (bday == null) "Add" else "Change", onClick = { pickBirthday = true })
+            if (bday != null) GhostButton("Remove", onClick = { vm.updateBirthday(null) })
+        }
+        if (bday != null) ToggleRow("Hide my birth year", "Your partner sees only the day and month", bday.year == null, { hide ->
+            // Hiding drops the year; showing it again needs the full date, so ask for it.
+            if (hide) vm.updateBirthday(com.risaina.app.core.domain.Birthday(bday.monthDay, null).wire) else pickBirthday = true
+        })
+        if (pickBirthday) com.risaina.app.feature.timeline.DateDialog(bday?.year?.let { bday.monthDay.atYear(it) }, { pickBirthday = false }) { d ->
+            if (d != null) vm.updateBirthday(d.toString())
+        }
+        Spacer(Modifier.height(16.dp))
         PrimaryButton("Save", onClick = { vm.updateName(name) }, loading = s.busy, enabled = name.trim().length >= 2 && name.trim() != s.profile?.displayName, modifier = Modifier.fillMaxWidth())
     }
 }
@@ -321,5 +361,21 @@ fun AboutScreen(onBack: () -> Unit) {
     }
 }
 
-@Suppress("unused") private val keepPersonIcon = PersonIcon
-@Suppress("unused") private fun keepPrefs(p: Preferences) = p
+@Composable
+private fun AccentPicker(selected: String, onPick: (String) -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        com.risaina.app.core.designsystem.theme.AccentTheme.entries.forEach { a ->
+            val isSel = a.name == selected
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onPick(a.name) }) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.padding(2.dp).then(if (isSel) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, androidx.compose.foundation.shape.CircleShape) else Modifier)
+                        .padding(4.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(a.pingFill, a.heroStart)))
+                        .then(Modifier.width(40.dp).height(40.dp)),
+                )
+                Text(a.label, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+

@@ -33,6 +33,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import com.risaina.app.core.domain.Occasions
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +46,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -83,6 +89,9 @@ data class HomeNav(
     val wallpaper: () -> Unit,
     val pingHistory: () -> Unit,
     val notificationPermission: () -> Unit,
+    val verifyEmail: () -> Unit = {},
+    val lists: () -> Unit = {},
+    val gifts: () -> Unit = {},
 )
 
 @Composable
@@ -92,14 +101,23 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(s.justPaired) { if (s.justPaired) { nav.notificationPermission(); vm.consumeJustPaired() } }
 
+    var pickStart by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
+        HomeBackground(s.background, s.favouriteImage)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
-            item { TopRow(greeting = "${Format.greeting()}, ${s.myName.ifBlank { "you" }}", onSettings = nav.settings) }
+            item { TopRow(greeting = Format.greetingFor(s.myName), onSettings = nav.settings) }
+            if (!s.emailVerified) item {
+                RisainaCard(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth(), onClick = nav.verifyEmail, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text("Confirm your email", style = MaterialTheme.typography.titleSmall)
+                    Text("So you can recover your account. Takes 10 seconds.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+                }
+            }
             item { Hero(s) }
+            if (s.askStartDate) item { StartDatePrompt(onPick = { pickStart = true }, onDismiss = vm::dismissStartDate) }
             item { PingArea(s, vm) }
             item { Shortcuts(s.selectedType, onPick = { vm.selectType(it); vm.tapPing() }, onMore = vm::openComposer) }
             if (s.latestMoment != null) item { LatestMoment(s, onOpen = nav.messages) }
-            item { QuickRow(nav) }
+            item { QuickRow(nav.copy(gifts = vm::openGifts)) }
             if (s.favouriteMemory != null) item { FavouriteMemory(s, onOpen = { nav.memory(s.favouriteMemory!!.id) }) }
             item { VoiceShortcut(s, onOpen = nav.voice) }
             if (s.recent.isNotEmpty()) {
@@ -108,8 +126,9 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
             }
         }
         IncomingPingReveal(ping = s.incoming, partnerName = s.partner?.displayName, onReply = vm::replyToIncoming, onDismiss = vm::dismissIncoming, modifier = Modifier.align(Alignment.TopCenter))
+        if (pickStart) com.risaina.app.feature.timeline.DateDialog(null, { pickStart = false }) { vm.setStartDate(it) }
         if (s.showComposer) {
-            PingComposerSheet(initialType = s.selectedType, sending = s.button is PingButtonState.Sending, onDismiss = vm::closeComposer, onSend = vm::sendCustom)
+            PingComposerSheet(initialType = s.selectedType, initialTab = s.composerTab, sending = s.button is PingButtonState.Sending, onDismiss = vm::closeComposer, onSend = vm::sendCustom)
         }
     }
 }
@@ -127,23 +146,71 @@ private fun Hero(s: HomeUiState) {
     HeroPanel(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth()) {
         Column(Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(name = s.partner?.displayName, model = null, size = 56.dp, ring = true)
+                Avatar(name = s.partner?.displayName, model = s.partnerAvatar, size = 60.dp, ring = true)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(s.partner?.displayName ?: "—", style = MaterialTheme.typography.displaySmall, color = Palette.WarmIvory, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val sub = s.together?.let { "Together $it" } ?: "Paired"
-                    Text(sub, style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark)
+                    val clock = s.partnerClock
+                    Text(
+                        if (clock != null) "It's ${clock.first} for them" + (clock.second?.let { " · $it" } ?: "") else "Paired",
+                        style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark,
+                    )
                 }
             }
-            if (s.countdown != null) {
+            s.anniversary?.let { a ->
                 Spacer(Modifier.height(18.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(PillShape).background(Color.White.copy(alpha = 0.08f)).padding(horizontal = 14.dp, vertical = 8.dp)) {
-                    Text(s.countdown.countdown.headline, style = MaterialTheme.typography.titleMedium, color = Palette.SoftChampagne)
-                    Spacer(Modifier.width(8.dp))
-                    Text("· ${s.countdown.label.lowercase()} · ${Format.date(s.countdown.date)}", style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark)
+                Text("TOGETHER", style = RisainaTextStyles.overline, color = Palette.SoftChampagne)
+                Text(a.together, style = MaterialTheme.typography.headlineSmall, color = Palette.WarmIvory)
+                Text("%,d days".format(a.daysTogether), style = MaterialTheme.typography.bodySmall, color = Palette.MutedOnDark)
+            }
+            val chips = buildList {
+                s.countdown?.let { add("${it.countdown.headline} · ${it.label.lowercase()}") }
+                s.anniversary?.let { a -> add(if (a.daysLeft == 0L) "Happy ${Occasions.ordinal(a.yearsAtNext)} anniversary!" else "${a.daysLeft} days to your ${Occasions.ordinal(a.yearsAtNext)} anniversary") }
+                s.partnerBirthday?.takeIf { it.daysLeft <= 60 }?.let { b -> add(if (b.daysLeft == 0L) "🎂 It's ${s.partner?.displayName}'s birthday!" else "🎂 ${s.partner?.displayName}'s birthday in ${b.daysLeft} days") }
+                s.myBirthday?.takeIf { it.daysLeft == 0L }?.let { add("🎉 Happy birthday to you") }
+            }
+            if (chips.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                chips.forEach { c ->
+                    Text(c, style = MaterialTheme.typography.labelMedium, color = Palette.WarmIvory,
+                        modifier = Modifier.padding(top = 6.dp).clip(PillShape).background(Color.White.copy(alpha = 0.09f)).padding(horizontal = 12.dp, vertical = 7.dp))
                 }
+            }
+            if (s.pingsToday > 0) {
+                Spacer(Modifier.height(12.dp))
+                Text("You've reached for each other ${s.pingsToday} ${if (s.pingsToday == 1) "time" else "times"} today", style = MaterialTheme.typography.bodySmall, color = Palette.Blush)
             }
         }
+    }
+}
+
+/** Asked once after pairing; either partner's answer appears for both. */
+@Composable
+private fun StartDatePrompt(onPick: () -> Unit, onDismiss: () -> Unit) {
+    RisainaCard(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth(), contentPadding = PaddingValues(18.dp)) {
+        Text("When did your story begin?", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(4.dp))
+        Text("Add your anniversary to see how long you've been together and count down to the next one.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+        Spacer(Modifier.height(12.dp))
+        Row { com.risaina.app.core.designsystem.components.SecondaryButton("Choose the date", onClick = onPick); Spacer(Modifier.width(8.dp)); com.risaina.app.core.designsystem.components.GhostButton("Later", onClick = onDismiss) }
+    }
+}
+
+/** Personal background behind Home: plain, a soft accent glow, a dusk wash, or your pinned photo. */
+@Composable
+private fun HomeBackground(style: String, photo: java.io.File?) {
+    val bg = MaterialTheme.colorScheme.background
+    val accent = MaterialTheme.colorScheme.primaryContainer
+    when (style) {
+        "PLAIN" -> Box(Modifier.fillMaxSize().background(bg))
+        "DUSK" -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.55f), bg, bg))))
+        "PHOTO" -> Box(Modifier.fillMaxSize().background(bg)) {
+            if (photo != null) {
+                AsyncImage(model = photo, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(bg.copy(alpha = 0.55f), bg.copy(alpha = 0.92f), bg))))
+            }
+        }
+        else -> Box(Modifier.fillMaxSize().background(bg).background(Brush.radialGradient(listOf(accent.copy(alpha = 0.45f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(200f, 0f), radius = 1400f)))
     }
 }
 
@@ -154,26 +221,30 @@ private fun PingArea(s: HomeUiState, vm: HomeViewModel) {
             state = s.button, emoji = s.selectedType.defaultEmoji, burstKey = s.burstKey,
             onTap = vm::tapPing, onLongPress = vm::openComposer,
         )
+        val partner = s.partner?.displayName ?: "them"
+        fun statusLine(p: com.risaina.app.core.model.Ping): String = when (p.status) {
+            com.risaina.app.core.model.PingStatus.PENDING -> "Sending…"
+            com.risaina.app.core.model.PingStatus.ACCEPTED -> "Sent. Waiting for $partner's phone…"
+            com.risaina.app.core.model.PingStatus.DELIVERED -> "Delivered to $partner"
+            com.risaina.app.core.model.PingStatus.SEEN -> "$partner saw it"
+            com.risaina.app.core.model.PingStatus.FAILED -> "Didn't send"
+            com.risaina.app.core.model.PingStatus.EXPIRED -> "Expired"
+        }
         val label = when (val b = s.button) {
-            PingButtonState.Idle -> "Touch to send ${s.selectedType.label.lowercase()}"
-            is PingButtonState.Cooldown -> "Next ping in ${b.secondsLeft}s"
             PingButtonState.Sending -> "Sending…"
-            is PingButtonState.Settled -> when (b.status) {
-                com.risaina.app.core.model.PingStatus.ACCEPTED -> "Sent. Waiting for their phone…"
-                com.risaina.app.core.model.PingStatus.DELIVERED -> "Delivered to ${s.partner?.displayName ?: "them"}"
-                com.risaina.app.core.model.PingStatus.SEEN -> "${s.partner?.displayName ?: "They"} saw it"
-                else -> b.status.pill().first
-            }
             is PingButtonState.Failed -> b.reason
+            else -> s.lastSent?.let(::statusLine) ?: "Touch to send ${s.selectedType.label.lowercase()}"
         }
-        AnimatedVisibility(visible = true, enter = fadeIn(tween(200)) + scaleIn(), exit = fadeOut()) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, color = if (s.button is PingButtonState.Failed) MaterialTheme.colorScheme.error else Risaina.colors.textMuted)
+        val isError = s.button is PingButtonState.Failed
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = if (isError) MaterialTheme.colorScheme.error else Risaina.colors.textMuted,
+            modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+        val hint = when {
+            isError -> "Tap to retry · hold to personalise"
+            s.cooldownSeconds > 0 -> "Next ping in ${s.cooldownSeconds}s"
+            else -> "Hold to personalise"
         }
-        if (s.button is PingButtonState.Failed) {
-            Text("Tap to retry · hold to personalise", style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 4.dp).clickable { vm.retryLast() })
-        } else {
-            Text("Hold to personalise", style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
-        }
+        Text(hint, style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted.copy(alpha = 0.8f),
+            modifier = Modifier.padding(top = 4.dp).then(if (isError) Modifier.clickable { vm.retryLast() } else Modifier))
     }
 }
 
@@ -236,10 +307,16 @@ private fun LatestMoment(s: HomeUiState, onOpen: () -> Unit) {
 @Composable
 private fun QuickRow(nav: HomeNav) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        QuickTile("Notes", ImageIcon, nav.messages, Modifier.weight(1f))
+        QuickTile("Messages", com.risaina.app.feature.common.MailIcon, nav.messages, Modifier.weight(1f))
+        QuickTile("Lists", com.risaina.app.feature.common.CheckIcon, nav.lists, Modifier.weight(1f))
+        QuickTile("Memories", ImageIcon, nav.memories, Modifier.weight(1f))
         QuickTile("Timeline", TimelineIcon, nav.timeline, Modifier.weight(1f))
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        QuickTile("Gifts", com.risaina.app.feature.common.HeartIcon, nav.gifts, Modifier.weight(1f))
         QuickTile("Widgets", WidgetsIcon, nav.widgets, Modifier.weight(1f))
         QuickTile("Wallpaper", WallpaperIcon, nav.wallpaper, Modifier.weight(1f))
+        QuickTile("Settings", com.risaina.app.feature.common.SettingsIcon, nav.settings, Modifier.weight(1f))
     }
 }
 

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
+import type { JWTVerifyGetKey } from 'jose';
 import { MongoClient } from 'mongodb';
 import { pino } from 'pino';
 import { inject } from 'vitest';
@@ -10,7 +11,13 @@ import { buildApp } from '../../src/app.js';
 import type { AppContext } from '../../src/app-context.js';
 import { type Env, loadEnv } from '../../src/config/env.js';
 import { type Collections, getCollections, prepareDatabase } from '../../src/db/index.js';
-import type { Mailer, PasswordResetMail } from '../../src/services/mailer/types.js';
+import { createGoogleVerifier } from '../../src/modules/auth/google.js';
+import {
+  type EmailVerificationMail,
+  type Mailer,
+  MailerError,
+  type PasswordResetMail,
+} from '../../src/services/mailer/types.js';
 import { DisabledPushService } from '../../src/services/push/disabled.js';
 import type { PushData, PushSendResult, PushService } from '../../src/services/push/types.js';
 import { LOCAL_STORAGE_ROUTE_PREFIX } from '../../src/services/storage/index.js';
@@ -30,9 +37,21 @@ export class TestClock {
 
 export class CapturingMailer implements Mailer {
   readonly provider = 'capturing' as const;
+  /** Password reset mails (kept under the original name). */
   readonly sent: PasswordResetMail[] = [];
+  readonly verifications: EmailVerificationMail[] = [];
+  /** When true every send rejects (after recording the attempt), like a provider outage. */
+  fail = false;
   async sendPasswordReset(mail: PasswordResetMail): Promise<void> {
     this.sent.push(mail);
+    if (this.fail) throw new MailerError('capturing mailer: simulated failure');
+  }
+  async sendEmailVerification(mail: EmailVerificationMail): Promise<void> {
+    this.verifications.push(mail);
+    if (this.fail) throw new MailerError('capturing mailer: simulated failure');
+  }
+  lastCodeFor(email: string): string | undefined {
+    return this.verifications.filter((m) => m.to === email).at(-1)?.code;
   }
 }
 
@@ -87,6 +106,8 @@ export interface TestAppOptions {
   envOverrides?: Record<string, string>;
   push?: PushService;
   outbox?: Partial<{ backoffBaseMs: number; maxAttempts: number }>;
+  /** Local JWKS used to verify Google ID tokens (requires GOOGLE_CLIENT_IDS in envOverrides). */
+  googleKeys?: JWTVerifyGetKey;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
@@ -140,6 +161,10 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     storage,
     push,
     mailer,
+    google:
+      env.google.enabled && options.googleKeys
+        ? createGoogleVerifier({ clientIds: env.google.clientIds, keys: options.googleKeys, now: clock.now })
+        : null,
     now: clock.now,
     logger,
     version: 'test',
@@ -178,7 +203,14 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
 // --- request helpers -------------------------------------------------------------------------
 
 export interface Session {
-  user: { id: string; displayName: string; avatarMediaId: string | null; createdAt: string };
+  user: {
+    id: string;
+    displayName: string;
+    avatarMediaId: string | null;
+    createdAt: string;
+    emailVerified: boolean;
+    hasPassword: boolean;
+  };
   tokens: { accessToken: string; accessExpiresAt: string; refreshToken: string; refreshExpiresAt: string };
 }
 
@@ -188,8 +220,8 @@ export async function register(
   app: FastifyInstance,
   name: string,
   password = 'correct-horse-battery',
+  email = `${name.toLowerCase()}-${randomUUID().slice(0, 8)}@example.test`,
 ): Promise<Session> {
-  const email = `${name.toLowerCase()}-${randomUUID().slice(0, 8)}@example.test`;
   const res = await app.inject({
     method: 'POST',
     url: `${API}/auth/register`,

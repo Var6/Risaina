@@ -185,6 +185,26 @@ interface CoupleDao {
 }
 
 @Dao
+interface ListDao {
+    @Query("SELECT * FROM lists ORDER BY pinned DESC, updatedAt DESC")
+    fun all(): Flow<List<ListEntity>>
+
+    @Query("SELECT * FROM lists WHERE id = :id")
+    fun observe(id: String): Flow<ListEntity?>
+
+    @Query("SELECT * FROM lists WHERE id = :id")
+    suspend fun byId(id: String): ListEntity?
+
+    @Upsert suspend fun upsert(e: ListEntity)
+
+    @Transaction
+    suspend fun replaceAll(items: List<ListEntity>) { clear(); items.forEach { upsert(it) } }
+
+    @Query("DELETE FROM lists WHERE id = :id") suspend fun delete(id: String)
+    @Query("DELETE FROM lists") suspend fun clear()
+}
+
+@Dao
 interface OutboxDao {
     @Query("SELECT * FROM outbox ORDER BY createdAt ASC")
     suspend fun all(): List<OutboxEntity>

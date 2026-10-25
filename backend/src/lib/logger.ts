@@ -34,6 +34,19 @@ export const REDACT_PATHS = [
   '*.deviceToken',
   'resetUrl',
   '*.resetUrl',
+  // shared lists: titles, bodies and item text are private content
+  'title',
+  '*.title',
+  'body',
+  '*.body',
+  'items',
+  '*.items',
+  'list',
+  '*.list',
+  'lists',
+  '*.lists',
+  'birthday',
+  '*.birthday',
 ];
 
 export function loggerOptions(level: string, pretty: boolean): LoggerOptions {

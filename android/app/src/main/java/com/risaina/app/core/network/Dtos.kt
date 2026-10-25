@@ -10,8 +10,12 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class ErrorBody(val error: ErrorDetail)
 @Serializable data class ErrorDetail(val code: String, val message: String, val details: JsonElement? = null)
 
-@Serializable data class UserDto(val id: String, val displayName: String, val avatarMediaId: String? = null, val createdAt: String)
-@Serializable data class PartnerDto(val id: String, val displayName: String, val avatarMediaId: String? = null)
+@Serializable data class UserDto(
+    val id: String, val displayName: String, val avatarMediaId: String? = null, val createdAt: String,
+    val emailVerified: Boolean = false, val hasPassword: Boolean = true,
+    val birthday: String? = null, val timeZone: String? = null, val shareLocalTime: Boolean = true,
+)
+@Serializable data class PartnerDto(val id: String, val displayName: String, val avatarMediaId: String? = null, val birthday: String? = null, val timeZone: String? = null)
 @Serializable data class CoupleDto(
     val id: String,
     val status: String,
@@ -44,12 +48,16 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class ResetRequest(val token: String, val newPassword: String)
 @Serializable data class AuthResponse(val user: UserDto, val tokens: TokensDto)
 @Serializable data class TokensResponse(val tokens: TokensDto)
+@Serializable data class GoogleAuthRequest(val idToken: String)
+@Serializable data class GoogleAuthResponse(val user: UserDto, val tokens: TokensDto, val isNewUser: Boolean = false)
+@Serializable data class VerifyEmailRequest(val code: String)
 
 @Serializable data class MeResponse(val user: UserDto, val couple: CoupleDto? = null, val partner: PartnerDto? = null, val preferences: PreferencesDto)
-@Serializable data class PatchMeRequest(val displayName: String? = null, val avatarMediaId: String? = null)
+/** Only non-null fields are sent (explicitNulls = false), so a partial update never clears other fields. */
+@Serializable data class PatchMeRequest(val displayName: String? = null, val avatarMediaId: String? = null, val birthday: String? = null, val timeZone: String? = null, val shareLocalTime: Boolean? = null)
 @Serializable data class UserResponse(val user: UserDto)
 @Serializable data class PreferencesResponse(val preferences: PreferencesDto)
-@Serializable data class DeleteMeRequest(val password: String)
+@Serializable data class DeleteMeRequest(val password: String? = null, val confirm: String? = null)
 
 @Serializable data class InvitationCreatedDto(val id: String, val code: String, val expiresAt: String)
 @Serializable data class InvitationCreatedResponse(val invitation: InvitationCreatedDto)
@@ -161,5 +169,15 @@ import kotlinx.serialization.json.JsonObject
     val message: String? = null,
 )
 
+@Serializable data class ListItemDto(val id: String? = null, val text: String, val done: Boolean = false, val doneBy: String? = null, val doneAt: String? = null)
+@Serializable data class SharedListDto(
+    val id: String, val coupleId: String, val createdBy: String, val updatedBy: String? = null,
+    val title: String, val kind: String, val body: String = "", val items: List<ListItemDto> = emptyList(),
+    val pinned: Boolean = false, val version: Int = 1, val createdAt: String, val updatedAt: String,
+)
+@Serializable data class ListsResponse(val items: List<SharedListDto>)
+@Serializable data class ListResponse(val list: SharedListDto)
+@Serializable data class CreateListRequest(val title: String, val kind: String, val body: String? = null, val items: List<ListItemDto>? = null, val pinned: Boolean? = null)
+@Serializable data class PatchListRequest(val title: String? = null, val body: String? = null, val items: List<ListItemDto>? = null, val pinned: Boolean? = null, val expectedVersion: Int? = null)
 @Serializable data class HealthResponse(val status: String, val version: String? = null, val checks: JsonObject? = null)
 @Serializable data class ExportResponse(@SerialName("user") val user: UserDto, val couple: CoupleDto? = null)

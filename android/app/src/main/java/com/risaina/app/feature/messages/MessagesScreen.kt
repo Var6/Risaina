@@ -6,6 +6,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -123,7 +126,7 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
             Composer(
                 text = s.composer, onText = vm::onComposer, onSend = vm::send,
                 onPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                onMic = vm::openRecorder, uploading = s.sendingMedia,
+                onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji,
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -242,9 +245,15 @@ private fun Bubble(
 }
 
 @Composable
-private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit, onPhoto: () -> Unit, onMic: () -> Unit, uploading: Float?) {
+private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit, onPhoto: () -> Unit, onMic: () -> Unit, uploading: Float?, onQuickEmoji: (String) -> Unit = {}) {
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).navigationBarsPadding().imePadding()) {
         if (uploading != null) LinearProgressIndicator(progress = { uploading }, modifier = Modifier.fillMaxWidth().height(2.dp))
+        // One-tap reactions: tapping adds the emoji to the draft; on an empty draft it sends straight away.
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf("❤️", "🥰", "😘", "🫂", "🥺", "😂", "🌙", "☀️", "✨", "💐", "☕", "🔥", "👏", "🙈").forEach { e ->
+                Text(e, fontSize = 22.sp, modifier = Modifier.clip(PillShape).clickable { if (text.isBlank()) onQuickEmoji(e) else onText(text + e) }.padding(horizontal = 6.dp, vertical = 4.dp))
+            }
+        }
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
             IconButton(onClick = onPhoto, enabled = uploading == null) { Icon(ImageIcon, contentDescription = "Send a photo") }
             TextField(

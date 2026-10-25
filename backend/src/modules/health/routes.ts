@@ -12,6 +12,7 @@ const HealthResponse = z.object({
     mongo: z.object({ status: z.enum(['ok', 'error']) }),
     storage: z.object({ status: z.enum(['ok', 'error']), driver: z.enum(['local', 'r2']) }),
     push: z.object({ status: z.enum(['ok', 'disabled']), provider: z.string() }),
+    google: z.object({ status: z.enum(['ok', 'disabled']) }),
   }),
 });
 
@@ -39,6 +40,7 @@ export const healthRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => 
           mongo: { status: mongo ? 'ok' : 'error' },
           storage: { status: storage, driver: ctx.storage.driver },
           push: { status: ctx.push.enabled ? 'ok' : 'disabled', provider: ctx.push.provider },
+          google: { status: ctx.google ? 'ok' : 'disabled' },
         },
       } as const;
     },

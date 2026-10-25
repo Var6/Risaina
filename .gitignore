@@ -35,3 +35,10 @@ pnpm-debug.log*
 # --- Misc ---
 *.log
 .cache/
+
+# --- IDE ---
+.idea/
+.vscode/
+
+# --- Private notes (never committed): your own checklist, account IDs, URLs ---
+docs/private/

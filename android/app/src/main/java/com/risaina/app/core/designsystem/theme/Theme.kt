@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 fun RisainaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     reducedMotion: Boolean = false,
+    accent: AccentTheme = AccentTheme.ROSEWOOD,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -28,8 +29,8 @@ fun RisainaTheme(
         }.getOrDefault(false)
     }
     val reduced = reducedMotion || systemReducedMotion
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-    val extended = if (darkTheme) DarkRisainaColors else LightRisainaColors
+    val colorScheme = (if (darkTheme) DarkColorScheme else LightColorScheme).withAccent(accent, darkTheme)
+    val extended = (if (darkTheme) DarkRisainaColors else LightRisainaColors).withAccent(accent, darkTheme)
     val motion = remember(reduced) { motionTokens(reduced) }
 
     CompositionLocalProvider(

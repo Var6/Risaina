@@ -86,6 +86,24 @@ data class PartnerEntity(
     @PrimaryKey val id: String,
     val displayName: String,
     val avatarMediaId: String?,
+    val birthday: String? = null,
+    val timeZone: String? = null,
+)
+
+/** Shared note or checklist; items are stored as JSON (they are always edited as a whole). */
+@Entity(tableName = "lists", indices = [Index("updatedAt")])
+data class ListEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val kind: String,
+    val body: String,
+    val itemsJson: String,
+    val pinned: Boolean,
+    val version: Int,
+    val createdBy: String,
+    val updatedBy: String?,
+    val createdAt: Long,
+    val updatedAt: Long,
 )
 
 @Entity(tableName = "couple")

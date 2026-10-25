@@ -125,8 +125,6 @@ fun loadWidgetBitmap(path: String?): Bitmap? {
     return BitmapFactory.decodeFile(f.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
 }
 
-@Suppress("unused")
-private val keepContentScale = ContentScale.Crop
 
 /** Re-render every widget from the snapshot store. Called by the sync layer after relevant events. */
 @Singleton

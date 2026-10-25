@@ -1,6 +1,8 @@
 package com.risaina.app.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -59,7 +61,19 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
         popEnterTransition = Transitions.popEnter(),
         popExitTransition = Transitions.popExit(),
     ) {
-        composable<Welcome> { WelcomeScreen(onGetStarted = { navController.navigate(SignUp) }, onSignIn = { navController.navigate(SignIn) }) }
+        composable<Welcome> {
+            val vm: com.risaina.app.feature.authentication.AuthViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
+            val st by vm.state.collectAsStateWithLifecycle()
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            WelcomeScreen(
+                onGetStarted = { navController.navigate(SignUp) },
+                onSignIn = { navController.navigate(SignIn) },
+                onGoogle = if (com.risaina.app.feature.authentication.GoogleSignIn.configured) ({ vm.google(ctx) }) else null,
+                googleLoading = st.googleLoading,
+                error = st.formError,
+            )
+        }
+        composable<VerifyEmail> { com.risaina.app.feature.authentication.VerifyEmailScreen(onBack = back) }
         composable<SignUp> { SignUpScreen(onBack = back, onGoToSignIn = { navController.navigate(SignIn) { popUpTo<Welcome>() } }) }
         composable<SignIn> {
             SignInScreen(
@@ -87,9 +101,13 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     wallpaper = { navController.navigate(WallpaperStudio()) },
                     pingHistory = { navController.navigate(PingHistory) },
                     notificationPermission = { navController.navigate(NotificationPermission) },
+                    verifyEmail = { navController.navigate(VerifyEmail) },
+                    lists = { navController.navigate(Lists) },
                 ),
             )
         }
+        composable<Lists> { com.risaina.app.feature.lists.ListsScreen(onBack = back, onOpen = { navController.navigate(ListDetail(it)) }) }
+        composable<ListDetail> { entry -> com.risaina.app.feature.lists.ListDetailScreen(id = entry.toRoute<ListDetail>().id, onBack = back) }
         composable<PingHistory> { PingHistoryScreen(onBack = back) }
         composable<PingDetail>(deepLinks = listOf(navDeepLink<PingDetail>(basePath = "risaina://app/ping"))) { entry ->
             PingDetailScreen(pingId = entry.toRoute<PingDetail>().id, onBack = back, onReplied = toast)
@@ -115,6 +133,7 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     timeline = { navController.navigate(Timeline) },
                     about = { navController.navigate(About) },
                     pairing = { navController.navigate(Pairing) },
+                    verifyEmail = { navController.navigate(VerifyEmail) },
                 ),
             )
         }

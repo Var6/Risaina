@@ -15,9 +15,9 @@ import javax.inject.Singleton
 @Database(
     entities = [
         PingEntity::class, MessageEntity::class, MediaEntity::class, MemoryEntity::class,
-        MilestoneEntity::class, PartnerEntity::class, CoupleEntity::class, OutboxEntity::class,
+        MilestoneEntity::class, PartnerEntity::class, CoupleEntity::class, OutboxEntity::class, ListEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class RisainaDatabase : RoomDatabase() {
@@ -28,11 +28,12 @@ abstract class RisainaDatabase : RoomDatabase() {
     abstract fun milestoneDao(): MilestoneDao
     abstract fun coupleDao(): CoupleDao
     abstract fun outboxDao(): OutboxDao
+    abstract fun listDao(): ListDao
 
     /** Wipe all relationship data: used on sign-out, unlink, and account deletion. */
     suspend fun clearAllContent() = withTransaction {
         pingDao().clear(); messageDao().clear(); mediaDao().clear(); memoryDao().clear()
-        milestoneDao().clear(); coupleDao().clearCouple(); coupleDao().clearPartner(); outboxDao().clear()
+        milestoneDao().clear(); coupleDao().clearCouple(); coupleDao().clearPartner(); outboxDao().clear(); listDao().clear()
     }
 }
 
@@ -52,4 +53,5 @@ object DatabaseModule {
     @Provides fun milestoneDao(db: RisainaDatabase) = db.milestoneDao()
     @Provides fun coupleDao(db: RisainaDatabase) = db.coupleDao()
     @Provides fun outboxDao(db: RisainaDatabase) = db.outboxDao()
+    @Provides fun listDao(db: RisainaDatabase) = db.listDao()
 }

@@ -4,10 +4,12 @@ import type { AppContext } from '../../app-context.js';
 import type { Preferences, UserDoc } from '../../db/types.js';
 import { verifyPassword } from '../../lib/crypto.js';
 import { errors } from '../../lib/errors.js';
+import { canonicalTimeZone } from '../../lib/time.js';
 import { AuthService } from '../auth/service.js';
 import { CoupleService } from '../couples/service.js';
 import {
   toCoupleDto,
+  toListDto,
   toMemoryDto,
   toMessageDto,
   toMilestoneDto,
@@ -18,7 +20,7 @@ import {
 } from '../shared/dto.js';
 import type { PreferencesUpdate } from '../shared/schemas.js';
 import { MeRepo } from './repo.js';
-import type { ExportResponse, MeResponse } from './schemas.js';
+import type { ExportResponse, MePatch, MeResponse } from './schemas.js';
 
 const EXPORT_LIMIT = 1000;
 
@@ -57,7 +59,7 @@ export class MeService {
     };
   }
 
-  async update(userId: string, patch: { displayName?: string; avatarMediaId?: string | null }) {
+  async update(userId: string, patch: MePatch) {
     const user = await this.mustUser(userId);
     const set: Partial<UserDoc> = { updatedAt: this.ctx.now() };
     if (patch.displayName !== undefined) set.displayName = patch.displayName;
@@ -73,9 +75,16 @@ export class MeService {
         set.avatarMediaId = media._id;
       }
     }
+    if (patch.birthday !== undefined) set.birthday = patch.birthday;
+    if (patch.timeZone !== undefined) {
+      set.timeZone = patch.timeZone === null ? null : canonicalTimeZone(patch.timeZone);
+    }
+    if (patch.shareLocalTime !== undefined) set.shareLocalTime = patch.shareLocalTime;
+
     const updated = await this.repo.update(user._id, set);
     if (!updated) throw errors.unauthorized();
-    if (updated.activeCoupleId) {
+    // partner.updated whenever a profile field the partner's view derives from actually changed
+    if (updated.activeCoupleId && profileChanged(user, updated)) {
       await this.ctx.events.emit({
         coupleId: updated.activeCoupleId,
         type: 'partner.updated',
@@ -104,10 +113,19 @@ export class MeService {
     return { preferences: toPreferencesDto(updated.preferences) };
   }
 
-  /** DELETE /me: verifies password, revokes sessions + devices, ends the couple, schedules media deletion. */
-  async deleteAccount(userId: string, password: string): Promise<void> {
+  /**
+   * DELETE /me: verifies the password (or, for accounts without one, `confirm: "DELETE"`), revokes
+   * sessions + devices, ends the couple, schedules media deletion.
+   */
+  async deleteAccount(userId: string, proof: { password?: string; confirm?: 'DELETE' }): Promise<void> {
     const user = await this.mustUser(userId);
-    if (!(await verifyPassword(user.passwordHash, password))) throw errors.unauthorized('Incorrect password');
+    if (user.passwordHash) {
+      if (proof.password === undefined || !(await verifyPassword(user.passwordHash, proof.password))) {
+        throw errors.unauthorized('Incorrect password');
+      }
+    } else if (proof.confirm !== 'DELETE') {
+      throw errors.unauthorized('This account has no password; send confirm: "DELETE"');
+    }
     const now = this.ctx.now();
 
     if (user.activeCoupleId) await this.couples.endCouple(user.activeCoupleId, user._id);
@@ -119,6 +137,7 @@ export class MeService {
     await this.repo.scheduleOwnMediaDeletion(user._id, now);
     await this.repo.deleteDeviceTokens(user._id);
     await this.repo.deletePasswordResets(user._id);
+    await this.repo.deleteEmailVerifications(user._id);
     await this.repo.anonymise(user._id, now);
     await this.auth.revokeAllForUser(user._id, 'account_deleted');
   }
@@ -127,14 +146,15 @@ export class MeService {
     const user = await this.mustUser(userId);
     const couple = user.activeCoupleId ? await this.repo.findCouple(user.activeCoupleId) : null;
     const coupleId = couple?._id;
-    const [pings, messages, memories, milestones] = coupleId
+    const [pings, messages, memories, milestones, lists] = coupleId
       ? await Promise.all([
           this.repo.pings(coupleId, EXPORT_LIMIT),
           this.repo.messages(coupleId, EXPORT_LIMIT),
           this.repo.memories(coupleId, EXPORT_LIMIT),
           this.repo.milestones(coupleId, EXPORT_LIMIT),
+          this.repo.lists(coupleId, EXPORT_LIMIT),
         ])
-      : [[], [], [], []];
+      : [[], [], [], [], []];
     return {
       exportedAt: this.ctx.now().toISOString(),
       user: toUserDto(user),
@@ -143,9 +163,20 @@ export class MeService {
       messages: messages.map(toMessageDto),
       memories: memories.map(toMemoryDto),
       milestones: milestones.map(toMilestoneDto),
-      truncated: [pings, messages, memories, milestones].some((l) => l.length >= EXPORT_LIMIT),
+      lists: lists.map(toListDto),
+      truncated: [pings, messages, memories, milestones, lists].some((l) => l.length >= EXPORT_LIMIT),
     };
   }
+}
+
+function profileChanged(before: UserDoc, after: UserDoc): boolean {
+  return (
+    before.displayName !== after.displayName ||
+    String(before.avatarMediaId ?? null) !== String(after.avatarMediaId ?? null) ||
+    (before.birthday ?? null) !== (after.birthday ?? null) ||
+    (before.timeZone ?? null) !== (after.timeZone ?? null) ||
+    (before.shareLocalTime ?? true) !== (after.shareLocalTime ?? true)
+  );
 }
 
 function stripUndefined<T extends object>(obj: T): Partial<T> {

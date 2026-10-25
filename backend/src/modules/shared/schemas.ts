@@ -1,9 +1,16 @@
 import { z } from 'zod';
-import { EVENT_TYPES, MEDIA_CATEGORIES, MESSAGE_TYPES, MILESTONE_KINDS, PING_TYPES } from '../../db/types.js';
+import {
+  EVENT_TYPES,
+  LIST_KINDS,
+  MEDIA_CATEGORIES,
+  MESSAGE_TYPES,
+  MILESTONE_KINDS,
+  PING_TYPES,
+} from '../../db/types.js';
 import { OBJECT_ID_REGEX } from '../../lib/ids.js';
 import { parseHHmm } from '../../lib/quiet-hours.js';
 import { graphemeCount } from '../../lib/text.js';
-import { isValidTimeZone } from '../../lib/time.js';
+import { isValidBirthday, isValidTimeZone } from '../../lib/time.js';
 
 /** Wire (DTO) schemas from API.md "Shapes". Response bodies are serialized through these, so
  *  unknown/internal fields (hashes, tokens, storage keys) are stripped by construction. */
@@ -23,6 +30,20 @@ export const CalendarDate = z
 export const HHmm = z.string().refine((s) => parseHHmm(s) !== null, 'must be HH:mm (24 h)');
 export const TimeZone = z.string().min(1).max(64).refine(isValidTimeZone, 'must be a valid IANA time zone');
 export const UuidV4 = z.uuid({ version: 'v4' });
+export const Birthday = z
+  .string()
+  .refine(isValidBirthday, 'must be a real date as YYYY-MM-DD, or --MM-DD to keep the year private')
+  .meta({
+    description: "'YYYY-MM-DD', or '--MM-DD' when the year is private (Feb 29 allowed). Not in the future.",
+    example: '1996-04-12',
+  });
+/** IANA zone id for the user profile. Fixed offsets like '+05:30' are rejected (Intl accepts them). */
+export const ProfileTimeZone = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine((s) => /^[A-Za-z]/.test(s) && isValidTimeZone(s), 'must be a valid IANA time zone')
+  .meta({ example: 'Asia/Kolkata' });
 
 export const ErrorEnvelope = z
   .object({
@@ -56,6 +77,17 @@ export const User = z
     displayName: z.string(),
     avatarMediaId: IdString.nullable(),
     createdAt: IsoDateTime,
+    emailVerified: z.boolean().meta({
+      description:
+        'True once the email was confirmed (6-digit code) or came from Google. Informational only.',
+    }),
+    hasPassword: z.boolean().meta({
+      description:
+        'False for Google-only accounts. Decides DELETE /me confirmation: { password } vs { confirm: "DELETE" }.',
+    }),
+    birthday: z.string().nullable().meta({ description: "'YYYY-MM-DD' or '--MM-DD' (year private)" }),
+    timeZone: z.string().nullable().meta({ description: 'IANA time zone id' }),
+    shareLocalTime: z.boolean().meta({ description: 'When false the partner sees timeZone: null' }),
   })
   .meta({ id: 'User' });
 
@@ -64,6 +96,11 @@ export const Partner = z
     id: IdString,
     displayName: z.string(),
     avatarMediaId: IdString.nullable(),
+    birthday: z.string().nullable().meta({ description: "'YYYY-MM-DD' or '--MM-DD' (year private)" }),
+    timeZone: z
+      .string()
+      .nullable()
+      .meta({ description: 'IANA id; null when unset or the partner turned shareLocalTime off' }),
   })
   .meta({ id: 'Partner' });
 
@@ -233,6 +270,37 @@ export const Milestone = z
   })
   .meta({ id: 'Milestone' });
 
+// --- Lists --------------------------------------------------------------------------------
+
+export const ListKind = z.enum(LIST_KINDS);
+
+export const ListItem = z
+  .object({
+    id: z.string(),
+    text: z.string(),
+    done: z.boolean(),
+    doneBy: IdString.nullable(),
+    doneAt: IsoDateTimeNullable,
+  })
+  .meta({ id: 'ListItem' });
+
+export const List = z
+  .object({
+    id: IdString,
+    coupleId: IdString,
+    createdBy: IdString,
+    updatedBy: IdString,
+    title: z.string(),
+    kind: ListKind,
+    body: z.string(),
+    items: z.array(ListItem),
+    pinned: z.boolean(),
+    version: z.number().int().min(1),
+    createdAt: IsoDateTime,
+    updatedAt: IsoDateTime,
+  })
+  .meta({ id: 'List' });
+
 // --- Events ---------------------------------------------------------------------------------
 
 export const EventType = z.enum(EVENT_TYPES);
@@ -260,3 +328,5 @@ export type MediaDto = z.infer<typeof Media>;
 export type MemoryDto = z.infer<typeof Memory>;
 export type MilestoneDto = z.infer<typeof Milestone>;
 export type EventDto = z.infer<typeof Event>;
+export type ListDto = z.infer<typeof List>;
+export type ListItemDto = z.infer<typeof ListItem>;

@@ -53,6 +53,7 @@ class EventReducer @Inject constructor(
     private val pingRepository: PingRepository,
     private val mediaRepository: MediaRepository,
     private val coupleRepository: CoupleRepository,
+    private val listDao: com.risaina.app.core.database.ListDao,
 ) {
     suspend fun apply(event: EventDto): List<Incoming> {
         val me = sessionStore.current()?.userId ?: return emptyList()
@@ -100,6 +101,10 @@ class EventReducer @Inject constructor(
                 val partner = json.decodeFromJsonElement(PartnerDto.serializer(), it)
                 if (partner.id != me) coupleDao.replace(coupleDao.couple(), partner.toEntity())
             }
+            "list.created", "list.updated" -> p.obj("list")?.let {
+                listDao.upsert(json.decodeFromJsonElement(com.risaina.app.core.network.SharedListDto.serializer(), it).toEntity(json))
+            }
+            "list.deleted" -> p.str("listId")?.let { listDao.delete(it) }
             "couple.unlinked" -> { out += Incoming.Unlinked }
         }
         sessionStore.setLastEventSeq(event.seq)

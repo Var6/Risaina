@@ -120,7 +120,7 @@ fun TouchPingButton(
                     drawCircle(colors.pingGlow.copy(alpha = 0.16f), radius = size.toPx() / 2f + 10.dp.toPx())
                 }
                 .clip(CircleShape)
-                .background(Brush.radialGradient(listOf(Palette.Rosewood, Palette.DeepWine), radius = size.value * 2.2f))
+                .background(Brush.radialGradient(listOf(colors.pingFill, colors.heroGradientStart), radius = size.value * 2.2f))
                 .combinedClickable(
                     interactionSource = interaction,
                     indication = null,

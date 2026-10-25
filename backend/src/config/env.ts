@@ -44,11 +44,25 @@ const rawSchema = z
     R2_ENDPOINT: z.url().optional(),
 
     FIREBASE_SERVICE_ACCOUNT_JSON: z.string().min(1).optional(),
-    MAILER: z.enum(['console']).default('console'),
+    MAILER: z.enum(['console', 'resend']).default('console'),
+    RESEND_API_KEY: z.string().min(1).optional(),
+    MAIL_FROM: z.string().min(3).max(200).optional(),
+    GOOGLE_CLIENT_IDS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        (s ?? '')
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      ),
 
     ACCESS_TOKEN_TTL_SECONDS: intFromEnv(15 * 60, 60),
     REFRESH_TOKEN_TTL_DAYS: intFromEnv(30, 1),
     PASSWORD_RESET_TTL_MINUTES: intFromEnv(30, 1),
+    EMAIL_VERIFICATION_TTL_MINUTES: intFromEnv(30, 1),
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: intFromEnv(60, 0),
+    EMAIL_VERIFICATION_MAX_PER_HOUR: intFromEnv(5, 1),
     INVITATION_TTL_HOURS: intFromEnv(24, 1),
     INVITATION_ACCEPT_MAX_ATTEMPTS: intFromEnv(5, 1),
     INVITATION_ACCEPT_WINDOW_MINUTES: intFromEnv(15, 1),
@@ -66,6 +80,7 @@ const rawSchema = z
     RATE_LIMIT_GLOBAL_WINDOW_MS: intFromEnv(60_000, 1000),
     RATE_LIMIT_AUTH_MAX: intFromEnv(10, 1),
     RATE_LIMIT_AUTH_WINDOW_MS: intFromEnv(15 * 60_000, 1000),
+    RATE_LIMIT_LIST_WRITES_PER_MIN: intFromEnv(120, 1),
     OUTBOX_POLL_MS: intFromEnv(1000, 50),
     OUTBOX_LEASE_MS: intFromEnv(30_000, 1000),
     OUTBOX_MAX_ATTEMPTS: intFromEnv(5, 1),
@@ -95,6 +110,19 @@ const rawSchema = z
         code: 'custom',
         path: ['STORAGE_DRIVER'],
         message: 'STORAGE_DRIVER=local is a development-only driver and is refused when NODE_ENV=production',
+      });
+    }
+    if (v.MAILER === 'resend') {
+      for (const k of ['RESEND_API_KEY', 'MAIL_FROM'] as const) {
+        if (!v[k])
+          ctx.addIssue({ code: 'custom', path: [k], message: `${k} is required when MAILER=resend` });
+      }
+    }
+    if (v.MAIL_FROM && !/^[^<>\r\n]*<[^<>@\s]+@[^<>@\s]+>$|^[^<>@\s\r\n]+@[^<>@\s]+$/.test(v.MAIL_FROM)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MAIL_FROM'],
+        message: 'MAIL_FROM must look like "Name <hello@example.com>" or "hello@example.com"',
       });
     }
     if (v.NODE_ENV === 'production' && v.CORS_ORIGINS.includes('*')) {
@@ -127,6 +155,11 @@ export type PushConfig =
   | { enabled: false; reason: string }
   | { enabled: true; serviceAccount: FirebaseServiceAccount };
 
+export type MailerConfig = { driver: 'console' } | { driver: 'resend'; apiKey: string; from: string };
+
+/** Google sign-in: `clientIds` are the OAuth *Web* client IDs accepted as the ID token audience. */
+export type GoogleConfig = { enabled: false } | { enabled: true; clientIds: string[] };
+
 export interface Env {
   nodeEnv: 'development' | 'test' | 'production';
   isProduction: boolean;
@@ -139,12 +172,14 @@ export interface Env {
   jwtSecret: string;
   storage: StorageConfig;
   push: PushConfig;
-  mailer: 'console';
+  mailer: MailerConfig;
+  google: GoogleConfig;
   auth: {
     accessTokenTtlSeconds: number;
     refreshTokenTtlDays: number;
     passwordResetTtlMinutes: number;
   };
+  emailVerification: { ttlMinutes: number; resendCooldownSeconds: number; maxPerHour: number };
   invitations: { ttlHours: number; acceptMaxAttempts: number; acceptWindowMinutes: number };
   pings: { cooldownSeconds: number; perHour: number };
   media: {
@@ -157,7 +192,14 @@ export interface Env {
     downloadUrlTtlSeconds: number;
     abandonedUploadHours: number;
   };
-  rateLimit: { globalMax: number; globalWindowMs: number; authMax: number; authWindowMs: number };
+  rateLimit: {
+    globalMax: number;
+    globalWindowMs: number;
+    authMax: number;
+    authWindowMs: number;
+    /** POST/PATCH/DELETE /lists per user per minute (shared budget across the three). */
+    listWritesPerMinute: number;
+  };
   outbox: { pollMs: number; leaseMs: number; maxAttempts: number; backoffBaseMs: number };
   cleanup: { intervalMs: number };
   ws: { authTimeoutMs: number; pingIntervalMs: number; idleTimeoutMs: number; maxPendingSends: number };
@@ -247,11 +289,21 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     jwtSecret: v.JWT_SECRET,
     storage,
     push,
-    mailer: v.MAILER,
+    mailer:
+      v.MAILER === 'resend'
+        ? { driver: 'resend', apiKey: v.RESEND_API_KEY!, from: v.MAIL_FROM! }
+        : { driver: 'console' },
+    google:
+      v.GOOGLE_CLIENT_IDS.length > 0 ? { enabled: true, clientIds: v.GOOGLE_CLIENT_IDS } : { enabled: false },
     auth: {
       accessTokenTtlSeconds: v.ACCESS_TOKEN_TTL_SECONDS,
       refreshTokenTtlDays: v.REFRESH_TOKEN_TTL_DAYS,
       passwordResetTtlMinutes: v.PASSWORD_RESET_TTL_MINUTES,
+    },
+    emailVerification: {
+      ttlMinutes: v.EMAIL_VERIFICATION_TTL_MINUTES,
+      resendCooldownSeconds: v.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS,
+      maxPerHour: v.EMAIL_VERIFICATION_MAX_PER_HOUR,
     },
     invitations: {
       ttlHours: v.INVITATION_TTL_HOURS,
@@ -274,6 +326,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       globalWindowMs: v.RATE_LIMIT_GLOBAL_WINDOW_MS,
       authMax: v.RATE_LIMIT_AUTH_MAX,
       authWindowMs: v.RATE_LIMIT_AUTH_WINDOW_MS,
+      listWritesPerMinute: v.RATE_LIMIT_LIST_WRITES_PER_MIN,
     },
     outbox: {
       pollMs: v.OUTBOX_POLL_MS,

@@ -203,4 +203,3 @@ private fun MilestoneDialog(existing: Milestone?, onDismiss: () -> Unit, onSave:
     if (pick) DateDialog(date, { pick = false }) { it?.let { d -> date = d } }
 }
 
-@Suppress("unused") private val keepSecondary = ::SecondaryButton

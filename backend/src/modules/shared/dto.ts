@@ -1,6 +1,7 @@
 import type {
   CoupleDoc,
   EventDoc,
+  ListDoc,
   MediaDoc,
   MemoryDoc,
   MessageDoc,
@@ -13,6 +14,7 @@ import { iso, isoOrNull } from '../../lib/time.js';
 import type {
   CoupleDto,
   EventDto,
+  ListDto,
   MediaDto,
   MemoryDto,
   MessageDto,
@@ -26,6 +28,7 @@ import type {
 export type {
   CoupleDto,
   EventDto,
+  ListDto,
   MediaDto,
   MemoryDto,
   MessageDto,
@@ -42,14 +45,45 @@ export function toUserDto(u: UserDoc): UserDto {
     displayName: u.displayName,
     avatarMediaId: u.avatarMediaId ? u.avatarMediaId.toHexString() : null,
     createdAt: iso(u.createdAt),
+    emailVerified: u.emailVerifiedAt instanceof Date,
+    hasPassword: typeof u.passwordHash === 'string' && u.passwordHash.length > 0,
+    birthday: u.birthday ?? null,
+    timeZone: u.timeZone ?? null,
+    shareLocalTime: u.shareLocalTime ?? true,
   };
 }
 
+/** What the partner may see. timeZone is withheld when the user turned shareLocalTime off. */
 export function toPartnerDto(u: UserDoc): PartnerDto {
   return {
     id: u._id.toHexString(),
     displayName: u.displayName,
     avatarMediaId: u.avatarMediaId ? u.avatarMediaId.toHexString() : null,
+    birthday: u.birthday ?? null,
+    timeZone: (u.shareLocalTime ?? true) ? (u.timeZone ?? null) : null,
+  };
+}
+
+export function toListDto(l: ListDoc): ListDto {
+  return {
+    id: l._id.toHexString(),
+    coupleId: l.coupleId.toHexString(),
+    createdBy: l.createdBy.toHexString(),
+    updatedBy: l.updatedBy.toHexString(),
+    title: l.title,
+    kind: l.kind,
+    body: l.body,
+    items: l.items.map((i) => ({
+      id: i.id,
+      text: i.text,
+      done: i.done,
+      doneBy: i.doneBy ? i.doneBy.toHexString() : null,
+      doneAt: isoOrNull(i.doneAt),
+    })),
+    pinned: l.pinned,
+    version: l.version,
+    createdAt: iso(l.createdAt),
+    updatedAt: iso(l.updatedAt),
   };
 }
 

@@ -222,7 +222,15 @@ describe('me', () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.json().user).toMatchObject({ displayName: 'Pia ✨', avatarMediaId: avatar });
     const ev = await t.db.events.findOne({ coupleId: new ObjectId(coupleId), type: 'partner.updated' });
-    expect(ev!.payload).toEqual({ partner: { id: a.user.id, displayName: 'Pia ✨', avatarMediaId: avatar } });
+    expect(ev!.payload).toEqual({
+      partner: {
+        id: a.user.id,
+        displayName: 'Pia ✨',
+        avatarMediaId: avatar,
+        birthday: null,
+        timeZone: null,
+      },
+    });
 
     const prefs = await t.app.inject({
       method: 'PUT',

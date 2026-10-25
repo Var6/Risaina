@@ -10,6 +10,13 @@ export const INDEXES: Record<string, IndexDescription[]> = {
     // login / register lookups; email is stored lowercased so uniqueness is case-insensitive
     { key: { email: 1 }, unique: true, name: 'email_unique' },
     { key: { activeCoupleId: 1 }, name: 'activeCoupleId', sparse: true },
+    // POST /auth/google lookup; one account per Google identity (only documents that have one)
+    {
+      key: { googleSub: 1 },
+      unique: true,
+      name: 'googleSub_unique',
+      partialFilterExpression: { googleSub: { $type: 'string' } },
+    },
   ],
   [COLLECTION_NAMES.sessions]: [
     { key: { refreshHash: 1 }, unique: true, name: 'refreshHash_unique' },
@@ -20,6 +27,11 @@ export const INDEXES: Record<string, IndexDescription[]> = {
   [COLLECTION_NAMES.passwordResets]: [
     { key: { tokenHash: 1 }, unique: true, name: 'tokenHash_unique' },
     { key: { expiresAt: 1 }, name: 'expiresAt' }, // cleanup job
+  ],
+  [COLLECTION_NAMES.emailVerifications]: [
+    { key: { userId: 1, createdAt: -1 }, name: 'userId_createdAt' }, // latest code, resend cooldown/hourly cap
+    // TTL: removed one hour after expiry (the grace keeps the last hour of sends countable for the cap)
+    { key: { expiresAt: 1 }, name: 'expiresAt_ttl', expireAfterSeconds: 3600 },
   ],
   [COLLECTION_NAMES.couples]: [
     { key: { memberIds: 1, status: 1 }, name: 'memberIds_status' }, // pending couple lookup
@@ -57,6 +69,13 @@ export const INDEXES: Record<string, IndexDescription[]> = {
     },
   ],
   [COLLECTION_NAMES.milestones]: [{ key: { coupleId: 1, date: 1 }, name: 'coupleId_date' }],
+  [COLLECTION_NAMES.lists]: [
+    // GET /lists: pinned first, then most recently updated, excluding soft-deleted
+    {
+      key: { coupleId: 1, deletedAt: 1, pinned: -1, updatedAt: -1 },
+      name: 'coupleId_deletedAt_pinned_updatedAt',
+    },
+  ],
   [COLLECTION_NAMES.events]: [
     { key: { coupleId: 1, seq: 1 }, unique: true, name: 'coupleId_seq_unique' }, // sync replay, GET /events
     { key: { 'push.state': 1, 'push.leaseUntil': 1 }, name: 'push_state_leaseUntil' }, // outbox worker lease

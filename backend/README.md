@@ -7,7 +7,8 @@ backend section of `docs/ARCHITECTURE.md`.
 - Durable per-couple event log with monotonic `seq`, WebSocket hub with replay, and a push outbox
   worker (D-04).
 - Self-hosted auth: argon2id, 15-minute HS256 access tokens, rotating opaque refresh tokens with
-  reuse detection (D-03).
+  reuse detection (D-03). Optional Google sign-in (ID token verified against Google's JWKS) and
+  non-blocking email verification with 6-digit codes.
 - Object storage behind one interface: Cloudflare R2 (S3 API) for production, a signed-URL local
   driver for development (D-06).
 - FCM data-only push via `firebase-admin`, or an honest **disabled** mode when no service account is
@@ -53,8 +54,10 @@ prints values.
 | `LOCAL_STORAGE_DIR` | no | default `.data/storage` |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` | when `r2` | |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | no | path to the JSON file, raw JSON, or base64 JSON. Absent ⇒ push disabled |
-| `MAILER` | no | only `console` exists |
-| limits | no | see `.env.example` for every knob and its default (ping cooldown 15 s, 40 pings/h, media sizes, invitation TTL 24 h, token TTLs, rate limits, outbox/cleanup intervals, WS timeouts) |
+| `MAILER` | no | `console` (default) or `resend` |
+| `RESEND_API_KEY`, `MAIL_FROM` | when `resend` | `MAIL_FROM` like `Risaina <hello@yourdomain>` (domain verified in Resend) |
+| `GOOGLE_CLIENT_IDS` | no | comma separated Google OAuth **Web** client ID(s) (the Android app's `serverClientId`). Absent ⇒ `POST /auth/google` returns 503 and `/health` shows `google: disabled` |
+| limits | no | see `.env.example` for every knob and its default (ping cooldown 15 s, 40 pings/h, media sizes, invitation TTL 24 h, token TTLs, email-code TTL 30 min / resend cooldown 60 s / 5 per hour, rate limits incl. `RATE_LIMIT_LIST_WRITES_PER_MIN` (120 list writes per user per minute), outbox/cleanup intervals, WS timeouts) |
 
 ## Scripts
 
@@ -79,7 +82,7 @@ src/
   db/               types, typed collections, indexes, $jsonSchema validators
   plugins/          authenticate + requireCouple decorators, error handler, websocket route
   modules/<name>/   schemas.ts (Zod) · repo.ts (Mongo) · service.ts (rules) · routes.ts (HTTP)
-  services/         storage (local | r2), push (fcm | disabled), mailer (console), events (hub, publisher)
+  services/         storage (local | r2), push (fcm | disabled), mailer (console | resend), events (hub, publisher)
   workers/          outbox push worker, cleanup job
   lib/              errors, ids, crypto, pagination, time, quiet hours, attempt limiter, logger
 test/               Vitest suites (fastify.inject + real `ws` sockets against app.listen(port 0))
@@ -121,9 +124,47 @@ it via `FIREBASE_SERVICE_ACCOUNT_JSON` (file path, raw JSON or base64). `/health
 `push.status = "ok"`. Messages are data-only (`{type, eventId, coupleId, seq}`), high priority, and
 tokens FCM reports as unregistered are deleted automatically. Not exercised against a live project.
 
-**Email.** Password-reset delivery requires an email provider (open item O-01). The `Mailer`
-interface is pluggable; today only `ConsoleMailer` exists (logs a non-sensitive line; prints the
-reset link to stdout in development).
+**Email (Resend).** Create a Resend account, verify your sending domain, create an API key, then
+set `MAILER=resend`, `RESEND_API_KEY` and `MAIL_FROM="Risaina <hello@yourdomain>"`. The driver
+(`src/services/mailer/resend.ts`) POSTs to `https://api.resend.com/emails` with
+`Authorization: Bearer …` using the global `fetch` (10 s timeout). Two templates exist
+(`templates.ts`): the verification code and the password reset link, each as short HTML + text.
+Sends are fire-and-forget from the request's point of view: a failed send is logged as a redacted
+warning (`kind`, `userId`, HTTP status — never the recipient, code, link or provider response) and
+the API answer is unchanged (register still 201, forgot still 202, resend still 202). The `console`
+driver remains the default; it prints the code/link to stdout only outside production. The Resend
+driver is covered by mocked-`fetch` tests; it has not been exercised against the live API here.
+
+## Google sign-in
+
+1. In Google Cloud Console create an OAuth client of type **Web application** (and the Android
+   client for your package + signing SHA-1, which Credential Manager needs). The **Web** client ID is
+   what the Android app passes as `serverClientId`, so it is the `aud` of the ID tokens.
+2. Set `GOOGLE_CLIENT_IDS=<web-client-id>` (comma separate several if needed).
+3. `POST /api/v1/auth/google { idToken }` verifies the token with `jose` against
+   `https://www.googleapis.com/oauth2/v3/certs` (RS256, issuer `accounts.google.com` or
+   `https://accounts.google.com`, 30 s clock tolerance) and requires `email_verified === true`.
+
+Account resolution: an account with that Google `sub` signs in; otherwise an account with the same
+email is linked; otherwise a Google-only account (no password, email verified) is created. The
+response is always **200** `{ user, tokens, isNewUser }`.
+
+**Account pre-hijacking defence.** If the linked account's email was never verified, whoever set
+its password may not own the address. Linking therefore sets `passwordHash = null` and revokes every
+session of that account before issuing the Google user's tokens. The owner can add a password later
+with forgot/reset. Verified accounts keep their password and sessions.
+
+Google-only accounts (`user.hasPassword = false`) delete themselves with
+`DELETE /me { "confirm": "DELETE" }`; accounts with a password still need `{ password }`.
+
+## Email verification
+
+Non-blocking: unverified users can use the whole app; `user.emailVerified` only reports status.
+Registering stores a 6-digit code (`crypto.randomInt`) as HMAC-SHA256(`userId:code`) under a key
+derived from `JWT_SECRET` in `emailVerifications` (TTL index) and emails it. `POST /auth/email/verify
+{ code }` (authenticated) confirms it; 5 wrong codes kill it. `POST /auth/email/resend` sends a new
+code (newest code only is live), at most 1 per 60 s and 5 per hour per user. Exact shapes and error
+codes: `docs/API.md` → "Auth additions".
 
 ## Deployment recommendation
 
@@ -136,9 +177,13 @@ the invitation attempt limiter are in-process (D-04 known limit). Set `NODE_ENV=
 
 ## Known limitations
 
-- No email provider, no Firebase project, no R2 bucket were available: the console mailer, the
-  disabled push service and the local storage driver are the honest fallbacks; the R2 and FCM
-  drivers are implemented but unverified against live services.
+- No Resend account, no Google OAuth client, no Firebase project, no R2 bucket were available: the
+  console mailer, the disabled push service and the local storage driver are the honest fallbacks;
+  the Resend, Google JWKS, R2 and FCM paths are implemented and tested with mocks/local keys but
+  unverified against live services.
+- Claiming an unverified account through Google removes its password and sessions but keeps
+  everything else the account already has (display name, couple, content). If someone pre-registered
+  your address *and* paired it, you will land in that couple and should unlink.
 - Single backend instance (in-process WebSocket hub and attempt limiter).
 - Domain write + event insert are not wrapped in a transaction (standalone Mongo supported); see
   `docs/DATA_MODEL.md` "Write ordering".
@@ -146,3 +191,9 @@ the invitation attempt limiter are in-process (D-04 known limit). Set `NODE_ENV=
   couple-scoped (`couples/{coupleId}/…`).
 - `GET /me/export` is bounded to 1000 items per collection and reports `truncated`.
 - Password breached-list check is not included (D-03).
+- Without `dbAdmin` (Atlas readWrite-only user) existing collections keep their old validators. The
+  old `events` validator has a strict type enum, so `list.*` events are rejected by MongoDB: the
+  list write still succeeds and the event is pushed live to connected sockets, but it is not stored
+  (no `GET /events`/sync replay, no FCM push). Boot logs name the affected types; grant `dbAdmin`
+  and restart once to fix (the new validator uses a pattern, so later types won't need this).
+- The list write limiter (per user) is in-process, like the other limiters.

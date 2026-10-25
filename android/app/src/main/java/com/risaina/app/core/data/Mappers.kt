@@ -49,9 +49,9 @@ fun Long?.toInstantOrNull(): Instant? = this?.let(Instant::ofEpochMilli)
 
 // ---- users / couple ----
 fun UserDto.toDomain() = User(id, displayName, avatarMediaId, createdAt.toInstant())
-fun PartnerDto.toDomain() = Partner(id, displayName, avatarMediaId)
-fun PartnerDto.toEntity() = PartnerEntity(id, displayName, avatarMediaId)
-fun PartnerEntity.toDomain() = Partner(id, displayName, avatarMediaId)
+fun PartnerDto.toDomain() = Partner(id, displayName, avatarMediaId, birthday, timeZone)
+fun PartnerDto.toEntity() = PartnerEntity(id, displayName, avatarMediaId, birthday, timeZone)
+fun PartnerEntity.toDomain() = Partner(id, displayName, avatarMediaId, birthday, timeZone)
 
 fun CoupleDto.toDomain() = Couple(
     id = id,

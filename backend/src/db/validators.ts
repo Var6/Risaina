@@ -1,6 +1,13 @@
 import type { Db, Document } from 'mongodb';
 import { COLLECTION_NAMES } from './collections.js';
-import { EVENT_TYPES, MEDIA_CATEGORIES, MESSAGE_TYPES, MILESTONE_KINDS, PING_TYPES } from './types.js';
+import {
+  EVENT_TYPES,
+  LIST_KINDS,
+  MEDIA_CATEGORIES,
+  MESSAGE_TYPES,
+  MILESTONE_KINDS,
+  PING_TYPES,
+} from './types.js';
 
 /**
  * MongoDB `$jsonSchema` validators for the main collections. They are a safety net under the Zod
@@ -67,10 +74,16 @@ export const VALIDATORS: Record<string, Document> = {
       properties: {
         email: { bsonType: 'string', pattern: '^[^A-Z]*$' }, // stored lowercased
         displayName: { bsonType: 'string', minLength: 1, maxLength: 60 },
-        passwordHash: nullableString,
+        passwordHash: nullableString, // null: Google-only / claimed-unverified / deleted
+        googleSub: { bsonType: 'string', minLength: 1, maxLength: 255 }, // optional
+        emailVerifiedAt: nullableDate, // optional (legacy documents lack it)
         avatarMediaId: nullableObjectId,
         activeCoupleId: nullableObjectId,
         preferences,
+        // optional profile fields (added after v1; never in `required`, older documents lack them)
+        birthday: { bsonType: ['string', 'null'], pattern: '^(\\d{4}|-)-\\d{2}-\\d{2}$' },
+        timeZone: { bsonType: ['string', 'null'], minLength: 1, maxLength: 64 },
+        shareLocalTime: bool,
         createdAt: date,
         updatedAt: date,
         deletedAt: nullableDate,
@@ -105,6 +118,19 @@ export const VALIDATORS: Record<string, Document> = {
         tokenHash: string,
         expiresAt: date,
         usedAt: nullableDate,
+        createdAt: date,
+      },
+    },
+  },
+  [COLLECTION_NAMES.emailVerifications]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: ['userId', 'codeHash', 'expiresAt', 'attempts', 'createdAt'],
+      properties: {
+        userId: objectId,
+        codeHash: { bsonType: 'string', pattern: '^[a-f0-9]{64}$' },
+        expiresAt: date,
+        attempts: { bsonType: ['int', 'long', 'double'], minimum: 0 },
         createdAt: date,
       },
     },
@@ -278,6 +304,53 @@ export const VALIDATORS: Record<string, Document> = {
       },
     },
   },
+  [COLLECTION_NAMES.lists]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: [
+        'coupleId',
+        'createdBy',
+        'updatedBy',
+        'title',
+        'kind',
+        'body',
+        'items',
+        'pinned',
+        'version',
+        'createdAt',
+        'updatedAt',
+        'deletedAt',
+      ],
+      properties: {
+        coupleId: objectId,
+        createdBy: objectId,
+        updatedBy: objectId,
+        title: { bsonType: 'string', minLength: 1, maxLength: 120 },
+        kind: { enum: [...LIST_KINDS] },
+        body: { bsonType: 'string', maxLength: 10000 },
+        items: {
+          bsonType: 'array',
+          maxItems: 200,
+          items: {
+            bsonType: 'object',
+            required: ['id', 'text', 'done', 'doneBy', 'doneAt'],
+            properties: {
+              id: { bsonType: 'string', minLength: 1, maxLength: 32 },
+              text: { bsonType: 'string', minLength: 1, maxLength: 300 },
+              done: bool,
+              doneBy: nullableObjectId,
+              doneAt: nullableDate,
+            },
+          },
+        },
+        pinned: bool,
+        version: { bsonType: ['int', 'long', 'double'], minimum: 1 },
+        createdAt: date,
+        updatedAt: date,
+        deletedAt: nullableDate,
+      },
+    },
+  },
   [COLLECTION_NAMES.events]: {
     $jsonSchema: {
       bsonType: 'object',
@@ -285,7 +358,10 @@ export const VALIDATORS: Record<string, Document> = {
       properties: {
         coupleId: objectId,
         seq: { bsonType: ['int', 'long', 'double'], minimum: 1 },
-        type: { enum: [...EVENT_TYPES] },
+        // A dotted-name pattern rather than an enum of EVENT_TYPES: adding an event type must not need
+        // a validator change (collMod), which a readWrite-only Atlas user cannot run. The app's
+        // EventType union / Zod enum is the real allow-list.
+        type: { bsonType: 'string', pattern: '^[a-z][a-z_]*\\.[a-z][a-z_]*$' },
         actorId: objectId,
         payload: { bsonType: 'object' },
         createdAt: date,
@@ -306,15 +382,63 @@ export const VALIDATORS: Record<string, Document> = {
   },
 };
 
+/** Collections whose validator could not be updated (missing dbAdmin privilege). */
+export const validatorWarnings: string[] = [];
+
 /** Create collections with validators (or update validators on existing collections). */
 export async function ensureValidators(db: Db): Promise<void> {
   const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
   for (const [name, validator] of Object.entries(VALIDATORS)) {
     if (existing.has(name)) {
-      await db.command({ collMod: name, validator, validationLevel: 'strict', validationAction: 'error' });
+      try {
+        await db.command({ collMod: name, validator, validationLevel: 'strict', validationAction: 'error' });
+      } catch (err) {
+        // Atlas users with only readWrite cannot run collMod. Keep serving with the existing
+        // validator and say exactly what to fix (docs/GO_LIVE.md → "Database permissions").
+        if (isPermissionError(err)) {
+          validatorWarnings.push(name);
+          if (name === COLLECTION_NAMES.events) await detectStaleEventTypes(db);
+          continue;
+        }
+        throw err;
+      }
     } else {
-      await db.createCollection(name, { validator, validationLevel: 'strict', validationAction: 'error' });
+      try {
+        await db.createCollection(name, { validator, validationLevel: 'strict', validationAction: 'error' });
+      } catch (err) {
+        // createCollection is part of readWrite, so this should not happen; if a restricted role
+        // refuses the validator option, still create the collection so the feature works.
+        if (!isPermissionError(err)) throw err;
+        validatorWarnings.push(name);
+        await db.createCollection(name);
+      }
     }
+  }
+}
+
+function isPermissionError(err: unknown): boolean {
+  const code = (err as { code?: number }).code;
+  return code === 13 || code === 8000;
+}
+
+/**
+ * Event types the app emits but the database's (old, un-updatable) `events` validator rejects.
+ * Filled at boot when collMod on `events` is denied and the stored validator still has the strict
+ * `type: { enum }` of earlier versions. Inserts of these types fail with DocumentValidationFailure
+ * (code 121) until a dbAdmin restarts the server once; see EventPublisher for the fallback.
+ */
+export const staleEventTypes: string[] = [];
+
+export async function detectStaleEventTypes(db: Db): Promise<void> {
+  staleEventTypes.length = 0;
+  try {
+    const [info] = await db.listCollections({ name: COLLECTION_NAMES.events }).toArray();
+    const options = (info as { options?: { validator?: Document } } | undefined)?.options;
+    const allowed = options?.validator?.$jsonSchema?.properties?.type?.enum;
+    if (!Array.isArray(allowed)) return; // no enum (pattern or no validator): every type is accepted
+    for (const t of EVENT_TYPES) if (!allowed.includes(t)) staleEventTypes.push(t);
+  } catch {
+    // listCollections denied too: unknown. The publisher's code-121 handling still applies.
   }
 }
 

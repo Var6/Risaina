@@ -65,13 +65,44 @@
             "type": "string",
             "description": "ISO-8601 UTC timestamp",
             "example": "2026-10-25T12:00:00.000Z"
+          },
+          "emailVerified": {
+            "type": "boolean",
+            "description": "True once the email was confirmed (6-digit code) or came from Google. Informational only."
+          },
+          "hasPassword": {
+            "type": "boolean",
+            "description": "False for Google-only accounts. Decides DELETE /me confirmation: { password } vs { confirm: \"DELETE\" }."
+          },
+          "birthday": {
+            "description": "'YYYY-MM-DD' or '--MM-DD' (year private)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeZone": {
+            "description": "IANA time zone id",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shareLocalTime": {
+            "type": "boolean",
+            "description": "When false the partner sees timeZone: null"
           }
         },
         "required": [
           "id",
           "displayName",
           "avatarMediaId",
-          "createdAt"
+          "createdAt",
+          "emailVerified",
+          "hasPassword",
+          "birthday",
+          "timeZone",
+          "shareLocalTime"
         ]
       },
       "PartnerInput": {
@@ -96,12 +127,28 @@
                 "type": "null"
               }
             ]
+          },
+          "birthday": {
+            "description": "'YYYY-MM-DD' or '--MM-DD' (year private)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeZone": {
+            "description": "IANA id; null when unset or the partner turned shareLocalTime off",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "id",
           "displayName",
-          "avatarMediaId"
+          "avatarMediaId",
+          "birthday",
+          "timeZone"
         ]
       },
       "SharedPreferencesInput": {
@@ -748,6 +795,127 @@
           "createdAt"
         ]
       },
+      "ListItemInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "doneBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "done",
+          "doneBy",
+          "doneAt"
+        ]
+      },
+      "ListInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "updatedBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "note",
+              "checklist"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ListItemInput"
+            }
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "createdBy",
+          "updatedBy",
+          "title",
+          "kind",
+          "body",
+          "items",
+          "pinned",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "EventInput": {
         "type": "object",
         "properties": {
@@ -784,7 +952,10 @@
               "milestone.deleted",
               "couple.updated",
               "couple.unlinked",
-              "partner.updated"
+              "partner.updated",
+              "list.created",
+              "list.updated",
+              "list.deleted"
             ]
           },
           "actorId": {
@@ -868,13 +1039,44 @@
             "type": "string",
             "description": "ISO-8601 UTC timestamp",
             "example": "2026-10-25T12:00:00.000Z"
+          },
+          "emailVerified": {
+            "type": "boolean",
+            "description": "True once the email was confirmed (6-digit code) or came from Google. Informational only."
+          },
+          "hasPassword": {
+            "type": "boolean",
+            "description": "False for Google-only accounts. Decides DELETE /me confirmation: { password } vs { confirm: \"DELETE\" }."
+          },
+          "birthday": {
+            "description": "'YYYY-MM-DD' or '--MM-DD' (year private)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeZone": {
+            "description": "IANA time zone id",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shareLocalTime": {
+            "type": "boolean",
+            "description": "When false the partner sees timeZone: null"
           }
         },
         "required": [
           "id",
           "displayName",
           "avatarMediaId",
-          "createdAt"
+          "createdAt",
+          "emailVerified",
+          "hasPassword",
+          "birthday",
+          "timeZone",
+          "shareLocalTime"
         ],
         "additionalProperties": false
       },
@@ -900,12 +1102,28 @@
                 "type": "null"
               }
             ]
+          },
+          "birthday": {
+            "description": "'YYYY-MM-DD' or '--MM-DD' (year private)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeZone": {
+            "description": "IANA id; null when unset or the partner turned shareLocalTime off",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "id",
           "displayName",
-          "avatarMediaId"
+          "avatarMediaId",
+          "birthday",
+          "timeZone"
         ],
         "additionalProperties": false
       },
@@ -1563,6 +1781,129 @@
         ],
         "additionalProperties": false
       },
+      "ListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "doneBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "done",
+          "doneBy",
+          "doneAt"
+        ],
+        "additionalProperties": false
+      },
+      "List": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "updatedBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "note",
+              "checklist"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ListItem"
+            }
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "createdBy",
+          "updatedBy",
+          "title",
+          "kind",
+          "body",
+          "items",
+          "pinned",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
       "Event": {
         "type": "object",
         "properties": {
@@ -1599,7 +1940,10 @@
               "milestone.deleted",
               "couple.updated",
               "couple.unlinked",
-              "partner.updated"
+              "partner.updated",
+              "list.created",
+              "list.updated",
+              "list.deleted"
             ]
           },
           "actorId": {
@@ -1725,12 +2069,29 @@
                             "provider"
                           ],
                           "additionalProperties": false
+                        },
+                        "google": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ok",
+                                "disabled"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
                         "mongo",
                         "storage",
-                        "push"
+                        "push",
+                        "google"
                       ],
                       "additionalProperties": false
                     }
@@ -1957,6 +2318,278 @@
             }
           },
           "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/google": {
+      "post": {
+        "summary": "Sign in (or sign up) with a Google ID token",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Verifies the ID token against Google keys (issuer accounts.google.com, audience in GOOGLE_CLIENT_IDS, email_verified must be true). Resolves by Google sub, then by email (linking; an unverified password account loses its password and sessions), else creates an account. Always 200; `isNewUser` tells whether the account was just created.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "idToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "description": "Google ID token (Credential Manager)"
+                  }
+                },
+                "required": [
+                  "idToken"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    "tokens": {
+                      "$ref": "#/components/schemas/Tokens"
+                    },
+                    "isNewUser": {
+                      "type": "boolean",
+                      "description": "True when this call created the account"
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "tokens",
+                    "isNewUser"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/email/verify": {
+      "post": {
+        "summary": "Confirm the account email with the 6-digit code",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Idempotent once verified. Wrong code: 400 verification_code_invalid (details.attemptsRemaining); the 5th wrong code kills it: 429 verification_attempts_exceeded; expired or none: 410 verification_code_expired.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$",
+                    "example": "042137"
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/email/resend": {
+      "post": {
+        "summary": "Email a new verification code (1 per 60 s, 5 per hour)",
+        "tags": [
+          "Auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accepted"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -2279,7 +2912,7 @@
         }
       },
       "patch": {
-        "summary": "Update display name / avatar",
+        "summary": "Update profile: display name, avatar, birthday, time zone, shareLocalTime",
         "tags": [
           "Me"
         ],
@@ -2306,6 +2939,34 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "birthday": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "description": "'YYYY-MM-DD', or '--MM-DD' when the year is private (Feb 29 allowed). Not in the future.",
+                        "example": "1996-04-12"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "timeZone": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "example": "Asia/Kolkata"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "shareLocalTime": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -2385,6 +3046,7 @@
         "tags": [
           "Me"
         ],
+        "description": "Accounts with a password send { password }. Google-only accounts (user.hasPassword = false) send { confirm: \"DELETE\" }. Anything else is 401.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2393,14 +3055,19 @@
                 "type": "object",
                 "properties": {
                   "password": {
+                    "description": "Required when the account has a password (user.hasPassword)",
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
+                  },
+                  "confirm": {
+                    "description": "Required instead of password for Google-only accounts (no password)",
+                    "type": "string",
+                    "enum": [
+                      "DELETE"
+                    ]
                   }
-                },
-                "required": [
-                  "password"
-                ]
+                }
               }
             }
           }
@@ -2413,6 +3080,16 @@
         "responses": {
           "204": {
             "description": "No content"
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           },
           "401": {
             "description": "Default Response",
@@ -2645,6 +3322,12 @@
                         "$ref": "#/components/schemas/Milestone"
                       }
                     },
+                    "lists": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/List"
+                      }
+                    },
                     "truncated": {
                       "type": "boolean"
                     }
@@ -2657,6 +3340,7 @@
                     "messages",
                     "memories",
                     "milestones",
+                    "lists",
                     "truncated"
                   ],
                   "additionalProperties": false
@@ -5338,6 +6022,436 @@
         }
       }
     },
+    "/api/v1/lists": {
+      "get": {
+        "summary": "Shared lists of the couple (pinned first, then most recently updated; max 200)",
+        "tags": [
+          "Lists"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/List"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a note or checklist",
+        "tags": [
+          "Lists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "note",
+                      "checklist"
+                    ]
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 10000
+                  },
+                  "items": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "done": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "description": "doneBy / doneAt (and id on create) may be sent but are ignored: the server owns them"
+                    }
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "title",
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "list": {
+                      "$ref": "#/components/schemas/List"
+                    }
+                  },
+                  "required": [
+                    "list"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lists/{id}": {
+      "patch": {
+        "summary": "Update a list (items replaces the whole array; optional expectedVersion)",
+        "tags": [
+          "Lists"
+        ],
+        "description": "Increments version. When expectedVersion is given and differs from the current version: 409 { error: { code: \"version_conflict\", details: { list: List } } } with the current list.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 10000
+                  },
+                  "items": {
+                    "description": "Replaces the whole items array",
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,32}$",
+                          "description": "Keep the id the server assigned; unknown ids are treated as new items"
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "done": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "done"
+                      ],
+                      "description": "doneBy / doneAt (and id on create) may be sent but are ignored: the server owns them"
+                    }
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "expectedVersion": {
+                    "description": "When given and not the current version: 409 version_conflict",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "list": {
+                      "$ref": "#/components/schemas/List"
+                    }
+                  },
+                  "required": [
+                    "list"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a list (soft delete)",
+        "tags": [
+          "Lists"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/events": {
       "get": {
         "summary": "Events newer than `since` (missed-event recovery)",
@@ -5570,6 +6684,9 @@
     },
     {
       "name": "Milestones"
+    },
+    {
+      "name": "Lists"
     },
     {
       "name": "Events"

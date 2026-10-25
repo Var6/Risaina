@@ -38,7 +38,13 @@ import com.risaina.app.core.designsystem.theme.RisainaTextStyles
 
 /** First screen. Dark, quiet, one sentence of promise, two actions. */
 @Composable
-fun WelcomeScreen(onGetStarted: () -> Unit, onSignIn: () -> Unit) {
+fun WelcomeScreen(
+    onGetStarted: () -> Unit,
+    onSignIn: () -> Unit,
+    onGoogle: (() -> Unit)? = null,
+    googleLoading: Boolean = false,
+    error: String? = null,
+) {
     val motion = Risaina.motion
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
@@ -62,7 +68,18 @@ fun WelcomeScreen(onGetStarted: () -> Unit, onSignIn: () -> Unit) {
                 modifier = Modifier.alpha(reveal), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             Spacer(Modifier.height(32.dp))
-            PrimaryButton(text = "Get started", onClick = onGetStarted, modifier = Modifier.fillMaxWidth().alpha(reveal))
+            if (onGoogle != null) {
+                // One tap: Google accounts are already email-verified, so there is no extra step.
+                PrimaryButton(text = "Continue with Google", onClick = onGoogle, loading = googleLoading, modifier = Modifier.fillMaxWidth().alpha(reveal))
+                Spacer(Modifier.height(10.dp))
+                com.risaina.app.core.designsystem.components.OutlineButton(text = "Sign up with email", onClick = onGetStarted, modifier = Modifier.fillMaxWidth().alpha(reveal))
+            } else {
+                PrimaryButton(text = "Get started", onClick = onGetStarted, modifier = Modifier.fillMaxWidth().alpha(reveal))
+            }
+            if (error != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(error, style = MaterialTheme.typography.bodySmall, color = Palette.Blush, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
             Spacer(Modifier.height(6.dp))
             GhostButton(text = "I already have an account", onClick = onSignIn, modifier = Modifier.alpha(reveal))
         }

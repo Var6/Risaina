@@ -34,16 +34,25 @@ data class TimelineUiState(
 @HiltViewModel
 class TimelineViewModel @Inject constructor(
     private val coupleRepository: CoupleRepository,
+    sessionStore: com.risaina.app.core.datastore.SessionStore,
     private val milestoneRepository: MilestoneRepository,
 ) : ViewModel() {
     private val effects = Channel<String>(Channel.BUFFERED)
     val snackbars: Flow<String> = effects.receiveAsFlow()
 
-    val state: StateFlow<TimelineUiState> = combine(coupleRepository.couple, milestoneRepository.all) { couple, milestones ->
+    val state: StateFlow<TimelineUiState> = combine(coupleRepository.couple, milestoneRepository.all, coupleRepository.partner, sessionStore.profile) { couple, milestones, partner, me ->
         val today = LocalDate.now()
         val upcoming = buildList {
             couple?.nextMeetingDate?.takeIf { !it.isBefore(today) }?.let { add(Upcoming(couple.nextMeetingLabel ?: "Next time together", it, CountdownCalculator.until(it, today), MilestoneKind.MEETING, null)) }
             couple?.relationshipStartDate?.let { val n = CountdownCalculator.nextAnniversary(it, today); add(Upcoming("Anniversary", n, CountdownCalculator.until(n, today), MilestoneKind.ANNIVERSARY, null)) }
+            com.risaina.app.core.domain.Birthday.parse(partner?.birthday)?.let { b ->
+                val n = com.risaina.app.core.domain.Occasions.nextBirthday(b, today)
+                add(Upcoming("${partner?.displayName}'s birthday" + (n.turning?.let { " · turning $it" } ?: ""), n.date, CountdownCalculator.until(n.date, today), MilestoneKind.CUSTOM, null))
+            }
+            com.risaina.app.core.domain.Birthday.parse(me?.birthday)?.let { b ->
+                val n = com.risaina.app.core.domain.Occasions.nextBirthday(b, today)
+                add(Upcoming("Your birthday", n.date, CountdownCalculator.until(n.date, today), MilestoneKind.CUSTOM, null))
+            }
             milestones.forEach { m ->
                 val d = if (m.kind == MilestoneKind.ANNIVERSARY) CountdownCalculator.nextAnniversary(m.date, today) else m.date
                 if (!d.isBefore(today)) add(Upcoming(m.title, d, CountdownCalculator.until(d, today), m.kind, m))

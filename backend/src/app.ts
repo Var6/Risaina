@@ -24,6 +24,7 @@ import { getCollections } from './db/collections.js';
 import { AttemptLimiter } from './lib/attempt-limiter.js';
 import { createLogger } from './lib/logger.js';
 import { type Clock, systemClock } from './lib/time.js';
+import { createGoogleVerifier, type GoogleTokenVerifier } from './modules/auth/google.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { TokenService } from './modules/auth/tokens.js';
 import { coupleRoutes } from './modules/couples/routes.js';
@@ -31,6 +32,7 @@ import { deviceRoutes } from './modules/devices/routes.js';
 import { eventRoutes } from './modules/events/routes.js';
 import { healthRoutes } from './modules/health/routes.js';
 import { invitationRoutes } from './modules/invitations/routes.js';
+import { listRoutes } from './modules/lists/routes.js';
 import { meRoutes } from './modules/me/routes.js';
 import { mediaRoutes } from './modules/media/routes.js';
 import { memoryRoutes } from './modules/memories/routes.js';
@@ -56,6 +58,11 @@ export interface BuildAppOptions {
   storage: StorageService;
   push: PushService;
   mailer: Mailer;
+  /**
+   * Google ID-token verifier override (tests inject one backed by a local key pair). Omitted: built
+   * from env (remote Google JWKS) when GOOGLE_CLIENT_IDS is set, else Google sign-in is disabled.
+   */
+  google?: GoogleTokenVerifier | null;
   now?: Clock;
   logger?: Logger;
   version?: string;
@@ -96,6 +103,12 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
 
   const hub = new WsHub(env.ws.maxPendingSends, logger);
   const db = getCollections(opts.mongo.db);
+  const google =
+    opts.google !== undefined
+      ? opts.google
+      : env.google.enabled
+        ? createGoogleVerifier({ clientIds: env.google.clientIds, now })
+        : null;
   const ctx: AppContext = {
     env,
     db,
@@ -104,8 +117,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
     push: opts.push,
     mailer: opts.mailer,
     hub,
-    events: new EventPublisher(db, hub, now),
+    events: new EventPublisher(db, hub, now, logger),
     tokens: new TokenService(env.jwtSecret, env.auth.accessTokenTtlSeconds, now),
+    google,
     inviteLimiter: new AttemptLimiter(
       env.invitations.acceptMaxAttempts,
       env.invitations.acceptWindowMinutes * 60_000,
@@ -181,6 +195,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
         { name: 'Media' },
         { name: 'Memories' },
         { name: 'Milestones' },
+        { name: 'Lists' },
         { name: 'Events' },
       ],
     },
@@ -216,6 +231,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
       await api.register(mediaRoutes, ctx);
       await api.register(memoryRoutes, ctx);
       await api.register(milestoneRoutes, ctx);
+      await api.register(listRoutes, ctx);
       await api.register(eventRoutes, ctx);
       await api.register(websocketRoutes, ctx);
       if (opts.storage instanceof LocalStorageDriver) {

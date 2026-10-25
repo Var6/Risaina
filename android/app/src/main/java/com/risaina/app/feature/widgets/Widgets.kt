@@ -237,4 +237,3 @@ class VoiceNoteWidget : GlanceAppWidget() {
 }
 class VoiceNoteWidgetReceiver : GlanceAppWidgetReceiver() { override val glanceAppWidget = VoiceNoteWidget() }
 
-@Suppress("unused") private fun keep(s: WidgetSnapshot) = s

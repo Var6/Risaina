@@ -102,6 +102,13 @@ class MessagesViewModel @Inject constructor(
         }
     }
 
+    fun sendEmoji(emoji: String) {
+        viewModelScope.launch {
+            val r = messageRepository.sendText(emoji, MessageType.EMOJI)
+            if (r is AppResult.Failure && !r.error.isRetryable) effects.trySend(r.error.message ?: "Couldn't send")
+        }
+    }
+
     fun sendPhoto(uri: Uri) {
         viewModelScope.launch {
             local.update { it.copy(sendingMedia = 0f) }

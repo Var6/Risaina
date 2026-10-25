@@ -8,6 +8,7 @@ export type ErrorCode =
   | 'forbidden'
   | 'not_found'
   | 'conflict'
+  | 'version_conflict'
   | 'rate_limited'
   | 'invitation_expired'
   | 'invitation_used'
@@ -16,6 +17,10 @@ export type ErrorCode =
   | 'media_not_ready'
   | 'payload_too_large'
   | 'unsupported_media'
+  | 'google_not_configured'
+  | 'verification_code_invalid'
+  | 'verification_code_expired'
+  | 'verification_attempts_exceeded'
   | 'internal';
 
 export class AppError extends Error {
@@ -54,6 +59,8 @@ export const errors = {
   forbidden: (message = 'Forbidden') => new AppError(403, 'forbidden', message),
   notFound: (what = 'Resource') => new AppError(404, 'not_found', `${what} not found`),
   conflict: (message: string) => new AppError(409, 'conflict', message),
+  versionConflict: (message: string, details: unknown) =>
+    new AppError(409, 'version_conflict', message, { details }),
   rateLimited: (retryAfterSeconds: number, message = 'Too many requests') =>
     new AppError(429, 'rate_limited', message, {
       headers: { 'retry-after': String(Math.max(1, Math.ceil(retryAfterSeconds))) },
@@ -66,5 +73,17 @@ export const errors = {
   mediaNotReady: (message = 'Media is not ready') => new AppError(409, 'media_not_ready', message),
   payloadTooLarge: (message = 'Payload too large') => new AppError(413, 'payload_too_large', message),
   unsupportedMedia: (message = 'Unsupported media type') => new AppError(415, 'unsupported_media', message),
+  googleNotConfigured: (message = 'Google sign-in is not configured on this server') =>
+    new AppError(503, 'google_not_configured', message),
+  verificationCodeInvalid: (attemptsRemaining: number) =>
+    new AppError(400, 'verification_code_invalid', 'That code is not correct', {
+      details: { attemptsRemaining },
+    }),
+  verificationCodeExpired: (message = 'This code has expired. Request a new one.') =>
+    new AppError(410, 'verification_code_expired', message),
+  verificationAttemptsExceeded: (retryAfterSeconds: number) =>
+    new AppError(429, 'verification_attempts_exceeded', 'Too many wrong codes. Request a new one.', {
+      headers: { 'retry-after': String(Math.max(1, Math.ceil(retryAfterSeconds))) },
+    }),
   internal: (message = 'Internal server error') => new AppError(500, 'internal', message),
 };

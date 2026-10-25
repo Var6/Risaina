@@ -33,12 +33,17 @@ class RisainaApi @Inject constructor(
     suspend fun login(req: LoginRequest): AuthResponse = plain.post("auth/login") { json(req) }.body()
     suspend fun refresh(req: RefreshRequest): TokensResponse = plain.post("auth/refresh") { json(req) }.body()
     suspend fun logout(req: LogoutRequest) { client.post("auth/logout") { json(req) } }
+    suspend fun google(req: GoogleAuthRequest): GoogleAuthResponse = plain.post("auth/google") { json(req) }.body()
+    suspend fun verifyEmail(req: VerifyEmailRequest): UserResponse = client.post("auth/email/verify") { json(req) }.body()
+    suspend fun resendVerification() { client.post("auth/email/resend") { json(EmptyBody) } }
     suspend fun forgotPassword(req: ForgotRequest) { plain.post("auth/password/forgot") { json(req) } }
     suspend fun resetPassword(req: ResetRequest) { plain.post("auth/password/reset") { json(req) } }
 
     // ---- me ----
     suspend fun me(): MeResponse = client.get("me").body()
     suspend fun patchMe(req: PatchMeRequest): UserResponse = client.patch("me") { json(req) }.body()
+    /** For patches that must send an explicit null (clearing a field). */
+    suspend fun patchMeRaw(body: kotlinx.serialization.json.JsonObject): UserResponse = client.patch("me") { json(body) }.body()
     suspend fun putPreferences(req: PreferencesDto): PreferencesResponse = client.put("me/preferences") { json(req) }.body()
     suspend fun deleteMe(req: DeleteMeRequest) { client.delete("me") { json(req) } }
     /** Export as raw JSON text so the user gets exactly what the server returned. */
@@ -87,6 +92,12 @@ class RisainaApi @Inject constructor(
     suspend fun milestones(): MilestoneList = client.get("milestones").body()
     suspend fun patchMilestone(id: String, req: PatchMilestoneRequest): MilestoneResponse = client.patch("milestones/$id") { json(req) }.body()
     suspend fun deleteMilestone(id: String) { client.delete("milestones/$id") }
+
+    // ---- shared lists (notes, checklists) ----
+    suspend fun lists(): ListsResponse = client.get("lists").body()
+    suspend fun createList(req: CreateListRequest): ListResponse = client.post("lists") { json(req) }.body()
+    suspend fun patchList(id: String, req: PatchListRequest): ListResponse = client.patch("lists/$id") { json(req) }.body()
+    suspend fun deleteList(id: String) { client.delete("lists/$id") }
 
     // ---- events ----
     suspend fun events(since: Long, limit: Int = 200): EventsResponse =

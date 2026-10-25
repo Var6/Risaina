@@ -23,6 +23,7 @@ describe('health & docs', () => {
         mongo: { status: 'ok' },
         storage: { status: 'ok', driver: 'local' },
         push: { status: 'disabled', provider: 'disabled' },
+        google: { status: 'disabled' },
       },
     });
     const ready = await t.app.inject({ method: 'GET', url: `${API}/health/ready` });
@@ -42,6 +43,9 @@ describe('health & docs', () => {
       '/api/v1/auth/logout',
       '/api/v1/auth/password/forgot',
       '/api/v1/auth/password/reset',
+      '/api/v1/auth/google',
+      '/api/v1/auth/email/verify',
+      '/api/v1/auth/email/resend',
       '/api/v1/me',
       '/api/v1/me/preferences',
       '/api/v1/me/export',
@@ -66,6 +70,8 @@ describe('health & docs', () => {
       '/api/v1/memories',
       '/api/v1/memories/{id}',
       '/api/v1/milestones',
+      '/api/v1/lists',
+      '/api/v1/lists/{id}',
       '/api/v1/milestones/{id}',
       '/api/v1/events',
       '/api/v1/health',
@@ -137,5 +143,37 @@ describe('env validation', () => {
       }),
     ).toString('base64');
     expect(loadEnv({ ...base, FIREBASE_SERVICE_ACCOUNT_JSON: sa }).push.enabled).toBe(true);
+  });
+
+  it('validates mailer and Google sign-in configuration without echoing values', () => {
+    expect(loadEnv(base).mailer).toEqual({ driver: 'console' });
+    expect(loadEnv(base).google).toEqual({ enabled: false });
+    expect(() => loadEnv({ ...base, MAILER: 'resend' })).toThrowError(/RESEND_API_KEY is required/);
+    expect(() => loadEnv({ ...base, MAILER: 'resend', RESEND_API_KEY: 're_secret_value' })).toThrowError(
+      /MAIL_FROM is required/,
+    );
+    try {
+      loadEnv({ ...base, MAILER: 'resend', RESEND_API_KEY: 're_secret_value', MAIL_FROM: 'not an address' });
+      expect.unreachable();
+    } catch (err) {
+      expect((err as Error).message).toMatch(/MAIL_FROM must look like/);
+      expect((err as Error).message).not.toContain('re_secret_value');
+    }
+    const resend = loadEnv({
+      ...base,
+      MAILER: 'resend',
+      RESEND_API_KEY: 're_test',
+      MAIL_FROM: 'Risaina <hello@example.com>',
+    });
+    expect(resend.mailer).toEqual({
+      driver: 'resend',
+      apiKey: 're_test',
+      from: 'Risaina <hello@example.com>',
+    });
+    expect(loadEnv({ ...base, GOOGLE_CLIENT_IDS: ' a.apps.googleusercontent.com, b ,' }).google).toEqual({
+      enabled: true,
+      clientIds: ['a.apps.googleusercontent.com', 'b'],
+    });
+    expect(loadEnv({ ...base, GOOGLE_CLIENT_IDS: '' }).google).toEqual({ enabled: false });
   });
 });

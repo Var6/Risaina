@@ -55,6 +55,8 @@ data class RisainaColors(
     val heroGradientEnd: Color,
     val divider: Color,
     val shimmer: Color,
+    /** Inner colour of the Touch Ping button's gradient. */
+    val pingFill: Color = Palette.Rosewood,
 )
 
 val LocalRisainaColors = staticCompositionLocalOf<RisainaColors> {

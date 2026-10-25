@@ -7,6 +7,8 @@ import { newId } from '../../lib/ids.js';
 import { addDays, addMinutes } from '../../lib/time.js';
 import { toUserDto } from '../shared/dto.js';
 import type { TokensDto, UserDto } from '../shared/schemas.js';
+import { describeMailError, EmailVerificationService } from './email-verification.js';
+import type { GoogleIdentity } from './google.js';
 import { AuthRepo } from './repo.js';
 
 export interface SessionMeta {
@@ -14,14 +16,18 @@ export interface SessionMeta {
   userAgent?: string | null;
 }
 
+const DISPLAY_NAME_MAX = 60; // users validator + DisplayName schema
+
 export class AuthService {
   private readonly repo: AuthRepo;
+  private readonly verification: EmailVerificationService;
   // argon2id hash of a random string, computed once per process; used to equalise login timing
   // when the email is unknown (so "no such user" is not trivially distinguishable from "wrong password").
   private readonly dummyHash: Promise<string>;
 
   constructor(private readonly ctx: AppContext) {
     this.repo = new AuthRepo(ctx.db);
+    this.verification = new EmailVerificationService(ctx);
     this.dummyHash = hashPassword(randomToken(24));
   }
 
@@ -37,6 +43,7 @@ export class AuthService {
       email: input.email,
       displayName: input.displayName,
       passwordHash: await hashPassword(input.password),
+      emailVerifiedAt: null,
       avatarMediaId: null,
       activeCoupleId: null,
       preferences: { ...DEFAULT_PREFERENCES, pingCooldownSeconds: this.ctx.env.pings.cooldownSeconds },
@@ -51,6 +58,15 @@ export class AuthService {
       throw err;
     }
     const tokens = await this.createSession(user._id, null, meta);
+    try {
+      await this.verification.issue(user);
+    } catch (err) {
+      // Registration must not fail because the verification code could not be stored or sent.
+      this.ctx.logger.warn(
+        { kind: 'email_verification', userId: user._id.toHexString(), reason: describeMailError(err) },
+        'could not issue verification code at registration',
+      );
+    }
     return { user: toUserDto(user), tokens };
   }
 
@@ -59,10 +75,105 @@ export class AuthService {
     meta: SessionMeta,
   ): Promise<{ user: UserDto; tokens: TokensDto }> {
     const user = await this.repo.findUserByEmail(input.email);
+    // Accounts without a password (Google-only, or claimed via Google while unverified) are
+    // verified against the dummy hash too, so they fail exactly like a wrong password.
     const ok = await verifyPassword(user?.passwordHash ?? (await this.dummyHash), input.password);
-    if (!user || !ok) throw errors.unauthorized('Invalid email or password');
+    if (!user?.passwordHash || !ok) throw errors.unauthorized('Invalid email or password');
     const tokens = await this.createSession(user._id, null, meta);
     return { user: toUserDto(user), tokens };
+  }
+
+  // --- Google sign-in ---------------------------------------------------------------------------
+
+  /**
+   * POST /auth/google. Resolution order: (a) account with this Google `sub`; (b) account with the
+   * same (lowercased) email, which gets linked; (c) a new Google-only account.
+   *
+   * Account pre-hijacking defence for (b): if the existing account never verified its email, whoever
+   * set its password may not own the address. The password is removed and every session revoked
+   * before the Google user (who provably owns the address) gets tokens.
+   */
+  async googleSignIn(
+    idToken: string,
+    meta: SessionMeta,
+  ): Promise<{ user: UserDto; tokens: TokensDto; isNewUser: boolean }> {
+    if (!this.ctx.google) throw errors.googleNotConfigured();
+    const identity = await this.ctx.google.verify(idToken);
+    return this.resolveGoogle(identity, meta, 0);
+  }
+
+  private async resolveGoogle(
+    identity: GoogleIdentity,
+    meta: SessionMeta,
+    attempt: number,
+  ): Promise<{ user: UserDto; tokens: TokensDto; isNewUser: boolean }> {
+    const retry = () => {
+      if (attempt >= 2) throw errors.conflict('Could not complete Google sign-in, please try again');
+      return this.resolveGoogle(identity, meta, attempt + 1);
+    };
+    const now = this.ctx.now();
+
+    // (a) returning Google user
+    const bySub = await this.repo.findUserByGoogleSub(identity.sub);
+    if (bySub) {
+      const tokens = await this.createSession(bySub._id, null, meta);
+      return { user: toUserDto(bySub), tokens, isNewUser: false };
+    }
+
+    // (b) existing account with the same email → link
+    const byEmail = await this.repo.findUserByEmail(identity.email);
+    if (byEmail) {
+      if (byEmail.googleSub && byEmail.googleSub !== identity.sub) {
+        throw errors.conflict('This email is already linked to a different Google account');
+      }
+      const wasVerified = byEmail.emailVerifiedAt instanceof Date;
+      let linked: UserDoc | null;
+      try {
+        linked = await this.repo.linkGoogle(byEmail._id, identity.sub, {
+          verifiedAt: byEmail.emailVerifiedAt ?? now,
+          clearPassword: !wasVerified,
+          now,
+        });
+      } catch (err) {
+        if (isDuplicateKey(err)) return retry();
+        throw err;
+      }
+      if (!linked) return retry(); // lost a race with a concurrent link
+      if (!wasVerified) {
+        await this.revokeAllForUser(linked._id, 'google_claimed_unverified');
+        this.ctx.logger.warn(
+          { userId: linked._id.toHexString() },
+          'google sign-in claimed an unverified account: password removed, sessions revoked',
+        );
+      }
+      await this.repo.deleteEmailVerifications(linked._id);
+      const tokens = await this.createSession(linked._id, null, meta);
+      return { user: toUserDto(linked), tokens, isNewUser: false };
+    }
+
+    // (c) new Google-only account
+    const user: UserDoc = {
+      _id: newId(),
+      email: identity.email,
+      displayName: googleDisplayName(identity),
+      passwordHash: null,
+      googleSub: identity.sub,
+      emailVerifiedAt: now,
+      avatarMediaId: null,
+      activeCoupleId: null,
+      preferences: { ...DEFAULT_PREFERENCES, pingCooldownSeconds: this.ctx.env.pings.cooldownSeconds },
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    };
+    try {
+      await this.repo.insertUser(user);
+    } catch (err) {
+      if (isDuplicateKey(err)) return retry(); // concurrent sign-in / register with the same identity
+      throw err;
+    }
+    const tokens = await this.createSession(user._id, null, meta);
+    return { user: toUserDto(user), tokens, isNewUser: true };
   }
 
   // --- refresh rotation ------------------------------------------------------------------------
@@ -138,7 +249,21 @@ export class AuthService {
       createdAt: now,
     });
     const resetUrl = `${this.ctx.env.publicBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
-    await this.ctx.mailer.sendPasswordReset({ to: user.email, resetToken: token, resetUrl, expiresAt });
+    // Not awaited: the response (always 202) must not reveal, by timing or by error, whether an
+    // account exists or whether delivery worked.
+    let sending: Promise<void>;
+    try {
+      sending = this.ctx.mailer.sendPasswordReset({ to: user.email, resetToken: token, resetUrl, expiresAt });
+    } catch (err) {
+      sending = Promise.reject(err);
+    }
+    const userId = user._id.toHexString();
+    void sending.catch((err: unknown) => {
+      this.ctx.logger.warn(
+        { kind: 'password_reset', userId, reason: describeMailError(err) },
+        'password reset email could not be sent',
+      );
+    });
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
@@ -186,6 +311,27 @@ export class AuthService {
       refreshExpiresAt: session.expiresAt.toISOString(),
     };
   }
+}
+
+/** given_name → name → email local part, stripped of control characters and cut to the schema max. */
+export function googleDisplayName(identity: Pick<GoogleIdentity, 'givenName' | 'name' | 'email'>): string {
+  for (const candidate of [identity.givenName, identity.name, identity.email.split('@')[0]]) {
+    const cleaned = cleanDisplayName(candidate);
+    if (cleaned) return cleaned;
+  }
+  return 'Risaina user';
+}
+
+function cleanDisplayName(value: string | null | undefined): string {
+  if (!value) return '';
+  let out = '';
+  for (const ch of value.replace(/\s+/g, ' ').trim()) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp < 0xa0)) continue;
+    if (out.length + ch.length > DISPLAY_NAME_MAX) break; // never split a surrogate pair
+    out += ch;
+  }
+  return out.trim();
 }
 
 export function isDuplicateKey(err: unknown): boolean {

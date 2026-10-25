@@ -2,8 +2,10 @@ import type { Collection, Db } from 'mongodb';
 import type {
   CoupleDoc,
   DeviceTokenDoc,
+  EmailVerificationDoc,
   EventDoc,
   InvitationDoc,
+  ListDoc,
   MediaDoc,
   MemoryDoc,
   MessageDoc,
@@ -18,6 +20,7 @@ export const COLLECTION_NAMES = {
   users: 'users',
   sessions: 'sessions',
   passwordResets: 'passwordResets',
+  emailVerifications: 'emailVerifications',
   couples: 'couples',
   invitations: 'invitations',
   pings: 'pings',
@@ -27,12 +30,14 @@ export const COLLECTION_NAMES = {
   memories: 'memories',
   milestones: 'milestones',
   events: 'events',
+  lists: 'lists',
 } as const;
 
 export interface Collections {
   users: Collection<UserDoc>;
   sessions: Collection<SessionDoc>;
   passwordResets: Collection<PasswordResetDoc>;
+  emailVerifications: Collection<EmailVerificationDoc>;
   couples: Collection<CoupleDoc>;
   invitations: Collection<InvitationDoc>;
   pings: Collection<PingDoc>;
@@ -42,6 +47,7 @@ export interface Collections {
   memories: Collection<MemoryDoc>;
   milestones: Collection<MilestoneDoc>;
   events: Collection<EventDoc>;
+  lists: Collection<ListDoc>;
 }
 
 export function getCollections(db: Db): Collections {
@@ -49,6 +55,7 @@ export function getCollections(db: Db): Collections {
     users: db.collection<UserDoc>(COLLECTION_NAMES.users),
     sessions: db.collection<SessionDoc>(COLLECTION_NAMES.sessions),
     passwordResets: db.collection<PasswordResetDoc>(COLLECTION_NAMES.passwordResets),
+    emailVerifications: db.collection<EmailVerificationDoc>(COLLECTION_NAMES.emailVerifications),
     couples: db.collection<CoupleDoc>(COLLECTION_NAMES.couples),
     invitations: db.collection<InvitationDoc>(COLLECTION_NAMES.invitations),
     pings: db.collection<PingDoc>(COLLECTION_NAMES.pings),
@@ -58,5 +65,6 @@ export function getCollections(db: Db): Collections {
     memories: db.collection<MemoryDoc>(COLLECTION_NAMES.memories),
     milestones: db.collection<MilestoneDoc>(COLLECTION_NAMES.milestones),
     events: db.collection<EventDoc>(COLLECTION_NAMES.events),
+    lists: db.collection<ListDoc>(COLLECTION_NAMES.lists),
   };
 }

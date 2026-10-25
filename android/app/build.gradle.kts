@@ -40,6 +40,26 @@ android {
         val apiBaseUrl = localProps.getProperty("risaina.apiBaseUrl") ?: "http://10.0.2.2:8080"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("boolean", "HAS_GOOGLE_SERVICES", hasGoogleServices.toString())
+        // Google OAuth *Web* client ID (Google Cloud console → Credentials). Empty = Google sign-in hidden.
+        val googleWebClientId = localProps.getProperty("risaina.googleWebClientId") ?: ""
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
+    }
+
+    // Release signing reads android/keystore.properties (gitignored). Without it, release builds
+    // are produced unsigned, so the project still builds on any machine.
+    val keystoreProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    if (keystoreProps.getProperty("storeFile") != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -50,7 +70,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signing is configured via keystore.properties (gitignored); see docs/RELEASE.md
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 
@@ -148,6 +168,10 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services)
+    implementation(libs.googleid)
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

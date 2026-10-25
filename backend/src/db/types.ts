@@ -39,10 +39,22 @@ export interface UserDoc {
   _id: ObjectId;
   email: string; // lowercased; unique
   displayName: string;
-  passwordHash: string | null; // null once the account is deleted
+  // null for Google-only accounts, after an unverified account was claimed via Google sign-in,
+  // and once the account is deleted
+  passwordHash: string | null;
+  // Google `sub` claim; absent until the account signs in with Google (unique when present)
+  googleSub?: string;
+  // null/absent until the email is verified (code email or Google sign-in). Legacy docs lack it.
+  emailVerifiedAt?: Date | null;
   avatarMediaId: ObjectId | null;
   activeCoupleId: ObjectId | null;
   preferences: Preferences;
+  // Profile fields added after v1. Optional in the validator (Atlas cannot collMod) and absent on
+  // older documents: read missing as birthday/timeZone null and shareLocalTime true.
+  birthday?: string | null; // 'YYYY-MM-DD', or '--MM-DD' when the year is private
+  timeZone?: string | null; // IANA id
+  shareLocalTime?: boolean; // false hides timeZone from the partner
+
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -69,6 +81,15 @@ export interface PasswordResetDoc {
   tokenHash: string;
   expiresAt: Date;
   usedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface EmailVerificationDoc {
+  _id: ObjectId;
+  userId: ObjectId;
+  codeHash: string; // HMAC-SHA256(userId:code) hex; the 6-digit code itself is never stored
+  expiresAt: Date; // TTL index (with grace, so the hourly resend cap can count recent sends)
+  attempts: number; // wrong guesses against this code
   createdAt: Date;
 }
 
@@ -232,8 +253,38 @@ export const EVENT_TYPES = [
   'couple.updated',
   'couple.unlinked',
   'partner.updated',
+  'list.created',
+  'list.updated',
+  'list.deleted',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
+
+export const LIST_KINDS = ['note', 'checklist'] as const;
+export type ListKind = (typeof LIST_KINDS)[number];
+
+export interface ListItem {
+  id: string; // 12-char random, server-assigned when the client omits it
+  text: string;
+  done: boolean;
+  doneBy: ObjectId | null;
+  doneAt: Date | null;
+}
+
+export interface ListDoc {
+  _id: ObjectId;
+  coupleId: ObjectId;
+  createdBy: ObjectId;
+  updatedBy: ObjectId;
+  title: string;
+  kind: ListKind;
+  body: string;
+  items: ListItem[];
+  pinned: boolean;
+  version: number; // starts at 1, +1 per PATCH (optimistic concurrency via expectedVersion)
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+}
 
 export type PushState = 'pending' | 'sent' | 'skipped' | 'failed';
 

@@ -31,5 +31,23 @@ export const LogoutBody = z.object({
 export const ForgotBody = z.object({ email: Email });
 export const ResetBody = z.object({ token: z.string().min(20).max(200), newPassword: Password });
 
+export const GoogleBody = z.object({
+  idToken: z.string().min(1).max(4096).meta({ description: 'Google ID token (Credential Manager)' }),
+});
+export const VerifyEmailBody = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'code must be 6 digits')
+    .meta({ example: '042137' }),
+});
+
 export const AuthResponse = z.object({ user: User, tokens: Tokens });
+export const GoogleAuthResponse = z.object({
+  user: User,
+  tokens: Tokens,
+  isNewUser: z.boolean().meta({ description: 'True when this call created the account' }),
+});
+export const UserOnlyResponse = z.object({ user: User });
+export const AcceptedResponse = z.object({ accepted: z.literal(true) });
 export const TokensResponse = z.object({ tokens: Tokens });

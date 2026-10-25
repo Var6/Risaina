@@ -85,7 +85,7 @@ fun PingRow(ping: Ping, mine: Boolean, onRetry: () -> Unit, onDiscard: () -> Uni
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(if (mine) "You · ${ping.type.label}" else ping.type.label, style = MaterialTheme.typography.titleSmall)
-                if (!ping.message.isNullOrBlank()) Text(ping.message, style = MaterialTheme.typography.bodyMedium)
+                if (!ping.message.isNullOrBlank()) Text(Expressions.giftLine(ping.message)!!, style = MaterialTheme.typography.bodyMedium)
                 Text(Format.relative(ping.createdAt), style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted)
             }
             if (mine) {
@@ -129,7 +129,7 @@ fun PingDetailScreen(pingId: String, onBack: () -> Unit, onReplied: (String) -> 
                 Spacer(Modifier.height(20.dp))
                 Text("${partnerName ?: "Your partner"} · ${ping.type.label}", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(8.dp))
-                Text(ping.message ?: ping.type.defaultMessage, style = RisainaTextStyles.noteSerif, textAlign = TextAlign.Center)
+                Text(Expressions.giftLine(ping.message) ?: ping.type.defaultMessage, style = RisainaTextStyles.noteSerif, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(6.dp))
                 Text(Format.relative(ping.createdAt), style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted)
                 Spacer(Modifier.height(36.dp))

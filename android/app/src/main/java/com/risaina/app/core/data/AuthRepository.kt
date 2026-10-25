@@ -12,6 +12,8 @@ import com.risaina.app.core.datastore.WidgetSnapshotStore
 import com.risaina.app.core.model.Session
 import com.risaina.app.core.network.DeleteMeRequest
 import com.risaina.app.core.network.ForgotRequest
+import com.risaina.app.core.network.GoogleAuthRequest
+import com.risaina.app.core.network.VerifyEmailRequest
 import com.risaina.app.core.network.LoginRequest
 import com.risaina.app.core.network.LogoutRequest
 import com.risaina.app.core.network.RegisterRequest
@@ -35,6 +37,7 @@ class AuthRepository @Inject constructor(
     private val db: RisainaDatabase,
     private val coupleRepository: CoupleRepository,
     private val deviceRegistrar: DeviceRegistrar,
+    private val googleSignOut: GoogleSignOut,
 ) {
     val isSignedIn: Flow<Boolean> = sessionStore.session.map { it != null }
 
@@ -43,18 +46,36 @@ class AuthRepository @Inject constructor(
             .map { r -> r.tokens to r.user }
             .let { res ->
                 when (res) {
-                    is AppResult.Success -> { onAuthenticated(res.value.first, res.value.second.id, res.value.second.displayName, res.value.second.avatarMediaId); AppResult.Success(Unit) }
+                    is AppResult.Success -> { onAuthenticated(res.value.first, res.value.second.id, res.value.second.displayName, res.value.second.avatarMediaId, res.value.second.emailVerified); AppResult.Success(Unit) }
                     is AppResult.Failure -> res
                 }
             }
 
     suspend fun login(email: String, password: String): AppResult<Unit> =
         when (val res = apiCall { api.login(LoginRequest(email.trim().lowercase(), password)) }) {
-            is AppResult.Success -> { onAuthenticated(res.value.tokens, res.value.user.id, res.value.user.displayName, res.value.user.avatarMediaId); AppResult.Success(Unit) }
+            is AppResult.Success -> { onAuthenticated(res.value.tokens, res.value.user.id, res.value.user.displayName, res.value.user.avatarMediaId, res.value.user.emailVerified); AppResult.Success(Unit) }
             is AppResult.Failure -> res
         }
 
-    private suspend fun onAuthenticated(tokens: TokensDto, userId: String, displayName: String, avatarMediaId: String?) {
+    /** Exchange a Google ID token (from Credential Manager) for a Risaina session. */
+    suspend fun signInWithGoogle(idToken: String): AppResult<Boolean> =
+        when (val res = apiCall { api.google(GoogleAuthRequest(idToken)) }) {
+            is AppResult.Success -> {
+                onAuthenticated(res.value.tokens, res.value.user.id, res.value.user.displayName, res.value.user.avatarMediaId, true)
+                AppResult.Success(res.value.isNewUser)
+            }
+            is AppResult.Failure -> res
+        }
+
+    suspend fun verifyEmail(code: String): AppResult<Unit> {
+        val res = apiCall { api.verifyEmail(VerifyEmailRequest(code.trim())) }
+        if (res is AppResult.Success) sessionStore.saveProfile(res.value.user.displayName, res.value.user.avatarMediaId, res.value.user.emailVerified)
+        return res.map { }
+    }
+
+    suspend fun resendVerification(): AppResult<Unit> = apiCall { api.resendVerification() }
+
+    private suspend fun onAuthenticated(tokens: TokensDto, userId: String, displayName: String, avatarMediaId: String?, emailVerified: Boolean = false) {
         val deviceId = sessionStore.deviceId()
         sessionStore.save(
             Session(
@@ -66,7 +87,7 @@ class AuthRepository @Inject constructor(
                 deviceId = deviceId,
             ),
         )
-        sessionStore.saveProfile(displayName, avatarMediaId)
+        sessionStore.saveProfile(displayName, avatarMediaId, emailVerified)
         coupleRepository.refreshMe()
         deviceRegistrar.scheduleRegistration()
     }
@@ -83,8 +104,10 @@ class AuthRepository @Inject constructor(
         clearLocal()
     }
 
-    suspend fun deleteAccount(password: String): AppResult<Unit> {
-        val res = apiCall { api.deleteMe(DeleteMeRequest(password)) }
+    /** Password accounts confirm with their password; Google-only accounts type DELETE. */
+    suspend fun deleteAccount(passwordOrConfirm: String): AppResult<Unit> {
+        val req = if (passwordOrConfirm == "DELETE") DeleteMeRequest(confirm = "DELETE") else DeleteMeRequest(password = passwordOrConfirm)
+        val res = apiCall { api.deleteMe(req) }
         if (res is AppResult.Success) clearLocal()
         return res
     }
@@ -93,6 +116,7 @@ class AuthRepository @Inject constructor(
     suspend fun onSessionExpired() { clearLocal() }
 
     private suspend fun clearLocal() {
+        googleSignOut.clear()
         sessionStore.clear()
         db.clearAllContent()
         widgetSnapshotStore.clear()
@@ -101,9 +125,12 @@ class AuthRepository @Inject constructor(
 }
 
 /** Abstraction so the auth layer does not depend on Firebase directly. Implemented in core.notifications. */
+/** Clears the system's remembered Google account choice on sign-out. */
+interface GoogleSignOut {
+    suspend fun clear()
+}
+
 interface DeviceRegistrar {
     fun scheduleRegistration()
 }
 
-@Suppress("unused")
-private fun AppError.ignore() = Unit

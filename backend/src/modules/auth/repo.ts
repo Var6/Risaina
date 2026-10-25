@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import type { Collections } from '../../db/collections.js';
-import type { PasswordResetDoc, SessionDoc, UserDoc } from '../../db/types.js';
+import type { EmailVerificationDoc, PasswordResetDoc, SessionDoc, UserDoc } from '../../db/types.js';
 
 export class AuthRepo {
   constructor(private readonly db: Collections) {}
@@ -11,6 +11,37 @@ export class AuthRepo {
 
   findUserById(id: ObjectId): Promise<UserDoc | null> {
     return this.db.users.findOne({ _id: id, deletedAt: null });
+  }
+
+  findUserByGoogleSub(sub: string): Promise<UserDoc | null> {
+    return this.db.users.findOne({ googleSub: sub, deletedAt: null });
+  }
+
+  /**
+   * Links a Google identity to an existing account that has none yet (atomic: loses cleanly to a
+   * concurrent link). `clearPassword` is used when the account's email was never verified.
+   */
+  linkGoogle(
+    userId: ObjectId,
+    googleSub: string,
+    opts: { verifiedAt: Date; clearPassword: boolean; now: Date },
+  ): Promise<UserDoc | null> {
+    const set: Partial<UserDoc> = { googleSub, emailVerifiedAt: opts.verifiedAt, updatedAt: opts.now };
+    if (opts.clearPassword) set.passwordHash = null;
+    return this.db.users.findOneAndUpdate(
+      { _id: userId, deletedAt: null, googleSub: { $exists: false } },
+      { $set: set },
+      { returnDocument: 'after' },
+    );
+  }
+
+  /** Sets emailVerifiedAt if it is not set yet; returns the current user document. */
+  async markEmailVerified(userId: ObjectId, now: Date): Promise<UserDoc | null> {
+    await this.db.users.updateOne(
+      { _id: userId, deletedAt: null, emailVerifiedAt: null }, // `null` also matches a missing field
+      { $set: { emailVerifiedAt: now, updatedAt: now } },
+    );
+    return this.findUserById(userId);
   }
 
   async insertUser(doc: UserDoc): Promise<void> {
@@ -81,6 +112,38 @@ export class AuthRepo {
       { $set: { usedAt: now } },
       { returnDocument: 'after' },
     );
+  }
+
+  // --- email verification codes -----------------------------------------------------------
+
+  async insertEmailVerification(doc: EmailVerificationDoc): Promise<void> {
+    await this.db.emailVerifications.insertOne(doc);
+  }
+
+  /** The newest code is the only live one; older documents are kept until TTL for the hourly cap. */
+  latestEmailVerification(userId: ObjectId): Promise<EmailVerificationDoc | null> {
+    return this.db.emailVerifications.findOne({ userId }, { sort: { createdAt: -1, _id: -1 } });
+  }
+
+  async emailVerificationTimesSince(userId: ObjectId, since: Date): Promise<Date[]> {
+    const docs = await this.db.emailVerifications
+      .find({ userId, createdAt: { $gt: since } }, { projection: { createdAt: 1 } })
+      .sort({ createdAt: 1 })
+      .toArray();
+    return docs.map((d) => d.createdAt);
+  }
+
+  /** Records a wrong guess. Returns null when the code had already used up its attempts. */
+  incrementVerificationAttempts(id: ObjectId, maxAttempts: number): Promise<EmailVerificationDoc | null> {
+    return this.db.emailVerifications.findOneAndUpdate(
+      { _id: id, attempts: { $lt: maxAttempts } },
+      { $inc: { attempts: 1 } },
+      { returnDocument: 'after' },
+    );
+  }
+
+  async deleteEmailVerifications(userId: ObjectId): Promise<void> {
+    await this.db.emailVerifications.deleteMany({ userId });
   }
 
   async deleteDeviceToken(userId: ObjectId, deviceId: string): Promise<void> {

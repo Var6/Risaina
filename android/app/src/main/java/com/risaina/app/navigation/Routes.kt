@@ -26,3 +26,6 @@ import kotlinx.serialization.Serializable
 @Serializable data object Profile
 @Serializable data object About
 @Serializable data object NotificationPermission
+@Serializable data object VerifyEmail
+@Serializable data object Lists
+@Serializable data class ListDetail(val id: String)

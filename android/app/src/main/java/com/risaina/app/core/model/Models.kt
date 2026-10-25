@@ -16,6 +16,10 @@ data class Partner(
     val id: String,
     val displayName: String,
     val avatarMediaId: String?,
+    /** "YYYY-MM-DD", or "--MM-DD" when the year is private. */
+    val birthday: String? = null,
+    /** IANA zone, or null when the partner doesn't share their local time. */
+    val timeZone: String? = null,
 )
 
 enum class CoupleStatus { PENDING, ACTIVE, ENDED }
@@ -164,6 +168,9 @@ data class Preferences(
     val ritualsEnabled: Boolean = false,
     val morningRitualTime: LocalTime = LocalTime.of(8, 0),
     val nightRitualTime: LocalTime = LocalTime.of(22, 0),
+    val accent: String = "ROSEWOOD",
+    val background: String = "GLOW",
+    val shareLocalTime: Boolean = true,
 )
 
 enum class DarkMode { SYSTEM, LIGHT, DARK }
@@ -187,7 +194,10 @@ data class Session(
     val deviceId: String,
 )
 
-data class Profile(val userId: String, val displayName: String, val avatarMediaId: String?)
+data class Profile(
+    val userId: String, val displayName: String, val avatarMediaId: String?, val emailVerified: Boolean = true,
+    val birthday: String? = null, val hasPassword: Boolean = true,
+)
 
 data class InvitationCreated(val id: String, val code: String, val expiresAt: Instant)
 data class InvitationSummary(val id: String, val expiresAt: Instant, val createdAt: Instant)

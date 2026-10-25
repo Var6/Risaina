@@ -52,8 +52,9 @@ fun IncomingPingReveal(
                 Text(p.emoji, style = RisainaTextStyles.emojiLarge.copy(fontSize = MaterialTheme.typography.displaySmall.fontSize))
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${partnerName ?: "Your partner"} · ${p.type.label}", style = MaterialTheme.typography.titleMedium)
-                    Text(p.message ?: p.type.defaultMessage, style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted, maxLines = 2)
+                    val gift = Expressions.isGift(p.message)
+                    Text("${partnerName ?: "Your partner"} · ${if (gift) "sent you a gift" else p.type.label}", style = MaterialTheme.typography.titleMedium)
+                    Text(if (gift) Expressions.giftLine(p.message)!! else p.message ?: p.type.defaultMessage, style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted, maxLines = 2)
                 }
             }
             Spacer(Modifier.height(10.dp))

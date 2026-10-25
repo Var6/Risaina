@@ -41,7 +41,7 @@ export const meRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
       ...auth,
       schema: {
         tags: [TAG],
-        summary: 'Update display name / avatar',
+        summary: 'Update profile: display name, avatar, birthday, time zone, shareLocalTime',
         security,
         body: MePatchBody,
         response: {
@@ -93,13 +93,16 @@ export const meRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
       schema: {
         tags: [TAG],
         summary: 'Delete the account (cascades: sessions, devices, couple ended, own media deleted)',
+        description:
+          'Accounts with a password send { password }. Google-only accounts (user.hasPassword = false) send ' +
+          '{ confirm: "DELETE" }. Anything else is 401.',
         security,
         body: DeleteMeBody,
-        response: { 204: NoContent, 401: ErrorEnvelope },
+        response: { 204: NoContent, 400: ErrorEnvelope, 401: ErrorEnvelope },
       },
     },
     async (req, reply) => {
-      await service.deleteAccount(req.user!.id, req.body.password);
+      await service.deleteAccount(req.user!.id, req.body);
       return reply.code(204).send(null);
     },
   );

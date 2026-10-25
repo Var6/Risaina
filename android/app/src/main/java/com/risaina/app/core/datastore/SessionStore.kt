@@ -40,6 +40,10 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         val displayName = stringPreferencesKey("display_name")
         val avatarMediaId = stringPreferencesKey("avatar_media_id")
         val prefsDirty = stringPreferencesKey("prefs_dirty")
+        val emailVerified = stringPreferencesKey("email_verified")
+        val birthday = stringPreferencesKey("birthday")
+        val hasPassword = stringPreferencesKey("has_password")
+        val sharedTimeZone = stringPreferencesKey("shared_time_zone")
     }
 
     val session: Flow<Session?> = context.sessionDataStore.data.map { p ->
@@ -62,18 +66,30 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
 
     val profile: Flow<Profile?> = context.sessionDataStore.data.map { p ->
         val userId = p[Keys.userId] ?: return@map null
-        Profile(userId, p[Keys.displayName] ?: "", p[Keys.avatarMediaId])
+        Profile(userId, p[Keys.displayName] ?: "", p[Keys.avatarMediaId], p[Keys.emailVerified] != "0", p[Keys.birthday], p[Keys.hasPassword] != "0")
     }
     val prefsDirty: Flow<Boolean> = context.sessionDataStore.data.map { it[Keys.prefsDirty] == "1" }
 
     suspend fun current(): Session? = session.first()
 
-    suspend fun saveProfile(displayName: String, avatarMediaId: String?) {
+    suspend fun saveProfile(displayName: String, avatarMediaId: String?, emailVerified: Boolean? = null) {
         context.sessionDataStore.edit { p ->
+            if (emailVerified != null) p[Keys.emailVerified] = if (emailVerified) "1" else "0"
             p[Keys.displayName] = displayName
             if (avatarMediaId == null) p.remove(Keys.avatarMediaId) else p[Keys.avatarMediaId] = avatarMediaId
         }
     }
+
+    suspend fun saveExtras(birthday: String?, hasPassword: Boolean, sharedTimeZone: String?) {
+        context.sessionDataStore.edit { p ->
+            if (birthday == null) p.remove(Keys.birthday) else p[Keys.birthday] = birthday
+            p[Keys.hasPassword] = if (hasPassword) "1" else "0"
+            if (sharedTimeZone == null) p.remove(Keys.sharedTimeZone) else p[Keys.sharedTimeZone] = sharedTimeZone
+        }
+    }
+
+    /** The zone last reported to the server, so we only PATCH when it changes (travel, DST rules). */
+    suspend fun sharedTimeZone(): String? = context.sessionDataStore.data.first()[Keys.sharedTimeZone]
 
     suspend fun setPrefsDirty(dirty: Boolean) {
         context.sessionDataStore.edit { p -> if (dirty) p[Keys.prefsDirty] = "1" else p.remove(Keys.prefsDirty) }

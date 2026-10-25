@@ -43,6 +43,9 @@ class PreferencesStore @Inject constructor(@ApplicationContext private val conte
         val rituals = booleanPreferencesKey("rituals_enabled")
         val morning = stringPreferencesKey("morning_ritual")
         val night = stringPreferencesKey("night_ritual")
+        val accent = stringPreferencesKey("accent")
+        val background = stringPreferencesKey("background")
+        val shareLocalTime = booleanPreferencesKey("share_local_time")
         val onboardingDone = booleanPreferencesKey("onboarding_done")
         val notificationPromptShown = booleanPreferencesKey("notification_prompt_shown")
     }
@@ -70,6 +73,9 @@ class PreferencesStore @Inject constructor(@ApplicationContext private val conte
             ritualsEnabled = p[K.rituals] ?: false,
             morningRitualTime = p[K.morning]?.let(LocalTime::parse) ?: d.morningRitualTime,
             nightRitualTime = p[K.night]?.let(LocalTime::parse) ?: d.nightRitualTime,
+            accent = p[K.accent] ?: d.accent,
+            background = p[K.background] ?: d.background,
+            shareLocalTime = p[K.shareLocalTime] ?: d.shareLocalTime,
         )
     }
 
@@ -97,6 +103,9 @@ class PreferencesStore @Inject constructor(@ApplicationContext private val conte
             p[K.rituals] = next.ritualsEnabled
             p[K.morning] = next.morningRitualTime.toString()
             p[K.night] = next.nightRitualTime.toString()
+            p[K.accent] = next.accent
+            p[K.background] = next.background
+            p[K.shareLocalTime] = next.shareLocalTime
         }
     }
 

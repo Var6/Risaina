@@ -54,7 +54,11 @@ class MainActivity : ComponentActivity() {
                 DarkMode.LIGHT -> false
                 DarkMode.DARK -> true
             }
-            RisainaTheme(darkTheme = dark, reducedMotion = state.reducedMotion) {
+            RisainaTheme(
+                darkTheme = dark,
+                reducedMotion = state.reducedMotion,
+                accent = runCatching { com.risaina.app.core.designsystem.theme.AccentTheme.valueOf(state.accent) }.getOrDefault(com.risaina.app.core.designsystem.theme.AccentTheme.ROSEWOOD),
+            ) {
                 RisainaAppUi(state = state, deepLinks = appViewModel.deepLinks)
             }
         }

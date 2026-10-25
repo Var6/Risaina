@@ -29,6 +29,8 @@ data class AppUiState(
     val darkMode: DarkMode = DarkMode.SYSTEM,
     val reducedMotion: Boolean = false,
     val online: Boolean = true,
+    val accent: String = "ROSEWOOD",
+    val background: String = "GLOW",
 ) { val loading get() = gate == Gate.LOADING }
 
 @HiltViewModel
@@ -54,7 +56,7 @@ class AppViewModel @Inject constructor(
             pairing is PairingState.Paired -> Gate.HOME
             else -> Gate.PAIRING
         }
-        AppUiState(gate = gate, darkMode = prefs.darkMode, reducedMotion = prefs.reducedMotion, online = online)
+        AppUiState(gate = gate, darkMode = prefs.darkMode, reducedMotion = prefs.reducedMotion, online = online, accent = prefs.accent, background = prefs.background)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, AppUiState())
 
     init {

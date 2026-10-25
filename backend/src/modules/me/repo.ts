@@ -2,6 +2,7 @@ import type { ObjectId } from 'mongodb';
 import type { Collections } from '../../db/collections.js';
 import type {
   CoupleDoc,
+  ListDoc,
   MediaDoc,
   MemoryDoc,
   MessageDoc,
@@ -56,6 +57,10 @@ export class MeRepo {
     await this.db.passwordResets.deleteMany({ userId });
   }
 
+  async deleteEmailVerifications(userId: ObjectId): Promise<void> {
+    await this.db.emailVerifications.deleteMany({ userId });
+  }
+
   async revokeInvitations(userId: ObjectId, now: Date): Promise<void> {
     await this.db.invitations.updateMany(
       { inviterId: userId, status: 'open' },
@@ -78,11 +83,16 @@ export class MeRepo {
           email: `deleted+${userId.toHexString()}@invalid.risaina.local`,
           displayName: 'Deleted user',
           passwordHash: null,
+          emailVerifiedAt: null,
           avatarMediaId: null,
           activeCoupleId: null,
+          birthday: null,
+          timeZone: null,
           deletedAt: now,
           updatedAt: now,
         },
+        // frees the Google identity so the same Google account can sign up again later
+        $unset: { googleSub: '' },
       },
     );
   }
@@ -101,6 +111,14 @@ export class MeRepo {
     return this.db.memories
       .find({ coupleId, deletedAt: null })
       .sort({ createdAt: -1 })
+      .limit(limit)
+      .toArray();
+  }
+
+  lists(coupleId: ObjectId, limit: number): Promise<ListDoc[]> {
+    return this.db.lists
+      .find({ coupleId, deletedAt: null })
+      .sort({ pinned: -1, updatedAt: -1 })
       .limit(limit)
       .toArray();
   }

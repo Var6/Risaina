@@ -92,6 +92,16 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateBirthday(birthday: String?) {
+        viewModelScope.launch { busy.value = true; coupleRepository.updateBirthday(birthday).onFailure { effects.trySend(it.message ?: "Couldn't save") }; busy.value = false }
+    }
+
+    /** Local preference first, then the server (which stops showing your time to your partner). */
+    fun setShareLocalTime(share: Boolean) {
+        update { it.copy(shareLocalTime = share) }
+        viewModelScope.launch { coupleRepository.setShareLocalTime(share).onFailure { effects.trySend("Saved on this phone; will sync when online") } }
+    }
+
     fun updateName(name: String) {
         viewModelScope.launch { busy.value = true; coupleRepository.updateProfile(name, null).onFailure { effects.trySend(it.message ?: "Couldn't save") }; busy.value = false }
     }

@@ -30,7 +30,8 @@ async function main(): Promise<void> {
       nodeEnv: env.nodeEnv,
       storageDriver: env.storage.driver,
       pushEnabled: env.push.enabled,
-      mailer: env.mailer,
+      mailer: env.mailer.driver,
+      googleSignIn: env.google.enabled,
     },
     'starting risaina backend',
   );
@@ -41,7 +42,7 @@ async function main(): Promise<void> {
 
   const storage = createStorage(env, now);
   const push = createPushService(env);
-  const mailer = createMailer(env, logger);
+  const mailer = createMailer(env, logger, now);
   if (!push.enabled)
     logger.warn(
       'push notifications are DISABLED (no FIREBASE_SERVICE_ACCOUNT_JSON); outbox will mark events skipped',

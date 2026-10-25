@@ -86,3 +86,14 @@ tokens never serialized; account deletion cascades. ✅
 - **Backend:** `pnpm typecheck` clean; `pnpm test` 12 files / 63 tests passed (run by the implementation agent and independently re-run by the reviewer). Server boots; `/health` and `/docs/json` respond.
 - **Android:** `assembleDebug` BUILD SUCCESSFUL. Unit tests: 19/20 passed on first run; the failing emoji-cluster test exposed a real portability bug (JVM vs ICU BreakIterator) → fixed with a deterministic counter; rerun pending at time of writing (see PROGRESS.md for the final numbers).
 - **Not yet verified:** instrumented UI tests, two-device journey, widgets on a launcher, wallpaper apply, FCM delivery (no Firebase project), R2 (no credentials).
+
+## Update — emulator verification (2026-10-25)
+| # | Finding | Severity | Evidence | Fix | Verify |
+|---|---|---|---|---|---|
+| E1 | Sign-up screen crashed on open | Critical | logcat `Padding must be non-negative` at AuthScreens.kt:47 | `Modifier.offset` | ✅ sign-up completed on emulator |
+| E2 | Sender's Delivered/Seen vanished after 8 s | High (untruthful-by-omission feedback) | screenshot: "Next ping in 4s" after partner opened | status line persists; live region | ✅ "Mira saw it" visible 25 s later |
+| E3 | Greeting punctuation | Low | "Still up?, Asha" | `Format.greetingFor` | ✅ unit test |
+| E4 | Incoming-ping card overlaps the top of Home for 9 s | Low | screenshot | acceptable; dismiss with "Later" | — |
+
+The independent 10-dimension multi-agent board review was started but did not complete before the
+session ended; its findings are therefore **not** included here. Re-run it on request.

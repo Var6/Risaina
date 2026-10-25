@@ -16,13 +16,19 @@ couple id: couple scope always comes from the authenticated user.
 |---|---|---|
 | `email` | string | **lowercased**; unique. Case-insensitivity is achieved by normalising before write/lookup |
 | `displayName` | string 1–60 | |
-| `passwordHash` | string \| null | argon2id (m=19456 KiB, t=2, p=1). `null` after account deletion |
+| `passwordHash` | string \| null | argon2id (m=19456 KiB, t=2, p=1). `null` for Google-only accounts, for an unverified account claimed through Google sign-in, and after account deletion. Password login on `null` fails like a wrong password |
+| `googleSub` | string (optional) | Google `sub` claim; **absent** until the account signs in with Google; removed (`$unset`) on account deletion |
+| `emailVerifiedAt` | date \| null (optional) | set by `POST /auth/email/verify` or Google sign-in; absent on rows created before this field existed (treated as unverified) |
 | `avatarMediaId` | ObjectId \| null | must reference a `ready` `avatar` media owned by the user |
 | `activeCoupleId` | ObjectId \| null | set only while the couple is `active`; the `requireCouple` guard reads this |
 | `preferences` | object | see `Preferences` in API.md; defaults in `DEFAULT_PREFERENCES` |
+| `birthday` | string \| null (optional) | `YYYY-MM-DD` or `--MM-DD` (year private). Absent on older rows ⇒ read as `null`; cleared on deletion |
+| `timeZone` | string \| null (optional) | IANA id. Absent ⇒ `null`; cleared on deletion |
+| `shareLocalTime` | bool (optional) | absent ⇒ `true`. `false` hides `timeZone` from the partner DTO |
 | `createdAt` / `updatedAt` / `deletedAt` | date / date / date\|null | deletion anonymises the row rather than removing it (referential integrity for events) |
 
-Indexes: `{email:1}` unique (`email_unique`); `{activeCoupleId:1}` sparse.
+Indexes: `{email:1}` unique (`email_unique`); `{activeCoupleId:1}` sparse; `{googleSub:1}` unique with
+`partialFilterExpression: {googleSub: {$type: 'string'}}` (`googleSub_unique`).
 
 ### `sessions`
 One document per refresh token. Rotation creates a new document in the same `familyId`.
@@ -33,7 +39,7 @@ One document per refresh token. Rotation creates a new document in the same `fam
 | `refreshHash` | sha256(refresh token); unique. The plaintext token is never stored |
 | `expiresAt` | 30-day sliding expiry (reset on each rotation) |
 | `rotatedAt` | set when this refresh token was exchanged. Presenting it again ⇒ reuse ⇒ whole family revoked |
-| `revokedAt`, `revokedReason` | `logout` \| `refresh_reuse` \| `password_reset` \| `account_deleted` |
+| `revokedAt`, `revokedReason` | `logout` \| `refresh_reuse` \| `password_reset` \| `account_deleted` \| `google_claimed_unverified` |
 | `deviceId`, `userAgent`, `lastUsedAt` | metadata |
 
 Indexes: `{refreshHash:1}` unique; `{userId:1, revokedAt:1}` (revoke-all); `{familyId:1}` (reuse detection); `{expiresAt:1}` (cleanup).
@@ -43,6 +49,16 @@ Indexes: `{refreshHash:1}` unique; `{userId:1, revokedAt:1}` (revoke-all); `{fam
 Consumed atomically with `findOneAndUpdate` so a token can be used once.
 
 Indexes: `{tokenHash:1}` unique; `{expiresAt:1}`.
+
+### `emailVerifications`
+`userId`, `codeHash` (HMAC-SHA256 of `userId:code` keyed from `JWT_SECRET`; the 6-digit code is never
+stored), `expiresAt` (30 min default), `attempts` (wrong guesses; 5 kills the code), `createdAt`.
+Only the newest document per user is live; older ones stay until TTL so the hourly resend cap can
+count them. All of a user's documents are deleted on successful verification, Google linking and
+account deletion.
+
+Indexes: `{userId:1, createdAt:-1}`; `{expiresAt:1}` TTL with `expireAfterSeconds: 3600`
+(`expiresAt_ttl`).
 
 ### `couples`
 | Field | Notes |
@@ -110,11 +126,16 @@ Indexes: `{coupleId:1, deletedAt:1, createdAt:-1, _id:-1}`; `{coupleId:1, delete
 
 Indexes: `{coupleId:1, date:1}`.
 
+### `lists`
+`coupleId, createdBy, updatedBy, title (1–120), kind (note|checklist), body (≤10000, may be ''), items[≤200] { id (12-char random, or a client id ≤32 chars), text (1–300), done, doneBy: ObjectId|null, doneAt: date|null }, pinned, version (≥1, +1 per PATCH; compare-and-set filter), createdAt, updatedAt, deletedAt|null`. Soft-deleted; ≤ 200 non-deleted per couple.
+
+Indexes: `{coupleId:1, deletedAt:1, pinned:-1, updatedAt:-1}` (`GET /lists`, export).
+
 ### `events` (durable log + push outbox)
 | Field | Notes |
 |---|---|
 | `coupleId`, `seq` | unique pair; `seq` is dense and strictly increasing per couple |
-| `type` | one of the 16 event types in API.md |
+| `type` | one of the event types in API.md. The validator checks a dotted-name **pattern**, not an enum, so new types need no `collMod`. Databases created by older versions keep their strict enum until a `dbAdmin` user restarts the server once; until then new types (`list.*`) fail validation and the publisher delivers them live over WebSocket only (logged at error level) |
 | `actorId` | the user who caused the event |
 | `payload` | exactly the shapes in API.md "Event payload shapes" |
 | `createdAt` | |
