@@ -18,7 +18,11 @@ import javax.inject.Singleton
 /** Why the alarm service was asked to ring. */
 enum class RingSource { PUSH, EVENT, ALARM_CLOCK, TEST }
 
-/** One request to ring. Every field but the source may be unknown on the push fast path. */
+/**
+ * One request to ring. Every field but the source may be unknown on the push fast path. [test] is
+ * its own field, not derived from the source: the alarm-clock retry re-sends a request with source
+ * ALARM_CLOCK, and a test that went that way must still ring as a 5-second test, not a real SOS.
+ */
 data class RingRequest(
     val sosId: String? = null,
     val seq: Long? = null,
@@ -29,9 +33,8 @@ data class RingRequest(
     val pushPriority: String? = null,
     val pushOriginalPriority: String? = null,
     val latencyMs: Long? = null,
-) {
-    val test: Boolean get() = source == RingSource.TEST
-}
+    val test: Boolean = false,
+)
 
 /** The alarm that is ringing right now (one at a time; a second SOS joins it). */
 data class RingState(
@@ -110,12 +113,13 @@ class SosAlarmController @Inject constructor(
     }
 
     /** A 5-second test of the whole ring path on this phone (no receipts, nothing sent). */
-    fun ringTest(): Outcome = ring(RingRequest(partnerName = "your partner", source = RingSource.TEST))
+    fun ringTest(): Outcome = ring(RingRequest(partnerName = "your partner", source = RingSource.TEST, test = true))
 
     /** The service could not go to the foreground itself: retry through an alarm clock, else notify. */
     internal fun fallback(req: RingRequest): Outcome {
         if (req.source != RingSource.ALARM_CLOCK && scheduleAlarmClock(req)) return Outcome.ALARM_CLOCK
-        val shown = sosAlert.showFallback(req.partnerName ?: "your partner", req.message, req.panic, previews = false)
+        // A test says it is a test (no insistent "SOS from your partner" for something nobody sent).
+        val shown = sosAlert.showFallback(req.partnerName ?: "your partner", req.message, req.panic, previews = false, sosId = req.sosId, test = req.test)
         // Only what was really shown counts as rung: with notifications off nothing was, and then the
         // sender must not read "ringing", the server must keep re-pushing, and a later high-priority
         // re-push (which may start the alarm service) must not be skipped as already handled.

@@ -1,8 +1,10 @@
 package com.risaina.app.core.sos
 
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -35,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.risaina.app.MainActivity
 import com.risaina.app.core.designsystem.theme.RisainaTheme
@@ -59,8 +62,25 @@ class SosAlarmActivity : ComponentActivity() {
      */
     private var pendingOpen by mutableStateOf(false)
 
+    /**
+     * Whether the phone is locked, kept up to date: unlocking (a fingerprint) while this screen stays
+     * on top changes no state and fires no lifecycle event, so a value read once would keep the
+     * message hidden behind "Unlock your phone" for the rest of the ring.
+     */
+    private var locked by mutableStateOf(true)
+    private val keyguardChanges = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) { locked = isLocked() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        locked = isLocked()
+        // System broadcasts: still delivered to a receiver that is not exported.
+        ContextCompat.registerReceiver(
+            this, keyguardChanges,
+            IntentFilter().apply { addAction(Intent.ACTION_USER_PRESENT); addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON) },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -77,7 +97,7 @@ class SosAlarmActivity : ComponentActivity() {
                 if (ringing != null) {
                     AlarmScreen(
                         state = ringing,
-                        locked = isLocked(),
+                        locked = locked,
                         onAck = { controller.acknowledge(); finish() },
                         onAckAndOpen = { route ->
                             pendingOpen = true // before the ack, which turns the state null
@@ -90,6 +110,21 @@ class SosAlarmActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        locked = isLocked()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        locked = isLocked()
+    }
+
+    override fun onDestroy() {
+        runCatching { unregisterReceiver(keyguardChanges) }
+        super.onDestroy()
     }
 
     private fun isLocked(): Boolean = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true

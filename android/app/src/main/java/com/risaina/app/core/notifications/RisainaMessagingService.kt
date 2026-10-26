@@ -52,6 +52,13 @@ class RisainaMessagingService : FirebaseMessagingService() {
         when (message.data["type"]) {
             "sos.raised" -> ringSos(message)
             "sos.test" -> sosAlarm.ringTest()
+            // The sender is safe: stop that alarm now, without waiting for a sync that a slow or
+            // unreachable server could hold up for the whole ring. Only this SOS (a newer open one
+            // keeps ringing); the sync still posts "safe now" when it applies the event.
+            "sos.resolved" -> message.data["sosId"]?.takeIf { it.isNotBlank() }?.let { id ->
+                runCatching { sosLocalState.markResolved(id) }
+                sosAlarm.stopFor(id, null)
+            }
         }
         // A sync that began before this moment cannot contain this push's event (see SingleFlight).
         val receivedAt = System.currentTimeMillis()

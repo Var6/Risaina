@@ -404,6 +404,7 @@ class SosAlarmService : Service() {
         private const val X_PRIORITY = "priority"
         private const val X_ORIGINAL_PRIORITY = "originalPriority"
         private const val X_LATENCY = "latency"
+        private const val X_TEST = "test"
 
         fun ringIntent(context: Context, req: RingRequest): Intent = Intent(context, SosAlarmService::class.java)
             .setAction(ACTION_RING)
@@ -416,6 +417,7 @@ class SosAlarmService : Service() {
             .putExtra(X_PRIORITY, req.pushPriority)
             .putExtra(X_ORIGINAL_PRIORITY, req.pushOriginalPriority)
             .putExtra(X_LATENCY, req.latencyMs ?: -1L)
+            .putExtra(X_TEST, req.test)
 
         private fun requestFrom(i: Intent) = RingRequest(
             sosId = i.getStringExtra(X_SOS),
@@ -427,6 +429,7 @@ class SosAlarmService : Service() {
             pushPriority = i.getStringExtra(X_PRIORITY),
             pushOriginalPriority = i.getStringExtra(X_ORIGINAL_PRIORITY),
             latencyMs = i.getLongExtra(X_LATENCY, -1L).takeIf { it >= 0 },
+            test = i.getBooleanExtra(X_TEST, false),
         )
 
         /** For notification actions: delivered to the running service (no foreground start needed). */

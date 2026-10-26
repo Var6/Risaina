@@ -41,6 +41,7 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
         const val NOT_SENT_ID = 9115
         const val RESPOND_ID = 9116
         private const val TAG = "RisainaSos"
+        private const val TEST_FALLBACK_TEXT = "The alarm couldn't start on this phone, so an SOS would only show like this. Tap to check Safety."
     }
 
     private val nm get() = NotificationManagerCompat.from(context)
@@ -120,19 +121,23 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
         post(SAFE_ID, "$partnerName says they're safe now", "The SOS is over.")
     }
 
+    /**
+     * Opens the panic screen (its "not sent" panel with Call / Text, or a fresh hold-to-send), not
+     * sos/latest: that one shows the partner's SOS, the receiver's view, to the person in trouble.
+     */
     fun postNotSent(partnerName: String) {
         if (!canPost()) return
-        post(NOT_SENT_ID, "Your SOS couldn't be sent", "Please call $partnerName directly.")
+        post(NOT_SENT_ID, "Your SOS couldn't be sent", "Please call $partnerName directly.", link = "risaina://app/panic")
     }
 
-    private fun post(id: Int, title: String, text: String, silent: Boolean = false) {
+    private fun post(id: Int, title: String, text: String, silent: Boolean = false, link: String = "risaina://app/sos/latest") {
         val n = NotificationCompat.Builder(context, NotificationChannels.SOS_UPDATES)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(deepLink("risaina://app/sos/latest", id))
+            .setContentIntent(deepLink(link, id))
             .setAutoCancel(true)
             .setSilent(silent)
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
@@ -176,17 +181,26 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
      * Notification-only alarm: insistent, alarm stream, full-screen intent. Needs Risaina's
      * notifications to be on; when they are off this can do nothing, says so in the log instead of
      * failing silently, and returns false (so nothing is reported to the sender as ringing).
+     *
+     * It opens the SOS in the app ([sosId], or the latest from the partner when the push did not
+     * say), where "I'm on it" is: the alarm screen would close at once, because no alarm service
+     * runs in this case. A [test] says so and is not insistent.
      */
-    fun showFallback(partnerName: String, message: String?, panic: Boolean, previews: Boolean): Boolean {
+    fun showFallback(partnerName: String, message: String?, panic: Boolean, previews: Boolean, sosId: String? = null, test: Boolean = false): Boolean {
         if (!canPost()) {
             Log.w(TAG, "SOS fallback not shown: Risaina's notifications are off and the alarm service could not start")
             return false
         }
-        val screen = alarmScreen()
-        val title = SosCopy.title(partnerName, panic, false)
-        val text = if (previews) SosCopy.text(message, panic, false) else SosCopy.lockedText(panic, false)
+        val screen = deepLink(if (test) "risaina://app/safety" else "risaina://app/sos/${sosId ?: "latest"}", ID)
+        val title = SosCopy.title(partnerName, panic, test)
+        // What the test found out: on this phone an SOS would not ring, only show like this.
+        val text = when {
+            test -> TEST_FALLBACK_TEXT
+            previews -> SosCopy.text(message, panic, false)
+            else -> SosCopy.lockedText(panic, false)
+        }
         val public = NotificationCompat.Builder(context, fallbackChannel()).setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title).setContentText(SosCopy.lockedText(panic, false)).build()
+            .setContentTitle(title).setContentText(if (test) TEST_FALLBACK_TEXT else SosCopy.lockedText(panic, false)).build()
         val n = NotificationCompat.Builder(context, fallbackChannel())
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -197,11 +211,11 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
             .setVisibility(if (previews) NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
             .setContentIntent(screen)
-            .setFullScreenIntent(screen, true)
+            .apply { if (!test) setFullScreenIntent(screen, true) }
             .setAutoCancel(true)
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
             .build()
-        n.flags = n.flags or Notification.FLAG_INSISTENT
+        if (!test) n.flags = n.flags or Notification.FLAG_INSISTENT
         return notify(ID, n)
     }
 
