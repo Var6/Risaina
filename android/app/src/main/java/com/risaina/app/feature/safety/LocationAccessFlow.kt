@@ -97,8 +97,9 @@ fun rememberLocationAccessFlow(
         title = { Text("Share your location with $partnerName?") },
         text = {
             Text(
-                "$partnerName will see where you are only while sharing is on, and a notification shows the whole time. " +
-                    "Nothing is kept after you stop. You can choose approximate location if you prefer.",
+                "Risaina sends your location to $partnerName while sharing is on, even when the app is closed or the screen is off. " +
+                    "A notification shows the whole time, and you can stop from it. Nothing is kept after you stop. " +
+                    "You can choose approximate location if you prefer.",
             )
         },
         confirmButton = {

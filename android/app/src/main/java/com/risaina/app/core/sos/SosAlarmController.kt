@@ -131,8 +131,9 @@ class SosAlarmController @Inject constructor(
     }
 
     /**
-     * AlarmManager.setAlarmClock may start a foreground service from the background (it needs the
-     * exact-alarm permission, granted at install through USE_EXACT_ALARM on Android 13+).
+     * AlarmManager.setAlarmClock may start a foreground service from the background. It needs the
+     * exact-alarm permission: SCHEDULE_EXACT_ALARM, which on Android 14+ the person grants in "Alarms &
+     * reminders" (the SOS readiness card asks for it).
      */
     private fun scheduleAlarmClock(req: RingRequest): Boolean = try {
         val am = context.getSystemService(AlarmManager::class.java)

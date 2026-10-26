@@ -1,6 +1,5 @@
 package com.risaina.app.core.notifications
 
-import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
@@ -15,8 +14,8 @@ import android.provider.Settings
  * open the right screen. Screen names differ between OS versions and may be missing or not exported,
  * so each phone gets a list of candidates tried in order, ending at App info, then Settings.
  *
- * REQUEST_IGNORE_BATTERY_OPTIMIZATIONS is fine for this sideloaded app. Google Play restricts it, so
- * use ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS instead if Risaina is ever listed there.
+ * Google Play does not let a messaging app ask for the battery exemption directly
+ * (REQUEST_IGNORE_BATTERY_OPTIMIZATIONS), so the battery fix opens the list of apps instead.
  */
 object OemBackgroundSettings {
     data class Screen(val pkg: String, val cls: String, val extras: Map<String, String> = emptyMap())
@@ -88,13 +87,11 @@ object OemBackgroundSettings {
     }
 
     /**
-     * Asks Android to stop optimising Risaina's battery use (a system dialog with Allow / Deny). Falls
-     * back to the list of optimised apps, then App info.
+     * Opens Android's list of battery-optimised apps, where the person picks Risaina and chooses
+     * "Don't optimise" (or "Unrestricted"). Falls back to App info, which has the same switch.
      */
-    @SuppressLint("BatteryLife") // Sideloaded app for two people; see the class comment.
     fun requestBatteryExemption(context: Context): Boolean =
-        tryStart(context, Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))) ||
-            tryStart(context, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) ||
+        tryStart(context, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) ||
             openAppInfo(context)
 
     fun openNotificationSettings(context: Context): Boolean =

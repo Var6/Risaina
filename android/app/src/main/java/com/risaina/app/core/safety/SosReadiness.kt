@@ -1,6 +1,5 @@
 package com.risaina.app.core.safety
 
-import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.AlarmManager
 import android.app.NotificationManager
@@ -83,7 +82,7 @@ object SosReadiness {
             if (s.ignoringBatteryOptimizations) ReadinessCheck("battery", CheckStatus.OK, "Battery use is unrestricted")
             else ReadinessCheck(
                 "battery", CheckStatus.ACTION, "Battery saving can delay an SOS",
-                "Let Risaina run without battery limits so an SOS reaches you straight away.", ReadinessFix.BATTERY, "Allow",
+                "Let Risaina run without battery limits so an SOS reaches you straight away. In the list, pick Risaina and choose Don't optimise.", ReadinessFix.BATTERY, "Open",
             ),
         )
         if (s.backgroundRestricted) add(
@@ -112,9 +111,10 @@ object SosReadiness {
                 "Turn on \"Ring SOS at full volume\" below, or raise the alarm volume.",
             ),
         )
+        // Off by default on Android 14+ for an app installed from Google Play, so it is a fix, not a tip.
         if (!s.exactAlarms && s.sdk >= 31) add(
             ReadinessCheck(
-                "exact_alarms", CheckStatus.INFO, "The backup start is off",
+                "exact_alarms", CheckStatus.ACTION, "The backup start is off",
                 "If Android blocks the alarm from starting, Risaina tries again through an alarm clock. Allow alarms and reminders.",
                 ReadinessFix.EXACT_ALARMS, "Allow",
             ),
@@ -170,7 +170,6 @@ class SosReadinessProbe @Inject constructor(
     }
 
     /** The system screen for a fix, falling back to App info where a screen does not exist. */
-    @SuppressLint("BatteryLife") // a sideloaded safety app: the exemption is what lets an SOS ring in Doze
     fun intentFor(fix: ReadinessFix): Intent {
         val pkg = context.packageName
         val packageUri = Uri.parse("package:$pkg")
@@ -180,7 +179,8 @@ class SosReadinessProbe @Inject constructor(
                 .putExtra(Settings.EXTRA_APP_PACKAGE, pkg).putExtra(Settings.EXTRA_CHANNEL_ID, NotificationChannels.SOS_ALARM)
             ReadinessFix.FULL_SCREEN -> if (Build.VERSION.SDK_INT >= 34) Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, packageUri) else appInfo()
             ReadinessFix.DND_ACCESS -> Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
-            ReadinessFix.BATTERY -> Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri)
+            // Google Play does not allow asking for the exemption directly: the list of apps instead.
+            ReadinessFix.BATTERY -> Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
             ReadinessFix.EXACT_ALARMS -> if (Build.VERSION.SDK_INT >= 31) Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, packageUri) else appInfo()
             ReadinessFix.APP_INFO -> appInfo()
         }

@@ -29,6 +29,13 @@ class SosReadinessTest {
         assertEquals("4 things to fix", SosReadiness.summary(checks.values.toList()))
     }
 
+    @Test fun `alarms and reminders off is a fix on Android 12 and later`() {
+        val c = SosReadiness.evaluate(ready.copy(exactAlarms = false)).single { it.key == "exact_alarms" }
+        assertEquals(CheckStatus.ACTION, c.status)
+        assertEquals(ReadinessFix.EXACT_ALARMS, c.fix)
+        assertFalse(SosReadiness.evaluate(ready.copy(sdk = 30, exactAlarms = false)).any { it.key == "exact_alarms" })
+    }
+
     @Test fun `a blocked SOS channel only matters while notifications are on`() {
         assertTrue("sos_channel" in keys(ready.copy(sosChannelBlocked = true), CheckStatus.ACTION))
         assertFalse("sos_channel" in keys(ready.copy(sosChannelBlocked = true, notificationsEnabled = false), CheckStatus.ACTION))

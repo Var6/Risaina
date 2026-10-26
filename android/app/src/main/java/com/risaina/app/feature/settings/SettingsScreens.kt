@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -124,6 +125,7 @@ data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, v
 fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
+    val uriHandler = LocalUriHandler.current
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
     var confirmUnlink by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
@@ -183,12 +185,13 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         SectionHeader("Relationship")
         Row(LinkIcon, "Dates & milestones", "Start date, next visit, anniversaries", nav.timeline)
         if (s.pairing is PairingState.Paired) {
-            Row(LinkIcon, "Unlink", "Ends the pairing for both of you", { confirmUnlink = true })
+            Row(LinkIcon, "Unlink", "Ends the pairing and all contact between you", { confirmUnlink = true })
         }
         Spacer(Modifier.height(8.dp))
         SectionHeader("Account")
         if (s.profile?.emailVerified == false) Row(com.risaina.app.feature.common.MailIcon, "Confirm your email", "Needed to recover your account", nav.verifyEmail)
         Row(InfoIcon, "About Risaina", "Version ${BuildConfig.VERSION_NAME}", nav.about)
+        Row(LockIcon, "Privacy policy", "Opens in your browser", { runCatching { uriHandler.openUri(LegalLinks.privacyPolicy) } })
         Row(LogoutIcon, "Sign out", null, { confirmSignOut = true })
     }
 
@@ -280,6 +283,7 @@ private fun TimeDialog(initial: LocalTime, onDismiss: () -> Unit, onPick: (Local
 @Composable
 fun PrivacySettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
     val p = s.prefs
     var confirmDelete by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
@@ -301,11 +305,13 @@ fun PrivacySettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewMo
         SectionHeader("Your data")
         Spacer(Modifier.height(8.dp))
         Text(
-            "Messages, pings and media are stored on the Risaina server and in private storage on this phone. Transport is encrypted (TLS); content is not end-to-end encrypted. Nothing is shared with third parties and there are no analytics.",
+            "Messages, pings and media are stored on the Risaina server and in private storage on this phone. Transport is encrypted (TLS); content is not end-to-end encrypted. Nothing is sold or used for ads, and there are no analytics.",
             style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
         )
         Spacer(Modifier.height(12.dp))
         OutlineButton("Export my data (JSON)", onClick = vm::exportData, enabled = !s.busy, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+        OutlineButton("Privacy policy", onClick = { runCatching { uriHandler.openUri(LegalLinks.privacyPolicy) } }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(20.dp))
         SectionHeader("Danger zone")
         Spacer(Modifier.height(8.dp))
@@ -379,8 +385,21 @@ fun AboutScreen(onBack: () -> Unit) {
         Text("Trivia duel questions come from Open Trivia Database, under CC BY-SA 4.0. Our server fetches them, so the app itself never contacts it. Question and answer text is unchanged; category names are shortened (\"Entertainment: Film\" shows as \"Film\").", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
         com.risaina.app.feature.messages.games.AttributionLine(null)
         Spacer(Modifier.height(16.dp))
+        // Open-Meteo's free API is CC BY 4.0, which asks for credit and a link to the licence.
+        SectionHeader("Weather")
+        LinkedText(
+            "Weather data by Open-Meteo.com, under CC BY 4.0. The app sends Open-Meteo only the rounded position of the city your partner chose.",
+            listOf("Open-Meteo.com" to LegalLinks.OPEN_METEO, "CC BY 4.0" to LegalLinks.CC_BY_4),
+            Modifier.padding(top = 8.dp),
+        )
+        Spacer(Modifier.height(16.dp))
         SectionHeader("Privacy")
-        Text("No analytics, no ads, no third-party SDKs beyond Firebase Cloud Messaging for push delivery. The server only ever receives what you choose to send.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
+        Text("No analytics and no ads. Firebase Cloud Messaging delivers notifications. The server only ever receives what you choose to send.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
+        LinkedText(
+            "Read the privacy policy, or delete your account on the web. To report a problem or abuse, contact us.",
+            listOf("privacy policy" to LegalLinks.privacyPolicy, "delete your account on the web" to LegalLinks.deleteAccount, "contact us" to LegalLinks.contact),
+            Modifier.padding(top = 8.dp),
+        )
     }
 }
 

@@ -1,6 +1,5 @@
 package com.risaina.app.core.sos
 
-import android.app.AlarmManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -130,38 +129,24 @@ class SosAlarmService : Service() {
     }
 
     /**
-     * systemExempted is the type meant for alarms that keep ringing in the background, allowed while
-     * the app holds an exact-alarm permission (USE_EXACT_ALARM is granted at install on Android 13+).
-     * Without it (for example the user revoked SCHEDULE_EXACT_ALARM on Android 12), specialUse.
+     * specialUse is the only type: Google Play reserves systemExempted for system apps and alarm-clock
+     * apps. A start from the high-priority FCM message is allowed for any type.
      */
     private fun enterForeground(state: RingState): Boolean {
         val notification = sosAlert.alarmNotification(state)
-        if (Build.VERSION.SDK_INT < 34) {
-            return try {
-                startForeground(SosAlert.ID, notification); foreground = true; true
-            } catch (e: Exception) {
-                Log.w(TAG, "startForeground refused: ${e.javaClass.simpleName}"); false
+        return try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                ServiceCompat.startForeground(this, SosAlert.ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(SosAlert.ID, notification)
             }
+            foreground = true
+            true
+        } catch (e: Exception) {
+            // ForegroundServiceStartNotAllowedException: the background-start exemption lapsed.
+            Log.w(TAG, "startForeground refused: ${e.javaClass.simpleName}")
+            false
         }
-        val exempted = runCatching { getSystemService(AlarmManager::class.java).canScheduleExactAlarms() }.getOrDefault(false)
-        val types = if (exempted) {
-            listOf(ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            listOf(ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        }
-        for (type in types) {
-            try {
-                ServiceCompat.startForeground(this, SosAlert.ID, notification, type)
-                foreground = true
-                return true
-            } catch (e: Exception) {
-                // ForegroundServiceStartNotAllowedException: the exemption lapsed (no point in retrying);
-                // SecurityException: this type is not allowed, so try the next one.
-                Log.w(TAG, "startForeground($type) refused: ${e.javaClass.simpleName}")
-                if (e !is SecurityException) return false
-            }
-        }
-        return false
     }
 
     private fun startRinging(initial: RingState, req: RingRequest) {
