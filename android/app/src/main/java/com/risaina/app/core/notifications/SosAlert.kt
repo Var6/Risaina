@@ -34,6 +34,7 @@ import javax.inject.Singleton
 @Singleton
 class SosAlert @Inject constructor(@ApplicationContext private val context: Context) {
     companion object {
+        const val SOS_GROUP = "risaina_sos_alarm"
         const val ID = 9111
         const val DND_RING_ID = 9112
         const val MISSED_ID = 9113
@@ -79,6 +80,10 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(screen)
             .setFullScreenIntent(screen, true)
+            // Its own group: without one, Android 15+ bundles it with Risaina's other notifications
+            // (an auto-group "Aggregate_AlertingSection"), and on the test emulator the full-screen
+            // alarm was then not launched with the screen off.
+            .setGroup(SOS_GROUP)
             .addAction(0, if (state.test) "Stop test" else "I'm on it", SosAlarmService.actionPending(context, SosAlarmService.ACTION_ACK))
             // Android 14+ lets people swipe this away: that silences the sound but does not acknowledge.
             .setDeleteIntent(SosAlarmService.actionPending(context, SosAlarmService.ACTION_SILENCE))

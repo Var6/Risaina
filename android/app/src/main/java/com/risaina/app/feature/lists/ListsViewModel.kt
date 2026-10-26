@@ -87,7 +87,12 @@ class ListsViewModel @Inject constructor(
     private var debounce: Job? = null
     private val saving = Mutex()
     private val chain = SaveChain()
-    private val lastSent = HashMap<String, ListEditorSync.Content>()
+    /**
+     * Every save sent and not yet seen coming back, oldest first. Only the LAST one used to be kept:
+     * on a slow server the next save replaced it before the previous echo arrived, so that echo looked
+     * like the partner's change and refilled the editor with older text ("Buy milk" became "Buy").
+     */
+    private val sentNotEchoed = HashMap<String, ArrayDeque<ListEditorSync.Content>>()
 
     /**
      * Saves after a short pause in typing. A keystroke only cancels the wait, never a request already
@@ -110,7 +115,10 @@ class ListsViewModel @Inject constructor(
             val d = pending ?: return
             pending = null
             val expected = chain.expected(d.list.id, d.list.version)
-            lastSent[d.list.id] = ListEditorSync.sent(d.list, d.title, d.body, d.items, d.pinned)
+            sentNotEchoed.getOrPut(d.list.id) { ArrayDeque() }.apply {
+                addLast(ListEditorSync.sent(d.list, d.title, d.body, d.items, d.pinned))
+                while (size > MAX_UNECHOED) removeFirst()
+            }
             when (val r = repo.save(d.list.copy(version = expected), d.title.ifBlank { d.list.title }, d.body, d.items.filter { it.text.isNotBlank() }, d.pinned)) {
                 is AppResult.Success -> chain.record(d.list.id, expected, r.value.version)
                 is AppResult.Failure -> effects.trySend(r.error.message ?: "Couldn't save")
@@ -122,11 +130,19 @@ class ListsViewModel @Inject constructor(
      * Whether [list] is this phone's last save coming back (the editor already has it, and maybe more
      * typed since). Asked once per new version; anything else is someone else's change.
      */
-    fun takeOwnEcho(list: SharedList): Boolean = lastSent.remove(list.id) == ListEditorSync.contentOf(list)
+    fun takeOwnEcho(list: SharedList): Boolean {
+        val queue = sentNotEchoed[list.id] ?: return false
+        val i = queue.indexOf(ListEditorSync.contentOf(list))
+        if (i < 0) return false // someone else's change: leave the saves still in flight alone
+        repeat(i + 1) { queue.removeFirst() } // this echo, and any older ones it supersedes
+        return true
+    }
 
     fun delete(id: String, onDone: () -> Unit) {
         viewModelScope.launch { when (val r = repo.delete(id)) { is AppResult.Success -> onDone(); is AppResult.Failure -> effects.trySend(r.error.message ?: "Couldn't delete") } }
     }
 
     fun splitPasted(text: String): List<String> = PasteParser.split(text)
+
+    private companion object { const val MAX_UNECHOED = 8 }
 }

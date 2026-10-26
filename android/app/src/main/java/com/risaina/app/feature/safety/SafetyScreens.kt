@@ -180,8 +180,14 @@ fun PanicScreen(onClose: () -> Unit, vm: SafetyViewModel = hiltViewModel()) {
         Spacer(Modifier.height(8.dp))
         val untouched = PanicPanelMode.of(s.attempt, s.sos, Instant.now()) == PanicPanelMode.Form(sending = false)
         // Closing is reading the result: clear it, so it never stands in for the hold button the next
-        // time this screen opens (an alert still being sent is left alone by resetAttempt).
-        GhostButton(if (untouched) "Cancel" else "Close", onClick = { vm.resetAttempt(); onClose() })
+        // time this screen opens (an alert still being sent is left alone by resetAttempt). An SOS that
+        // is still being retried is kept: hiding it would invite a second hold, and the partner would
+        // be rung twice once the connection is back.
+        GhostButton(if (untouched) "Cancel" else "Close", onClick = {
+            val a = s.attempt
+            if (!(a is com.risaina.app.core.safety.SosSender.Attempt.NotSent && a.retrying)) vm.resetAttempt()
+            onClose()
+        })
     }
 }
 

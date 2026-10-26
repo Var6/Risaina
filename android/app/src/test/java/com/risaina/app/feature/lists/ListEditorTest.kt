@@ -128,6 +128,30 @@ class ListEditorTest {
         assertEquals(listOf(1 to "Sh", 2 to "Shop"), sent)
     }
 
+    @Test fun `on a slow server both echoes are recognised as own saves, in order`() = runTest(dispatcher) {
+        val repo = mockk<ListsRepository>()
+        val vm = viewModel(repo)
+        val firstReply = CompletableDeferred<Unit>()
+        var calls = 0
+        coEvery { repo.save(any(), any(), any(), any(), any()) } coAnswers {
+            calls++
+            if (calls == 1) firstReply.await()
+            val l = firstArg<SharedList>()
+            AppResult.Success(l.copy(version = l.version + 1))
+        }
+        val v1 = list(1)
+        vm.schedule(v1, "Sh", "", emptyList(), false)
+        advanceTimeBy(701); runCurrent()
+        vm.schedule(v1, "Shop", "", emptyList(), false)
+        advanceTimeBy(701); runCurrent()
+        firstReply.complete(Unit)
+        runCurrent()
+        // Save 2 went out before save 1's echo reached the editor: that echo is still ours.
+        assertTrue(vm.takeOwnEcho(list(2, title = "Sh")))
+        assertTrue(vm.takeOwnEcho(list(3, title = "Shop")))
+        assertFalse(vm.takeOwnEcho(list(4, title = "Shopping", by = "her")))
+    }
+
     @Test fun `own echo is recognised once, a partner's change never`() = runTest(dispatcher) {
         val repo = mockk<ListsRepository>()
         val vm = viewModel(repo)
