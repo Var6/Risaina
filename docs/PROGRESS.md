@@ -177,3 +177,41 @@ yet**, and the emulator was not used (the main session needed it).
   notifications denied; from a killed app in Doze; the full-screen screen over the lock screen; volume
   restore; the Realme/ColorOS auto-launch behaviour; location updates with the screen off for a long
   time; the launcher shortcut and pinned shortcut.
+
+### Safety review fixes (2026-10-26)
+- ✅ **Panic merged into an existing share**: the server answers a start with the session it already
+  had; the phone now takes that id for fixes and the stop (before, the first fix got 409 and sharing
+  stopped silently while the partner saw a frozen "in trouble" share).
+- ✅ **App open no longer ends a share whose start is still retrying** (offline, server waking up);
+  only a session the server had confirmed and no longer has is stopped. A panic whose start never got
+  through resumes when Risaina opens.
+- ✅ **A panic start never waits behind the network**: the app-open check runs its GET outside the
+  lock and drops a stale answer. Stops are written down before they are sent, and every new start
+  sends the pending ones first.
+- ✅ Re-registering (retry, Resume, app-open restart) sends the time left, so the end never moves
+  later. Every retry of the start waits (60 s after a 401 in panic).
+- ✅ **A retried SOS whose alarm event never went out is raised** (failed emit, restart between insert
+  and event); a retry that finds another request emitting it gets a retryable 503.
+- ✅ A stop that races its own start on the server still ends it; a refresh-token reuse revocation
+  ends live location, as sign-out does.
+- ✅ **An SOS from this APK still goes out on an older server** (as a plain SOS).
+- ✅ A resolved older SOS no longer silences a newer one ringing with it; alarm changes run on the
+  main thread; the notification-only fallback counts as rung only when it was shown; the alarm screen
+  waits for the unlock before opening the location screen; the alarm volume is restored at every
+  process start; the panic screen shows the alert's status once the background retry sends it.
+- ✅ Tests added: LiveLocationControllerTest, SafetyEventsTest (cursor-0 replay), SosLocalStateTest,
+  SosRepositoryTest, ring-removal and requestMinutes tests; backend tests for the emit retry, the
+  stop/start race and refresh reuse. Docs: COUNCIL_DECISIONS D-12 (D-10 was taken), PRIVACY_POLICY_DRAFT,
+  SECURITY, KNOWN_LIMITATIONS, TESTING.
+- ⚠️ **Release order**: backend first. The APK sends `durationMinutes` under 15 on a Resume, which the
+  previous version of this branch's server refused.
+- ⚠️ **Merging**: `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` is now declared exactly as the delivery stream
+  declares it, so the manifests merge into one element. Dtos.kt, RisainaMessagingService.kt, API.md,
+  PROGRESS.md (and errors.ts against games) conflict as before: both sides' additions are kept.
+- ⚠️ Still open: `sos.resolved`/`location.*` push priorities and bypass need the delivery stream's
+  outbox policy (until then a recipient with notifications off or in quiet hours rings until the
+  5-minute timeout after "I'm safe"); the first outbox push of `sos.raised` has no `sosId`/`at`
+  (outbox.ts is delivery's); no network-free fast clear for `sos.resolved` in the push handler; the
+  refresh-reuse grace window is delivery's; Home shows a banner instead of the design's "📍 Live" chip;
+  the partner gets no "is sharing" notice for a panic share whose SOS never got through.
+

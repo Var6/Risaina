@@ -356,7 +356,7 @@ export class LocationService {
     });
   }
 
-  /** Fire-and-forget frame to the viewer only (D-10): a lost frame is replaced by the next fix. */
+  /** Fire-and-forget frame to the viewer only (D-12): a lost frame is replaced by the next fix. */
   private frame(couple: CoupleDoc, doc: LiveLocationDoc, dto: LiveLocationDto): void {
     this.ctx.hub.sendToUser(doc.viewerId.toHexString(), couple._id.toHexString(), {
       type: 'location',

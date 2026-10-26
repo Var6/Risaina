@@ -198,6 +198,27 @@ downloads. Both files are < 1 MB each.
 
 ---
 
+## D-12 Live location and SOS delivery (safety) — Decided
+
+Live location is not stored in the event log. Each sharer has at most one live document holding only
+the latest fix (overwritten, never appended). Fixes reach the partner as WebSocket frames that are
+never stored or replayed: fire-and-forget, a lost frame is replaced by the next fix or by the GET the
+app makes when it reconnects. Only start and stop are durable events, and neither they nor any push
+carry coordinates. Stopping, expiry, unlink, sign-out, a refresh-token reuse revocation and account
+deletion remove the coordinates at once; nothing is kept as history.
+
+The phone makes the session id, so a stop can name a session whose start is still in flight (the
+server leaves a short tombstone that refuses a late start). The server keeps one live session per
+person: a start while one is live extends it and answers with that session, whose id the phone then
+uses for fixes and the stop.
+
+An SOS rings as an alarm (a foreground service on the alarm stream, alarm volume raised and put back)
+until the partner taps "I'm on it" or 5 minutes pass; opening the screen does not acknowledge. A retry
+with the same idempotency key never rings twice, and raises an SOS whose first request died before its
+event was written.
+
+---
+
 ## Open items
 
 | ID | Item | Owner | Plan |

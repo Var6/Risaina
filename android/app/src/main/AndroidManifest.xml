@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Delivery health: lets the person exempt Risaina from battery optimisation in one tap. Fine for
+         this sideloaded app; Google Play restricts it (see OemBackgroundSettings). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Requested only when the user starts a voice recording (see VoiceRecorder). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Lets the user allow SOS alerts through Do Not Disturb (they grant it in system settings). -->
@@ -26,10 +29,6 @@
     <uses-permission
         android:name="android.permission.SCHEDULE_EXACT_ALARM"
         android:maxSdkVersion="32" />
-    <!-- The SOS readiness card asks the user to let Risaina run unrestricted (system dialog). -->
-    <uses-permission
-        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
-        tools:ignore="BatteryLife" />
     <!-- Safety: live location while the user shares it (started from a visible screen only, so no
          ACCESS_BACKGROUND_LOCATION is needed). -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

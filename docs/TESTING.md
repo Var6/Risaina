@@ -38,3 +38,22 @@ outbox, devices-account, memories-milestones, health-openapi.
 7. Memories: add, pin → home card and photo widget update.
 8. Timeline: start date, next visit → countdown widget.
 9. Settings: quiet hours → ping during window arrives silently; previews off → lock screen shows "New activity".
+
+## Safety (SOS alarm, live location, panic)
+- Android unit tests: `SosRingPolicyTest` (when an SOS may ring; one SOS leaving a merged ring),
+  `SosLocalStateTest`, `SafetyEventsTest` (a cursor-0 replay rings nothing and posts no "is safe now"
+  or "is sharing"; fresh events still do), `SosSenderStatusTest`, `SosReadinessTest`,
+  `SosRepositoryTest` (an older server still gets a plain SOS), `LiveLocationRulesTest`,
+  `LiveLocationControllerTest` (fake server, location client and Android effects: the server's
+  session id after a merge, reconcile with unconfirmed and confirmed sessions, a panic start never
+  waiting behind a GET, stops sent before the next start), `SafetyDtoTest`, `HoldTrackerTest`
+  (releasing before 2 s never fires).
+- Backend suites: `sos-safety` (delivered receipt, "I'm safe", test push, re-push worker, retries
+  with an idempotency key including an SOS whose event failed), `location` (start, extend, fixes,
+  stop and its tombstone, the stop/start race, liveness, limits, privacy, sign-out, refresh-token
+  reuse, unlink, account deletion).
+- Needs a real phone (not covered by any automated test): the SOS ring from a push on Android 14-16
+  with the screen off, in silent mode, with notifications off and in Do Not Disturb; the full-screen
+  alarm over the lock screen and "I'm on it · see where they are" through the unlock; the alarm volume
+  put back after a ring and after a crash mid-ring; live location with the screen off for 30 minutes on
+  the realme; a panic held from the launcher shortcut on a cold start.
