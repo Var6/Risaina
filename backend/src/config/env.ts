@@ -94,6 +94,10 @@ const rawSchema = z
     WS_PING_INTERVAL_MS: intFromEnv(30_000, 1000),
     WS_IDLE_TIMEOUT_MS: intFromEnv(90_000, 1000),
     WS_MAX_PENDING_SENDS: intFromEnv(500, 1),
+    // Games stream: where trivia questions come from. 'builtin' never touches the network (tests).
+    TRIVIA_PROVIDER: z.enum(['opentdb', 'builtin']).default('opentdb'),
+    TRIVIA_TIMEOUT_MS: intFromEnv(3500, 100),
+    TRIVIA_MIN_INTERVAL_MS: intFromEnv(5500, 0),
   })
   .superRefine((v, ctx) => {
     const driver = v.STORAGE_DRIVER ?? (v.NODE_ENV === 'production' ? 'r2' : 'local');
@@ -217,6 +221,8 @@ export interface Env {
   outbox: { pollMs: number; leaseMs: number; maxAttempts: number; backoffBaseMs: number };
   cleanup: { intervalMs: number };
   ws: { authTimeoutMs: number; pingIntervalMs: number; idleTimeoutMs: number; maxPendingSends: number };
+  /** Trivia duel questions: Open Trivia DB (server-side only) with a built-in fallback set. */
+  trivia: { provider: 'opentdb' | 'builtin'; timeoutMs: number; minIntervalMs: number };
 }
 
 export class EnvError extends Error {
@@ -357,6 +363,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       pingIntervalMs: v.WS_PING_INTERVAL_MS,
       idleTimeoutMs: v.WS_IDLE_TIMEOUT_MS,
       maxPendingSends: v.WS_MAX_PENDING_SENDS,
+    },
+    trivia: {
+      provider: v.TRIVIA_PROVIDER,
+      timeoutMs: v.TRIVIA_TIMEOUT_MS,
+      minIntervalMs: v.TRIVIA_MIN_INTERVAL_MS,
     },
   };
 }

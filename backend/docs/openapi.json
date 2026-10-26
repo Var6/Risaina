@@ -1340,6 +1340,550 @@
           "confirmedAt"
         ]
       },
+      "TicTacToeInput": {
+        "type": "object",
+        "properties": {
+          "board": {
+            "minItems": 9,
+            "maxItems": 9,
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "x",
+                    "o"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "9 cells, index = row * 3 + col"
+          },
+          "xId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10",
+            "description": "Plays X this round and moves first (the invitee in round 1)"
+          },
+          "turnId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whose turn it is; null once the round is over"
+          },
+          "lastCell": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The winning cells"
+          },
+          "moveCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          },
+          "myMark": {
+            "type": "string",
+            "enum": [
+              "x",
+              "o"
+            ]
+          },
+          "myTurn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "board",
+          "xId",
+          "turnId",
+          "lastCell",
+          "line",
+          "moveCount",
+          "myMark",
+          "myTurn"
+        ]
+      },
+      "TicTacToeEventInput": {
+        "type": "object",
+        "properties": {
+          "board": {
+            "minItems": 9,
+            "maxItems": 9,
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "x",
+                    "o"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "9 cells, index = row * 3 + col"
+          },
+          "xId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10",
+            "description": "Plays X this round and moves first (the invitee in round 1)"
+          },
+          "turnId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whose turn it is; null once the round is over"
+          },
+          "lastCell": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The winning cells"
+          },
+          "moveCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          }
+        },
+        "required": [
+          "board",
+          "xId",
+          "turnId",
+          "lastCell",
+          "line",
+          "moveCount"
+        ]
+      },
+      "QuizItemInput": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "text": {
+            "description": "Trivia question; null for This or That",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "easy",
+                  "medium",
+                  "hard"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "myChoice": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "correct": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia: the right choice, only for items the viewer already answered"
+          },
+          "partnerChoice": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only once both finished"
+          }
+        },
+        "required": [
+          "index",
+          "text",
+          "choices",
+          "category",
+          "difficulty",
+          "myChoice",
+          "correct",
+          "partnerChoice"
+        ]
+      },
+      "QuizInput": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "opentdb",
+              "builtin",
+              "curated"
+            ]
+          },
+          "attribution": {
+            "description": "Credit to show on the card (CC BY-SA 4.0) when source is opentdb",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestedCategoryId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia: the category asked for; null = any (a new round picks a curated one at random). Reuse it for \"Play again\"."
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "easy",
+                  "medium",
+                  "hard"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deck": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuizItemInput"
+            },
+            "description": "Trivia: the answered items plus the current one (all once both finished). This or That: all prompts."
+          },
+          "myAnswered": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "partnerAnswered": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "myFinished": {
+            "type": "boolean"
+          },
+          "partnerFinished": {
+            "type": "boolean"
+          },
+          "myScore": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia only"
+          },
+          "partnerScore": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia, once both finished"
+          },
+          "matches": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This or That, once both finished"
+          }
+        },
+        "required": [
+          "source",
+          "attribution",
+          "category",
+          "requestedCategoryId",
+          "difficulty",
+          "deck",
+          "total",
+          "items",
+          "myAnswered",
+          "partnerAnswered",
+          "myFinished",
+          "partnerFinished",
+          "myScore",
+          "partnerScore",
+          "matches"
+        ]
+      },
+      "QuizEventInput": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "opentdb",
+              "builtin",
+              "curated"
+            ]
+          },
+          "categoryName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deck": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "progress": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "userId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$",
+                  "example": "665f1c2e9b1d4a3f8c2e7a10"
+                },
+                "answered": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "finished": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "userId",
+                "answered",
+                "finished"
+              ]
+            }
+          },
+          "scores": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{24}$",
+                      "example": "665f1c2e9b1d4a3f8c2e7a10"
+                    },
+                    "score": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "score"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia, once both finished"
+          },
+          "matches": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This or That, once both finished"
+          }
+        },
+        "required": [
+          "source",
+          "categoryName",
+          "deck",
+          "total",
+          "progress",
+          "scores",
+          "matches"
+        ]
+      },
       "GameInput": {
         "type": "object",
         "properties": {
@@ -1355,9 +1899,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "rps"
-            ]
+            "description": "Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds."
           },
           "createdBy": {
             "type": "string",
@@ -1427,6 +1969,14 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
+          },
+          "prize": {
+            "type": "string",
+            "enum": [
+              "truth_or_dare",
+              "none"
+            ],
+            "description": "What the winner gets: the blind truth or dare, or 'none' (just for fun)"
           },
           "challenge": {
             "anyOf": [
@@ -1480,6 +2030,28 @@
               }
             ],
             "description": "null until both players moved this round"
+          },
+          "ttt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TicTacToeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tic-tac-toe state; null for other kinds"
+          },
+          "quiz": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuizInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia duel / This or That state; null for other kinds"
           }
         },
         "required": [
@@ -1494,11 +2066,14 @@
           "loserId",
           "completedAt",
           "round",
+          "prize",
           "challenge",
           "answer",
           "myMove",
           "partnerMoved",
-          "partnerMove"
+          "partnerMove",
+          "ttt",
+          "quiz"
         ]
       },
       "GameEventViewInput": {
@@ -1516,9 +2091,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "rps"
-            ]
+            "description": "Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds."
           },
           "createdBy": {
             "type": "string",
@@ -1589,6 +2162,14 @@
             "minimum": 1,
             "maximum": 9007199254740991
           },
+          "prize": {
+            "type": "string",
+            "enum": [
+              "truth_or_dare",
+              "none"
+            ],
+            "description": "What the winner gets: the blind truth or dare, or 'none' (just for fun)"
+          },
           "challenge": {
             "anyOf": [
               {
@@ -1641,6 +2222,27 @@
               }
             ],
             "description": "Both moves of this round once both moved; otherwise null"
+          },
+          "ttt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TicTacToeEventInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quiz": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuizEventInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Progress only: never questions, answers or picks"
           }
         },
         "required": [
@@ -1655,9 +2257,12 @@
           "loserId",
           "completedAt",
           "round",
+          "prize",
           "challenge",
           "movedBy",
-          "moves"
+          "moves",
+          "ttt",
+          "quiz"
         ]
       },
       "EventInput": {
@@ -1733,6 +2338,137 @@
           "actorId",
           "payload",
           "createdAt"
+        ]
+      },
+      "GameCatalogInput": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "emoji": {
+                  "type": "string"
+                },
+                "blurb": {
+                  "type": "string"
+                },
+                "competitive": {
+                  "type": "boolean",
+                  "description": "Has a winner (and so the optional truth or dare)"
+                }
+              },
+              "required": [
+                "kind",
+                "title",
+                "emoji",
+                "blurb",
+                "competitive"
+              ]
+            }
+          },
+          "trivia": {
+            "type": "object",
+            "properties": {
+              "questionCount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "difficulties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "categories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ]
+                }
+              },
+              "attribution": {
+                "type": "string"
+              },
+              "attributionUrl": {
+                "type": "string"
+              },
+              "licenseUrl": {
+                "type": "string",
+                "description": "The CC BY-SA 4.0 licence; link it from the credit too"
+              }
+            },
+            "required": [
+              "questionCount",
+              "difficulties",
+              "categories",
+              "attribution",
+              "attributionUrl",
+              "licenseUrl"
+            ]
+          },
+          "thisOrThat": {
+            "type": "object",
+            "properties": {
+              "promptCount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "decks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "emoji": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "emoji"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "promptCount",
+              "decks"
+            ]
+          }
+        },
+        "required": [
+          "kinds",
+          "trivia",
+          "thisOrThat"
         ]
       },
       "City": {
@@ -3083,6 +3819,558 @@
         ],
         "additionalProperties": false
       },
+      "TicTacToe": {
+        "type": "object",
+        "properties": {
+          "board": {
+            "minItems": 9,
+            "maxItems": 9,
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "x",
+                    "o"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "9 cells, index = row * 3 + col"
+          },
+          "xId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10",
+            "description": "Plays X this round and moves first (the invitee in round 1)"
+          },
+          "turnId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whose turn it is; null once the round is over"
+          },
+          "lastCell": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The winning cells"
+          },
+          "moveCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          },
+          "myMark": {
+            "type": "string",
+            "enum": [
+              "x",
+              "o"
+            ]
+          },
+          "myTurn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "board",
+          "xId",
+          "turnId",
+          "lastCell",
+          "line",
+          "moveCount",
+          "myMark",
+          "myTurn"
+        ],
+        "additionalProperties": false
+      },
+      "TicTacToeEvent": {
+        "type": "object",
+        "properties": {
+          "board": {
+            "minItems": 9,
+            "maxItems": 9,
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "x",
+                    "o"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "9 cells, index = row * 3 + col"
+          },
+          "xId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10",
+            "description": "Plays X this round and moves first (the invitee in round 1)"
+          },
+          "turnId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whose turn it is; null once the round is over"
+          },
+          "lastCell": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The winning cells"
+          },
+          "moveCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          }
+        },
+        "required": [
+          "board",
+          "xId",
+          "turnId",
+          "lastCell",
+          "line",
+          "moveCount"
+        ],
+        "additionalProperties": false
+      },
+      "QuizItem": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "text": {
+            "description": "Trivia question; null for This or That",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "easy",
+                  "medium",
+                  "hard"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "myChoice": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "correct": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia: the right choice, only for items the viewer already answered"
+          },
+          "partnerChoice": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only once both finished"
+          }
+        },
+        "required": [
+          "index",
+          "text",
+          "choices",
+          "category",
+          "difficulty",
+          "myChoice",
+          "correct",
+          "partnerChoice"
+        ],
+        "additionalProperties": false
+      },
+      "Quiz": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "opentdb",
+              "builtin",
+              "curated"
+            ]
+          },
+          "attribution": {
+            "description": "Credit to show on the card (CC BY-SA 4.0) when source is opentdb",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestedCategoryId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia: the category asked for; null = any (a new round picks a curated one at random). Reuse it for \"Play again\"."
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "easy",
+                  "medium",
+                  "hard"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deck": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuizItem"
+            },
+            "description": "Trivia: the answered items plus the current one (all once both finished). This or That: all prompts."
+          },
+          "myAnswered": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "partnerAnswered": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "myFinished": {
+            "type": "boolean"
+          },
+          "partnerFinished": {
+            "type": "boolean"
+          },
+          "myScore": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia only"
+          },
+          "partnerScore": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia, once both finished"
+          },
+          "matches": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This or That, once both finished"
+          }
+        },
+        "required": [
+          "source",
+          "attribution",
+          "category",
+          "requestedCategoryId",
+          "difficulty",
+          "deck",
+          "total",
+          "items",
+          "myAnswered",
+          "partnerAnswered",
+          "myFinished",
+          "partnerFinished",
+          "myScore",
+          "partnerScore",
+          "matches"
+        ],
+        "additionalProperties": false
+      },
+      "QuizEvent": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "opentdb",
+              "builtin",
+              "curated"
+            ]
+          },
+          "categoryName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deck": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "progress": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "userId": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$",
+                  "example": "665f1c2e9b1d4a3f8c2e7a10"
+                },
+                "answered": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "finished": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "userId",
+                "answered",
+                "finished"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "scores": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{24}$",
+                      "example": "665f1c2e9b1d4a3f8c2e7a10"
+                    },
+                    "score": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "score"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia, once both finished"
+          },
+          "matches": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This or That, once both finished"
+          }
+        },
+        "required": [
+          "source",
+          "categoryName",
+          "deck",
+          "total",
+          "progress",
+          "scores",
+          "matches"
+        ],
+        "additionalProperties": false
+      },
       "Game": {
         "type": "object",
         "properties": {
@@ -3098,9 +4386,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "rps"
-            ]
+            "description": "Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds."
           },
           "createdBy": {
             "type": "string",
@@ -3170,6 +4456,14 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
+          },
+          "prize": {
+            "type": "string",
+            "enum": [
+              "truth_or_dare",
+              "none"
+            ],
+            "description": "What the winner gets: the blind truth or dare, or 'none' (just for fun)"
           },
           "challenge": {
             "anyOf": [
@@ -3223,6 +4517,28 @@
               }
             ],
             "description": "null until both players moved this round"
+          },
+          "ttt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TicTacToe"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tic-tac-toe state; null for other kinds"
+          },
+          "quiz": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quiz"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia duel / This or That state; null for other kinds"
           }
         },
         "required": [
@@ -3237,11 +4553,14 @@
           "loserId",
           "completedAt",
           "round",
+          "prize",
           "challenge",
           "answer",
           "myMove",
           "partnerMoved",
-          "partnerMove"
+          "partnerMove",
+          "ttt",
+          "quiz"
         ],
         "additionalProperties": false
       },
@@ -3260,9 +4579,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "rps"
-            ]
+            "description": "Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds."
           },
           "createdBy": {
             "type": "string",
@@ -3332,6 +4649,14 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
+          },
+          "prize": {
+            "type": "string",
+            "enum": [
+              "truth_or_dare",
+              "none"
+            ],
+            "description": "What the winner gets: the blind truth or dare, or 'none' (just for fun)"
           },
           "challenge": {
             "anyOf": [
@@ -3386,6 +4711,27 @@
               }
             ],
             "description": "Both moves of this round once both moved; otherwise null"
+          },
+          "ttt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TicTacToeEvent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quiz": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuizEvent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Progress only: never questions, answers or picks"
           }
         },
         "required": [
@@ -3400,9 +4746,12 @@
           "loserId",
           "completedAt",
           "round",
+          "prize",
           "challenge",
           "movedBy",
-          "moves"
+          "moves",
+          "ttt",
+          "quiz"
         ],
         "additionalProperties": false
       },
@@ -3479,6 +4828,143 @@
           "actorId",
           "payload",
           "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "GameCatalog": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "emoji": {
+                  "type": "string"
+                },
+                "blurb": {
+                  "type": "string"
+                },
+                "competitive": {
+                  "type": "boolean",
+                  "description": "Has a winner (and so the optional truth or dare)"
+                }
+              },
+              "required": [
+                "kind",
+                "title",
+                "emoji",
+                "blurb",
+                "competitive"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "trivia": {
+            "type": "object",
+            "properties": {
+              "questionCount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "difficulties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "categories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "attribution": {
+                "type": "string"
+              },
+              "attributionUrl": {
+                "type": "string"
+              },
+              "licenseUrl": {
+                "type": "string",
+                "description": "The CC BY-SA 4.0 licence; link it from the credit too"
+              }
+            },
+            "required": [
+              "questionCount",
+              "difficulties",
+              "categories",
+              "attribution",
+              "attributionUrl",
+              "licenseUrl"
+            ],
+            "additionalProperties": false
+          },
+          "thisOrThat": {
+            "type": "object",
+            "properties": {
+              "promptCount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "decks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "emoji": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "emoji"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "promptCount",
+              "decks"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kinds",
+          "trivia",
+          "thisOrThat"
         ],
         "additionalProperties": false
       }
@@ -8715,31 +10201,183 @@
         }
       }
     },
-    "/api/v1/games": {
-      "post": {
-        "summary": "Start a rock–paper–scissors game (one open game per couple)",
+    "/api/v1/games/catalog": {
+      "get": {
+        "summary": "The games the picker offers, with their options (trivia categories, decks)",
         "tags": [
           "Games"
         ],
-        "description": "409 game_in_progress with details.game when an open game exists.",
+        "description": "Trivia questions come from Open Trivia Database (CC BY-SA 4.0): show `trivia.attribution`, linking `trivia.attributionUrl` and `trivia.licenseUrl`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games": {
+      "post": {
+        "summary": "Start a game: rps, tictactoe, trivia or this_or_that (one open game per couple)",
+        "tags": [
+          "Games"
+        ],
+        "description": "409 game_in_progress with details.game when an open game exists. Trivia fetches its questions server-side first (up to a few seconds), falling back to a built-in set.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "rps"
-                    ]
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "rps"
+                        ]
+                      },
+                      "prize": {
+                        "type": "string",
+                        "description": "'none' = just for fun, the winner gets no truth or dare. Omit for the default.",
+                        "enum": [
+                          "none"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "tictactoe"
+                        ]
+                      },
+                      "prize": {
+                        "type": "string",
+                        "description": "'none' = just for fun, the winner gets no truth or dare. Omit for the default.",
+                        "enum": [
+                          "none"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "trivia"
+                        ]
+                      },
+                      "prize": {
+                        "type": "string",
+                        "description": "'none' = just for fun, the winner gets no truth or dare. Omit for the default.",
+                        "enum": [
+                          "none"
+                        ]
+                      },
+                      "category": {
+                        "description": "A curated Open Trivia DB category id; omit for a random curated one",
+                        "type": "number",
+                        "enum": [
+                          9,
+                          11,
+                          12,
+                          14,
+                          15,
+                          17,
+                          21,
+                          22,
+                          23,
+                          27
+                        ]
+                      },
+                      "difficulty": {
+                        "description": "Omit for any difficulty",
+                        "type": "string",
+                        "enum": [
+                          "easy",
+                          "medium",
+                          "hard"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "this_or_that"
+                        ]
+                      },
+                      "deck": {
+                        "description": "Prompt deck; omit for 'mix'",
+                        "type": "string",
+                        "enum": [
+                          "mix",
+                          "everyday",
+                          "us",
+                          "travel_food",
+                          "dreams"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "kind"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -8992,6 +10630,7 @@
         "tags": [
           "Games"
         ],
+        "description": "rps only (kept for older apps; /play does the same). Other kinds: 400 \"update Risaina\".",
         "requestBody": {
           "required": true,
           "content": {
@@ -9117,9 +10756,336 @@
         }
       }
     },
+    "/api/v1/games/{id}/play": {
+      "post": {
+        "summary": "Make a move in any kind of game (a tic-tac-toe cell, a trivia answer, This or That picks)",
+        "tags": [
+          "Games"
+        ],
+        "description": "The body kind must match the game (400 otherwise). Then 409 invalid_game_state, 409 not_your_turn, 409 invalid_move (taken cell, or a question skipped), 409 already_moved (a retried answer).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "rps"
+                        ]
+                      },
+                      "move": {
+                        "type": "string",
+                        "enum": [
+                          "rock",
+                          "paper",
+                          "scissors",
+                          "thread"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "move"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "tictactoe"
+                        ]
+                      },
+                      "cell": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 8,
+                        "description": "row * 3 + col"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "cell"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "trivia"
+                        ]
+                      },
+                      "item": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4,
+                        "description": "The question being answered; a retried answer gets 409 already_moved, never the next one"
+                      },
+                      "choice": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "item",
+                      "choice"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "this_or_that"
+                        ]
+                      },
+                      "picks": {
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "description": "All picks at once (0 = first choice), one per prompt, in order"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "picks"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/games/{id}/rematch": {
       "post": {
         "summary": "After a draw: start the next round (either player)",
+        "tags": [
+          "Games"
+        ],
+        "description": "Tic-tac-toe swaps who plays X (and starts); trivia gets five new questions.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "game": {
+                      "$ref": "#/components/schemas/Game"
+                    }
+                  },
+                  "required": [
+                    "game"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/games/{id}/end": {
+      "post": {
+        "summary": "After a draw: call it a draw (either player; completed with no winner)",
         "tags": [
           "Games"
         ],

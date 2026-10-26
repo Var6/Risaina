@@ -18,3 +18,11 @@
 - **Export** is bounded to 1000 items per collection.
 - **Device testing**: no physical device was attached during development; see PROGRESS.md for what
   was verified on the emulator.
+- **Trivia questions** come from Open Trivia Database, a volunteer-run, English-only service that
+  allows one call every 5 seconds per IP (Render's outgoing IPs are shared). The server waits at most
+  3.5 s and otherwise uses a smaller built-in question set ("Offline question set" on the card), so a
+  duel always starts; the built-in set covers fewer categories. Questions are user-contributed and
+  occasionally wrong.
+- **One open game per couple**, of any kind. Starting another first ends the current one for both
+  (the partner gets no notification for that). `GET /games` returns the newest 20, so older game cards
+  drop out of the chat history.

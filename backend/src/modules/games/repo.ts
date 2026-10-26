@@ -1,6 +1,6 @@
-import type { ObjectId } from 'mongodb';
+import type { Filter, ObjectId, UpdateFilter } from 'mongodb';
 import type { Collections } from '../../db/collections.js';
-import type { GameDoc, GameStatus, RpsMove } from '../../db/types.js';
+import type { GameDoc, GameKind, GameStatus, RpsMove } from '../../db/types.js';
 
 /** Writes are conditional on the expected status so concurrent requests cannot skip a state. */
 export class GameRepo {
@@ -45,5 +45,23 @@ export class GameRepo {
     return this.db.games.findOneAndUpdate({ _id: id, status, ...extraFilter }, update, {
       returnDocument: 'after',
     });
+  }
+
+  /**
+   * Conditional write with dotted keys and positional operators (tic-tac-toe cells, quiz picks).
+   * The filter carries every precondition, so a lost race returns null instead of a wrong state.
+   */
+  update(id: ObjectId, filter: Filter<GameDoc>, update: UpdateFilter<GameDoc>): Promise<GameDoc | null> {
+    return this.db.games.findOneAndUpdate({ ...filter, _id: id }, update, { returnDocument: 'after' });
+  }
+
+  /** Item ids (questions or prompts) from the couple's newest games of `kind`, to avoid repeats. */
+  async recentItemIds(coupleId: ObjectId, kind: GameKind, games: number): Promise<Set<string>> {
+    const docs = await this.db.games
+      .find({ coupleId, kind }, { projection: { 'quiz.items.id': 1 } })
+      .sort({ createdAt: -1 })
+      .limit(games)
+      .toArray();
+    return new Set(docs.flatMap((d) => d.quiz?.items.map((i) => i.id) ?? []));
   }
 }

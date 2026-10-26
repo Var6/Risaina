@@ -53,6 +53,7 @@ import type { Mailer } from './services/mailer/types.js';
 import type { PushService } from './services/push/types.js';
 import { LocalStorageDriver, registerLocalStorageRoutes } from './services/storage/index.js';
 import type { StorageService } from './services/storage/types.js';
+import { createTriviaSource, type TriviaSource } from './services/trivia/index.js';
 
 export const API_PREFIX = '/api/v1';
 
@@ -67,6 +68,8 @@ export interface BuildAppOptions {
    * from env (remote Google JWKS) when GOOGLE_CLIENT_IDS is set, else Google sign-in is disabled.
    */
   google?: GoogleTokenVerifier | null;
+  /** Trivia question source override (tests). Omitted: built from env (TRIVIA_PROVIDER). */
+  trivia?: TriviaSource;
   now?: Clock;
   logger?: Logger;
   version?: string;
@@ -130,6 +133,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
       now,
     ),
     background: new BackgroundTasks(logger),
+    trivia: opts.trivia ?? createTriviaSource(env, logger, now),
     now,
     logger,
     version: opts.version ?? readPackageVersion(),

@@ -32,6 +32,7 @@ class RisainaNotifier @Inject constructor(
     private val preferencesStore: PreferencesStore,
     private val coupleDao: CoupleDao,
     private val time: TimeProvider,
+    private val gameRepository: com.risaina.app.core.data.GameRepository,
 ) {
     private fun canPost(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED &&
@@ -103,22 +104,22 @@ class RisainaNotifier @Inject constructor(
             Incoming.WidgetChanged -> Unit
             is Incoming.Sos -> Unit // SosAlert already rang
             is Incoming.Game -> {
-                val body = when (item.action) {
-                    "created" -> "challenged you to Stone Paper Scissors Thread ✊✋✌️🧵"
-                    "moved" -> "made their move. Your turn!"
-                    "revealed", "draw" -> "The result is in. Open the chat to see"
-                    "challenged" -> "sealed a truth and a dare for you 😈 Pick one"
-                    "chosen" -> "made their pick. Now it's on them"
-                    "done" -> "says it's done. Confirm it?"
-                    "confirmed" -> "confirmed it ✓ You're off the hook"
-                    "rejected" -> "says not quite. Try again 😄"
-                    "rematch" -> "wants a rematch"
-                    else -> null
-                } ?: return
+                // Games stream. The game copy may lag behind (it is refreshed separately); it is only
+                // used to drop a "your turn" text for a game that has closed since.
+                val current = gameRepository.games.value.firstOrNull { it.id == item.id }
+                val body = GameNotificationText.body(item.kind, item.action, item.topic)
+                if (body == null || GameNotificationText.isStale(item.action, current?.status)) {
+                    // A cancelled or called-off game must not leave "Your turn" in the shade.
+                    if (item.action in GameNotificationText.CLEARS || current?.status == "cancelled") {
+                        NotificationManagerCompat.from(context).cancel(GAME_NOTIFICATION_ID)
+                    }
+                    return
+                }
                 post(
                     id = GAME_NOTIFICATION_ID, channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
                     title = partner, body = if (prefs.previewInNotifications) "${partner.substringBefore(" ")} $body" else "New activity",
                     deepLink = "risaina://app/messages", category = NotificationCompat.CATEGORY_MESSAGE, priority = NotificationCompat.PRIORITY_DEFAULT,
+                    onlyAlertOnce = GameNotificationText.alertOnce(item.action),
                 )
             }
             Incoming.Unlinked -> post(

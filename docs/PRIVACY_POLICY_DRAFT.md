@@ -15,6 +15,10 @@ not end-to-end encrypted; the operator of the server can technically access it.
 parties. Firebase Cloud Messaging is used to wake the app; the push payload contains identifiers
 only, never content.
 
+**Trivia questions.** For a trivia duel the server (never your phone) asks Open Trivia Database
+(opentdb.com) for questions, sending only a category and a difficulty. No data about you or your
+partner is sent.
+
 **Notifications and widgets.** You control whether previews appear in notifications and what
 widgets may show. Quiet hours stop alerts during the hours you choose.
 

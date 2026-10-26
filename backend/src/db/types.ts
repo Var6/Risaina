@@ -378,8 +378,14 @@ export interface EventDoc {
 
 // --- Games (rock–paper–scissors with truth or dare) ---------------------------------------
 
-export const GAME_KINDS = ['rps'] as const;
+export const GAME_KINDS = ['rps', 'tictactoe', 'trivia', 'this_or_that'] as const;
 export type GameKind = (typeof GAME_KINDS)[number];
+/** What the winner gets: the blind truth or dare (default), or nothing ("just for fun"). */
+export const GAME_PRIZES = ['truth_or_dare', 'none'] as const;
+export type GamePrize = (typeof GAME_PRIZES)[number];
+export const TRIVIA_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
+export type TriviaDifficulty = (typeof TRIVIA_DIFFICULTIES)[number];
+export type TttMark = 'x' | 'o';
 /** Rock (stone), paper, scissors, plus thread: thread beats rock and paper; scissors cut thread. */
 export const RPS_MOVES = ['rock', 'paper', 'scissors', 'thread'] as const;
 export type RpsMove = (typeof RPS_MOVES)[number];
@@ -438,4 +444,51 @@ export interface GameDoc {
   completedAt: Date | null;
   cancelledAt: Date | null;
   cancelledBy: ObjectId | null;
+  // Optional on purpose: the live `games` validator cannot change (no collMod), but it sets no
+  // `additionalProperties`, so new optional fields are accepted while every field above stays
+  // required and is always written (new kinds write `moves: []`, `challenge: null`, ...).
+  prize?: GamePrize; // absent on older games ⇒ 'truth_or_dare'
+  ttt?: TttState | null; // kind 'tictactoe' only
+  quiz?: QuizState | null; // kinds 'trivia' and 'this_or_that' only
+}
+
+/** Tic-tac-toe round state. `moves` cannot hold it: the live validator allows at most 2 moves. */
+export interface TttState {
+  board: (TttMark | null)[]; // 9 cells, index = row * 3 + col
+  xId: ObjectId; // plays X this round and moves first (the invitee in round 1; swaps each rematch)
+  turnId: ObjectId | null; // whose turn; null once the round is over
+  moveCount: number; // 0..9; also the optimistic-concurrency guard for moves
+  lastCell: number | null;
+  line: number[] | null; // the three winning cells, or null
+}
+
+/** One trivia question or This-or-That prompt. */
+export interface QuizItem {
+  id: string; // trivia: 'otdb_' + sha256(text)[0..16] or 'tb_NN'; this_or_that: curated id ('ev-07')
+  text: string | null; // trivia question; null for This or That (the two choices are the prompt)
+  choices: string[]; // trivia: 4, already shuffled; this_or_that: 2
+  correct: number | null; // trivia: index into choices; this_or_that: null
+  category: string | null; // trivia: per-question category label
+  difficulty: TriviaDifficulty | null;
+}
+
+export interface QuizPlayer {
+  userId: ObjectId;
+  picks: number[]; // a choice index per item, in order; length = answered
+  score: number; // trivia: correct answers; this_or_that: 0
+  finishedAt: Date | null;
+}
+
+/** Shared by Trivia duel and This or That: same items for both, picks sealed until both finish. */
+export interface QuizState {
+  source: 'opentdb' | 'builtin' | 'curated';
+  category: { id: number; name: string } | null; // trivia: the category the questions came from
+  // trivia: the category asked for; null = "any", so a rematch or "Play again" picks a curated one at
+  // random again instead of repeating the one "any" resolved to. Absent on the first builds ⇒ category.id.
+  requestedCategory?: number | null;
+  difficulty: TriviaDifficulty | null; // trivia: as requested (null = any)
+  deck: string | null; // this_or_that deck id
+  items: QuizItem[]; // trivia 5, this_or_that 7
+  players: QuizPlayer[]; // exactly 2, in memberIds order
+  matches: number | null; // this_or_that: equal picks, set once both finished
 }

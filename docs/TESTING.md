@@ -9,7 +9,10 @@ cd android
 ```
 Unit tests cover: quiet-hours windows (incl. midnight crossing and time zones), countdown and
 "together" calculations, the Touch Ping state machine and cooldown, emoji/message validation,
-message and voice validation. Instrumented tests: see `app/src/androidTest`.
+message and voice validation, and games: DTO parsing for every kind (and unknown kinds), the
+"Play again" request, tic-tac-toe cells, trivia stages, the This or That verdict, error texts, game
+notification texts, and applying a partner's trivia progress from an event. Instrumented tests: see
+`app/src/androidTest` (`GameCardsTest` covers the game picker and cards).
 
 ## Backend
 ```bash
@@ -18,7 +21,10 @@ pnpm typecheck && pnpm lint && pnpm test
 ```
 Vitest with `mongodb-memory-server` (uses `/opt/homebrew/bin/mongod` when present). Suites:
 auth, rate-limit, invitations, pings, messages, media, isolation (cross-couple), events-ws,
-outbox, devices-account, memories-milestones, health-openapi.
+outbox, devices-account, memories-milestones, health-openapi, games (`games-wallpaper`, `games-more`,
+`games-rules`, `games-tolerant`, `trivia-source`). The trivia tests never reach opentdb.com: the test app
+uses the built-in set or a fake `fetch`. `games-more` also checks every new game document against a frozen
+copy of the deployed `games` validator (`test/fixtures/games-validator.live.json`).
 
 ## Security tests (backend)
 - User C cannot read couple AB's pings, messages, memories, media URLs or events.

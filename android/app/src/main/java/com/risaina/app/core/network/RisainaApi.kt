@@ -113,7 +113,7 @@ class RisainaApi @Inject constructor(
     suspend fun games(): GameList = client.get("games") { parameter("limit", 20) }.body()
     suspend fun game(id: String): GameResponse = client.get("games/$id").body()
     suspend fun gameSuggestions(): GameSuggestions = client.get("games/suggestions").body()
-    suspend fun createGame(): GameResponse = client.post("games") { json(CreateGameRequest()) }.body()
+    suspend fun createGame(req: CreateGameRequest = CreateGameRequest()): GameResponse = client.post("games") { json(req) }.body()
     suspend fun gameMove(id: String, move: String): GameResponse = client.post("games/$id/move") { json(GameMoveRequest(move)) }.body()
     suspend fun gameRematch(id: String): GameResponse = client.post("games/$id/rematch").body()
     suspend fun gameChallenge(id: String, truth: String, dare: String): GameResponse = client.post("games/$id/challenge") { json(GameChallengeRequest(truth, dare)) }.body()
@@ -122,6 +122,10 @@ class RisainaApi @Inject constructor(
     suspend fun gameReject(id: String, note: String?): GameResponse = client.post("games/$id/reject") { json(GameRejectRequest(note)) }.body()
     suspend fun gameComplete(id: String, answer: String?): GameResponse = client.post("games/$id/complete") { json(GameCompleteRequest(answer)) }.body()
     suspend fun gameCancel(id: String): GameResponse = client.post("games/$id/cancel").body()
+    // games stream: tic-tac-toe, trivia duel, This or That (rps moves keep using gameMove)
+    suspend fun gamePlay(id: String, req: GamePlayRequest): GameResponse = client.post("games/$id/play") { json(req) }.body()
+    suspend fun gameEnd(id: String): GameResponse = client.post("games/$id/end").body()
+    suspend fun gameCatalog(): GameCatalogDto = client.get("games/catalog").body()
 
     // ---- shared chat wallpaper (couple-wide) ----
     suspend fun setChatWallpaper(body: kotlinx.serialization.json.JsonObject): CoupleOnlyResponse = client.patch("couple") { jsonObject(body) }.body()

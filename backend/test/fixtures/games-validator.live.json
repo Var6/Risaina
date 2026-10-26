@@ -1,0 +1,133 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": [
+      "coupleId",
+      "kind",
+      "createdBy",
+      "memberIds",
+      "status",
+      "open",
+      "round",
+      "moves",
+      "winnerId",
+      "loserId",
+      "challenge",
+      "answer",
+      "createdAt",
+      "updatedAt",
+      "completedAt"
+    ],
+    "properties": {
+      "coupleId": {
+        "bsonType": "objectId"
+      },
+      "kind": {
+        "bsonType": "string"
+      },
+      "createdBy": {
+        "bsonType": "objectId"
+      },
+      "memberIds": {
+        "bsonType": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": {
+          "bsonType": "objectId"
+        }
+      },
+      "status": {
+        "bsonType": "string"
+      },
+      "open": {
+        "bsonType": "bool"
+      },
+      "round": {
+        "bsonType": ["int", "long", "double"],
+        "minimum": 1
+      },
+      "moves": {
+        "bsonType": "array",
+        "maxItems": 2,
+        "items": {
+          "bsonType": "object",
+          "required": ["userId", "move", "at"],
+          "properties": {
+            "userId": {
+              "bsonType": "objectId"
+            },
+            "move": {
+              "bsonType": "string"
+            },
+            "at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "winnerId": {
+        "bsonType": ["objectId", "null"]
+      },
+      "loserId": {
+        "bsonType": ["objectId", "null"]
+      },
+      "challenge": {
+        "bsonType": ["object", "null"],
+        "required": ["by", "at"],
+        "properties": {
+          "truth": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "dare": {
+            "bsonType": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "by": {
+            "bsonType": "objectId"
+          },
+          "at": {
+            "bsonType": "date"
+          },
+          "chosen": {
+            "bsonType": ["string", "null"]
+          },
+          "chosenAt": {
+            "bsonType": ["date", "null"]
+          },
+          "doneAt": {
+            "bsonType": ["date", "null"]
+          },
+          "confirmedAt": {
+            "bsonType": ["date", "null"]
+          },
+          "rejectNote": {
+            "bsonType": ["string", "null"],
+            "maxLength": 200
+          }
+        }
+      },
+      "answer": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": "date"
+      },
+      "completedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "cancelledAt": {
+        "bsonType": ["date", "null"]
+      },
+      "cancelledBy": {
+        "bsonType": ["objectId", "null"]
+      }
+    }
+  }
+}

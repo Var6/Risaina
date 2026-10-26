@@ -27,6 +27,8 @@ export type ErrorCode =
   | 'game_in_progress'
   | 'already_moved'
   | 'invalid_game_state'
+  | 'not_your_turn'
+  | 'invalid_move'
   | 'internal';
 
 export class AppError extends Error {
@@ -100,9 +102,13 @@ export const errors = {
     new AppError(410, 'view_once_expired', message),
   gameInProgress: (game: unknown) =>
     new AppError(409, 'game_in_progress', 'Finish or cancel the open game first', { details: { game } }),
-  alreadyMoved: (game: unknown) =>
-    new AppError(409, 'already_moved', 'You already moved this round', { details: { game } }),
+  alreadyMoved: (game: unknown, message = 'You already moved this round') =>
+    new AppError(409, 'already_moved', message, { details: { game } }),
   invalidGameState: (message: string, game: unknown) =>
     new AppError(409, 'invalid_game_state', message, { details: { game } }),
+  notYourTurn: (game: unknown) =>
+    new AppError(409, 'not_your_turn', "It's your partner's turn", { details: { game } }),
+  invalidMove: (message: string, game: unknown) =>
+    new AppError(409, 'invalid_move', message, { details: { game } }),
   internal: (message = 'Internal server error') => new AppError(500, 'internal', message),
 };

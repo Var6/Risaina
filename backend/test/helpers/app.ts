@@ -22,6 +22,7 @@ import { DisabledPushService } from '../../src/services/push/disabled.js';
 import type { PushData, PushSendResult, PushService } from '../../src/services/push/types.js';
 import { LOCAL_STORAGE_ROUTE_PREFIX } from '../../src/services/storage/index.js';
 import { LocalStorageDriver } from '../../src/services/storage/local.js';
+import type { TriviaSource } from '../../src/services/trivia/types.js';
 import { OutboxWorker } from '../../src/workers/outbox.js';
 
 export const TEST_JWT_SECRET = 'test-secret-test-secret-test-secret-test-secret-0123456789';
@@ -108,6 +109,8 @@ export interface TestAppOptions {
   outbox?: Partial<{ backoffBaseMs: number; maxAttempts: number }>;
   /** Local JWKS used to verify Google ID tokens (requires GOOGLE_CLIENT_IDS in envOverrides). */
   googleKeys?: JWTVerifyGetKey;
+  /** Trivia question source; defaults to the built-in set (TRIVIA_PROVIDER=builtin: no network). */
+  trivia?: TriviaSource;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
@@ -134,6 +137,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     WS_AUTH_TIMEOUT_MS: '400',
     WS_PING_INTERVAL_MS: '1000',
     WS_IDLE_TIMEOUT_MS: '5000',
+    TRIVIA_PROVIDER: 'builtin',
     ...options.envOverrides,
   });
 
@@ -165,6 +169,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
       env.google.enabled && options.googleKeys
         ? createGoogleVerifier({ clientIds: env.google.clientIds, keys: options.googleKeys, now: clock.now })
         : null,
+    ...(options.trivia ? { trivia: options.trivia } : {}),
     now: clock.now,
     logger,
     version: 'test',

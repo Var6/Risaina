@@ -37,7 +37,12 @@ sealed interface Incoming {
     /** Partner changed what my widgets show (no notification; widgets refresh). */
     data object WidgetChanged : Incoming
     data class Sos(val id: String) : Incoming
-    data class Game(val id: String, val action: String) : Incoming
+    /**
+     * The partner did something in a game. Read from the event itself (not the refreshed game) so a
+     * notification never waits for a network fetch: [kind] picks the text, [createdAt] lets a full
+     * replay skip old ones, [topic] is the trivia category for "5 questions on History".
+     */
+    data class Game(val id: String, val action: String, val kind: String = "rps", val createdAt: Instant? = null, val topic: String? = null) : Incoming
 }
 
 /**
@@ -63,7 +68,11 @@ class EventReducer @Inject constructor(
     private val sosAlert: com.risaina.app.core.notifications.SosAlert,
     private val gameRepository: com.risaina.app.core.data.GameRepository,
 ) {
-    suspend fun apply(event: EventDto): List<Incoming> {
+    /**
+     * [deferGameRefresh]: the event is part of a catch-up batch, so a game it touches is only
+     * marked and re-fetched once when the batch ends (GameRepository.flushStale), not per event.
+     */
+    suspend fun apply(event: EventDto, deferGameRefresh: Boolean = false): List<Incoming> {
         val me = sessionStore.current()?.userId ?: return emptyList()
         val cursor = sessionStore.lastEventSeq.first()
         if (event.seq <= cursor) return emptyList()
@@ -142,9 +151,16 @@ class EventReducer @Inject constructor(
                 val g = p.obj("game")
                 val id = (g?.get("id") as? kotlinx.serialization.json.JsonPrimitive)?.content
                 if (id != null) {
-                    gameRepository.refreshOne(id)
                     val action = p.str("action")
-                    if (event.actorId != me && action != null) out += Incoming.Game(id, action)
+                    // Games stream: re-fetches the game (once per batch when deferred), except a partner's
+                    // single trivia answer, which is applied from the event.
+                    gameRepository.onEvent(id, action, event.actorId, fromPartner = event.actorId != me, view = g, defer = deferGameRefresh)
+                    if (event.actorId != me && action != null) {
+                        out += Incoming.Game(
+                            id, action, kind = g.str("kind") ?: "rps",
+                            createdAt = runCatching { Instant.parse(event.createdAt) }.getOrNull(), topic = g.obj("quiz")?.str("categoryName"),
+                        )
+                    }
                 }
             }
             "couple.unlinked" -> { out += Incoming.Unlinked }
