@@ -50,6 +50,8 @@ class CoupleRepository @Inject constructor(
     private val widgetBoardRepository: dagger.Lazy<WidgetBoardRepository>,
     private val gameRepository: dagger.Lazy<GameRepository>,
     private val widgetRefresher: com.risaina.app.core.sync.WidgetRefresher,
+    private val lockScreenCard: com.risaina.app.core.notifications.LockScreenCard,
+    private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
 ) {
     private val invitation = MutableStateFlow<InvitationSummary?>(null)
     private val loaded = MutableStateFlow(false)
@@ -208,6 +210,8 @@ class CoupleRepository @Inject constructor(
         widgetSnapshotStore.clear()
         widgetBoardRepository.get().clear()
         gameRepository.get().clear()
+        lockScreenCard.cancel()
+        notifier.clearPartnerAlerts()
         sessionStore.setActiveCoupleId(null)
         invitation.value = null
         runCatching { widgetRefresher.refreshAll() }

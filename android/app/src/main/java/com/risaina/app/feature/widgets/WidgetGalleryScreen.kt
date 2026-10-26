@@ -161,7 +161,7 @@ private fun LockScreenSection(vm: com.risaina.app.feature.settings.SettingsViewM
         Text("On your lock screen", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Turn on the lock-screen card to see your partner's photo, note and emoji every time you pick up your phone. It's silent and only shows what they chose for your widgets.",
+            "Turn on the lock-screen card to see what your partner sent while it's new (a gift or a ping), then their mood or note. It's silent, never repeats something you've already opened, and stays away if you swipe it until there's something new.",
             style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
         )
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {

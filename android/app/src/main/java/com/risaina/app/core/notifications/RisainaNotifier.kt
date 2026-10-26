@@ -40,6 +40,20 @@ class RisainaNotifier @Inject constructor(
     private fun appInForeground(): Boolean =
         ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
 
+    /**
+     * Opening Risaina (or replying from a widget) means the partner's pings, gifts, messages and game
+     * nudges were seen: remove those notifications so an old gift never lingers in the shade. SOS,
+     * the lock-screen card and service notifications are left alone.
+     */
+    fun clearPartnerAlerts() {
+        val nm = context.getSystemService(android.app.NotificationManager::class.java) ?: return
+        val partnerChannels = setOf(NotificationChannels.PINGS, NotificationChannels.PINGS_QUIET, NotificationChannels.MESSAGES, NotificationChannels.MESSAGES_QUIET)
+        runCatching {
+            nm.activeNotifications.filter { it.notification.channelId in partnerChannels || it.id == PING_NOTIFICATION_ID || it.id == GAME_NOTIFICATION_ID }
+                .forEach { nm.cancel(it.tag, it.id) }
+        }
+    }
+
     suspend fun notifyIncoming(item: Incoming) {
         if (!canPost()) return
         val prefs = preferencesStore.current()
@@ -50,6 +64,7 @@ class RisainaNotifier @Inject constructor(
         when (item) {
             is Incoming.NewPing -> {
                 val p = item.ping
+                if (p.seenAt != null) return // already opened (e.g. on the other screen); nothing to announce
                 val gift = com.risaina.app.feature.ping.Expressions.isGift(p.message)
                 val title = when {
                     !prefs.previewInNotifications -> "$partner sent you something"
@@ -101,7 +116,7 @@ class RisainaNotifier @Inject constructor(
                     else -> null
                 } ?: return
                 post(
-                    id = 5050, channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
+                    id = GAME_NOTIFICATION_ID, channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
                     title = partner, body = if (prefs.previewInNotifications) "${partner.substringBefore(" ")} $body" else "New activity",
                     deepLink = "risaina://app/messages", category = NotificationCompat.CATEGORY_MESSAGE, priority = NotificationCompat.PRIORITY_DEFAULT,
                 )
@@ -133,7 +148,7 @@ class RisainaNotifier @Inject constructor(
         )
     }
 
-    companion object { const val PING_NOTIFICATION_ID = 4242 }
+    companion object { const val PING_NOTIFICATION_ID = 4242; const val GAME_NOTIFICATION_ID = 5050 }
 
     private fun post(id: Int, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int, onlyAlertOnce: Boolean = false) {
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(deepLink)).apply {

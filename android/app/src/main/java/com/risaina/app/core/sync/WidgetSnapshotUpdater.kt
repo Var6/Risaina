@@ -35,6 +35,7 @@ class WidgetSnapshotUpdater @Inject constructor(
     private val widgetBoardRepository: com.risaina.app.core.data.WidgetBoardRepository,
     private val lockScreenCard: com.risaina.app.core.notifications.LockScreenCard,
     private val pingRepository: com.risaina.app.core.data.PingRepository,
+    private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
 ) {
     /**
      * The person has Risaina in front of them, or replied from a widget: whatever the partner sent
@@ -44,6 +45,7 @@ class WidgetSnapshotUpdater @Inject constructor(
     suspend fun markSeenAndRecompute(ackServer: Boolean) {
         if (sessionStore.current() == null) return
         store.markSeen(System.currentTimeMillis())
+        notifier.clearPartnerAlerts()
         if (ackServer) {
             val me = sessionStore.current()?.userId
             pingDao.recent(50).first().firstOrNull { it.senderId != me }?.takeIf { it.seenAt == null }?.let { pingRepository.markSeen(it.id) }

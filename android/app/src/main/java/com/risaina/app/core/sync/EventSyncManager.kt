@@ -72,6 +72,9 @@ class EventSyncManager @Inject constructor(
         if (sessionStore.current() == null) return AppResult.Success(emptyList())
         val collected = mutableListOf<Incoming>()
         var since = sessionStore.lastEventSeq.first()
+        // Cursor 0 = a full replay (fresh sign-in or a new pairing). Its history is applied, but old
+        // pings/messages must not be notified or revealed again as if they were new.
+        val replay = since == 0L
         // At most 10 pages per sync. (This used `repeat` with `return@repeat`, which only skips to the
         // next pass, so every sync made 10 requests even when it had already caught up.)
         for (pageNo in 0 until 10) {
@@ -88,6 +91,10 @@ class EventSyncManager @Inject constructor(
         }
         // Recompute even when nothing new arrived: the countdown's "days left" moves at midnight,
         // and an app update may change what the widgets derive from the same data.
+        if (replay) {
+            val cutoff = java.time.Instant.now().minus(java.time.Duration.ofMinutes(10))
+            collected.removeAll { (it is Incoming.NewPing && it.ping.createdAt.isBefore(cutoff)) || (it is Incoming.NewMessage && it.message.createdAt.isBefore(cutoff)) }
+        }
         widgetSnapshotUpdater.recompute()
         // Open on screen but the event came by push or catch-up sync (not the socket): the
         // notification is suppressed in the foreground, so buzz and reveal it in the app instead.

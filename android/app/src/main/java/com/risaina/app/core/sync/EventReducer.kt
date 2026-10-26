@@ -127,7 +127,8 @@ class EventReducer @Inject constructor(
             "sos.raised" -> p.obj("sos")?.let {
                 val sos = json.decodeFromJsonElement(com.risaina.app.core.network.SosDto.serializer(), it)
                 sosRepository.upsert(sos)
-                if (sos.recipientId == me && sos.acknowledgedAt == null) {
+                val recent = runCatching { java.time.Duration.between(Instant.parse(sos.createdAt), Instant.now()).toMinutes() < 30 }.getOrDefault(false)
+                if (sos.recipientId == me && sos.acknowledgedAt == null && recent) {
                     // Ring (or update the ringing alert with the message) whether or not the app is open.
                     sosAlert.show(coupleDao.partner()?.displayName ?: "your partner", sos.message, sos.id)
                     out += Incoming.Sos(sos.id)

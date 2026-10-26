@@ -72,6 +72,10 @@
         </receiver>
 
         <receiver
+            android:name=".core.notifications.LockCardDismissedReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".feature.widgets.UsWidgetReceiver"
             android:exported="true"
             android:label="Us · all in one">

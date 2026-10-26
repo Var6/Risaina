@@ -39,6 +39,8 @@ class AuthRepository @Inject constructor(
     private val deviceRegistrar: DeviceRegistrar,
     private val googleSignOut: GoogleSignOut,
     private val widgetBoardRepository: WidgetBoardRepository,
+    private val lockScreenCard: com.risaina.app.core.notifications.LockScreenCard,
+    private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
 ) {
     val isSignedIn: Flow<Boolean> = sessionStore.session.map { it != null }
 
@@ -122,6 +124,8 @@ class AuthRepository @Inject constructor(
         db.clearAllContent()
         widgetSnapshotStore.clear()
         widgetBoardRepository.clear()
+        lockScreenCard.cancel()
+        notifier.clearPartnerAlerts()
         preferencesStore.setOnboardingDone(true) // returning users skip the welcome carousel
     }
 }
