@@ -833,9 +833,9 @@ end in a visible notification. So only events the recipient SEES are high.
 
 | Priority | Event types | FCM `android` options |
 |---|---|---|
-| high | `ping.created`, `message.created`, `couple.unlinked`, `widget.updated` (the app posts a quiet "<partner> updated your widget"), `location.started`, `game.updated` with `action` ∈ created, moved, revealed, draw, rematch, challenged, chosen, done, confirmed, rejected, finished, matched | `priority: high`, ttl 1 h, no collapse key |
+| high | `ping.created`, `message.created`, `couple.unlinked`, `widget.updated` (the app posts a quiet "<partner> updated your widget"), `location.started` (except a panic share linked to its SOS), `game.updated` with `action` ∈ created, moved, revealed, draw, rematch, challenged, chosen, done, confirmed, rejected, finished, matched | `priority: high`, ttl 1 h, no collapse key |
 | high, bypasses preferences | `sos.raised`, `sos.resolved` | same |
-| normal (silent: the app syncs and redraws widgets) | `ping.delivered`, `ping.seen`, `message.read`, `message.opened`, `message.deleted`, `media.ready`, `list.*`, `memory.*`, `milestone.*`, `partner.updated`, `couple.updated`, `sos.acknowledged`, `sos.delivered`, `location.stopped`, `game.updated` with any other or no action, and any type not listed | `priority: normal`, ttl 24 h, `collapseKey: "sync"` (a later silent push replaces an undelivered one) |
+| normal (silent: the app syncs and redraws widgets) | `ping.delivered`, `ping.seen`, `message.read`, `message.opened`, `message.deleted`, `media.ready`, `list.*`, `memory.*`, `milestone.*`, `partner.updated`, `couple.updated`, `sos.acknowledged`, `sos.delivered`, `location.stopped`, `location.started` for a panic share with an `sosId` (the app posts nothing for it; the SOS alarm is the alert), `game.updated` with any other or no action, and any type not listed | `priority: normal`, ttl 24 h, `collapseKey: "sync"` (a later silent push replaces an undelivered one) |
 | none (stored, never pushed; `push.state: skipped`, `skipReason: not_pushed`) | `game.updated` with `action` ∈ answered, cancelled, ended | |
 
 Recipient preferences (changed): with `notificationsEnabled: false` a high push is sent as a silent
@@ -916,7 +916,7 @@ already rang, acknowledged or saw resolved, or one older than 6 hours.
 | Method | Path | Guards | Input | Success | Errors |
 |---|---|---|---|---|---|
 | GET | `/location/sharing` | couple | | `200 { mine: LiveLocation\|null, partner: LiveLocation\|null }` (expired sessions are null) | 401, 409 `not_paired` |
-| POST | `/location/sharing` | couple; 20 manual starts per user per hour (panic exempt) | `{ sessionId, mode: 'timed'\|'until_off', durationMinutes? (1–1440, required iff timed; a retry or Resume sends the time left), reason?: 'manual'\|'panic', sosId? (panic only), fix? }` | `201 { sharing }` new, `200` extended | 400; 404 (`sosId` not my SOS); 409 `location_not_sharing` (that `sessionId` was stopped), `not_paired`; 429 |
+| POST | `/location/sharing` | couple; 20 manual starts per user per hour; panic starts have their own 20 per user per 10 minutes | `{ sessionId, mode: 'timed'\|'until_off', durationMinutes? (1–1440, required iff timed; a retry or Resume sends the time left), reason?: 'manual'\|'panic', sosId? (panic only), fix? }` | `201 { sharing }` new, `200` extended | 400; 404 (`sosId` not my SOS); 409 `location_not_sharing` (that `sessionId` was stopped), `not_paired`; 429 |
 | PUT | `/location/sharing/fix` | couple; 12 per user per minute | `{ sessionId, fix }` | `200 { accepted }` | 400; 409 `location_not_sharing`, `not_paired`; 429 |
 | DELETE | `/location/sharing` | bearer only (stopping always works) | query `sessionId?`, `reason?: 'stopped'\|'expired'` | `204` always | 401 |
 
@@ -950,7 +950,7 @@ already rang, acknowledged or saw resolved, or one older than 6 hours.
 |---|---|---|
 | `sos.delivered` | `{ sosId, deliveredAt }` | normal (silent) |
 | `sos.resolved` | `{ sosId, resolvedAt }` | high, skips mute settings (it stops a ringing alarm) |
-| `location.started` | `{ sharing: LiveLocationSession }` (the `LiveLocation` fields without `lastSeenAt` and `fix`) | high (the partner is told sharing started) |
+| `location.started` | `{ sharing: LiveLocationSession }` (the `LiveLocation` fields without `lastSeenAt` and `fix`) | high (the partner is told sharing started); normal for a panic share linked to its SOS (the alarm is the alert) |
 | `location.stopped` | `{ sessionId, userId, stoppedAt, reason: 'stopped'\|'expired'\|'resolved'\|'signed_out' }` | normal |
 
 Push priorities are decided by the outbox's policy (delivery stream). The phone treats a push of

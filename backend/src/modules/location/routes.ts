@@ -13,6 +13,7 @@ import {
 } from './schemas.js';
 import {
   LIVE_LOCATION_FIX_WRITES_PER_MIN,
+  LIVE_LOCATION_PANIC_STARTS_PER_10_MIN,
   LIVE_LOCATION_STARTS_PER_HOUR,
   LocationService,
 } from './service.js';
@@ -36,15 +37,21 @@ export const locationRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) =
     timeWindow: 60 * 60_000,
     keyGenerator: (req) => `loc-start:${req.user?.id ?? req.ip}`,
   });
+  const panicLimiter = app.createRateLimit({
+    max: LIVE_LOCATION_PANIC_STARTS_PER_10_MIN,
+    timeWindow: 10 * 60_000,
+    keyGenerator: (req) => `loc-panic:${req.user?.id ?? req.ip}`,
+  });
   const limitFixes = async (req: FastifyRequest) => {
     const res = await fixLimiter(req);
     if (!res.isAllowed && res.isExceeded)
       throw errors.rateLimited(res.ttlInSeconds, 'Too many location updates');
   };
   const limitStarts = async (req: FastifyRequest) => {
-    // A panic start is never refused here: it is already bounded by the SOS limit (3 per 10 min).
-    if ((req.body as { reason?: string } | undefined)?.reason === 'panic') return;
-    const res = await startLimiter(req);
+    // A panic start never uses up (or waits for) the manual budget. It has its own generous one:
+    // sosId is optional for panic, so the SOS limit does not bound these, and each can push.
+    const panic = (req.body as { reason?: string } | undefined)?.reason === 'panic';
+    const res = await (panic ? panicLimiter : startLimiter)(req);
     if (!res.isAllowed && res.isExceeded)
       throw errors.rateLimited(res.ttlInSeconds, 'Too many sharing starts');
   };
@@ -75,7 +82,9 @@ export const locationRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) =
         description:
           'Emits location.started (no coordinates; pushed to the partner) when the session is new or its ' +
           'reason, expiry or SOS link changed. A stopped sessionId answers 409 location_not_sharing. ' +
-          `Manual starts: ${LIVE_LOCATION_STARTS_PER_HOUR} per user per hour.`,
+          `Manual starts: ${LIVE_LOCATION_STARTS_PER_HOUR} per user per hour; panic starts have their own ` +
+          `${LIVE_LOCATION_PANIC_STARTS_PER_10_MIN} per user per 10 minutes. A panic start linked to its SOS ` +
+          'is pushed at normal priority (the SOS alarm is the alert).',
         security,
         body: StartSharingBody,
         response: {

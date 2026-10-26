@@ -5,7 +5,11 @@ import WebSocket from 'ws';
 import type { EventType } from '../src/db/types.js';
 import { REDACT_PATHS } from '../src/lib/logger.js';
 import type { LocationRepo } from '../src/modules/location/repo.js';
-import { LIVE_LOCATION_IDLE_PURGE_MS, LocationService } from '../src/modules/location/service.js';
+import {
+  LIVE_LOCATION_IDLE_PURGE_MS,
+  LIVE_LOCATION_PANIC_STARTS_PER_10_MIN,
+  LocationService,
+} from '../src/modules/location/service.js';
 import {
   API,
   bearer,
@@ -399,6 +403,66 @@ describe('live location: validation, limits, indexes, privacy', () => {
     expect(panic.statusCode).toBe(200);
     expect(panic.json().sharing.reason).toBe('panic');
     expect((await stop(p)).statusCode).toBe(204);
+  });
+
+  it('gives panic starts their own budget: 20 per 10 minutes, then 429', async () => {
+    // sosId is optional for panic, so the SOS limit does not bound these; a start/stop loop (a
+    // bug, or a stolen token) must not push the partner without end.
+    const r = await register(t.app, 'Rafi');
+    await pair(t.app, r, await register(t.app, 'Sana'));
+    const id = oid();
+    const panicStart = () =>
+      start(r, { sessionId: id, mode: 'timed', durationMinutes: 120, reason: 'panic' });
+    for (let i = 0; i < LIVE_LOCATION_PANIC_STARTS_PER_10_MIN; i++) {
+      expect((await panicStart()).statusCode).toBeLessThan(300);
+    }
+    const limited = await panicStart();
+    expect(limited.statusCode).toBe(429);
+    expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+    // The manual budget is separate and untouched.
+    expect((await start(r, { sessionId: id, mode: 'until_off' })).statusCode).toBeLessThan(300);
+    expect((await stop(r)).statusCode).toBe(204);
+  });
+
+  it('pushes a panic start high until it is linked to its SOS, then normal (the SOS alarm is the alert)', async () => {
+    const u = await register(t.app, 'Uma');
+    const v = await register(t.app, 'Vik');
+    await pair(t.app, u, v);
+    const device = await t.app.inject({
+      method: 'PUT',
+      url: `${API}/devices`,
+      headers: bearer(v),
+      payload: {
+        deviceId: 'dev-loc-v',
+        platform: 'android',
+        token: 'loc-v',
+        appVersion: '1.0.0',
+        model: 'Pixel',
+      },
+    });
+    expect(device.statusCode).toBe(204);
+    await t.outbox.runOnce();
+    push.calls.length = 0;
+    const startedPushes = () =>
+      push.calls.filter((p) => p.data.type === 'location.started' && p.tokens.includes('loc-v'));
+
+    const id = oid();
+    const panic = { sessionId: id, mode: 'timed', durationMinutes: 120, reason: 'panic' };
+    expect((await start(u, panic)).statusCode).toBe(201);
+    await t.outbox.runOnce();
+    expect(startedPushes().map((p) => p.opts.priority)).toEqual(['high']);
+
+    const sos = await t.app.inject({
+      method: 'POST',
+      url: `${API}/sos`,
+      headers: bearer(u),
+      payload: { panic: true },
+    });
+    expect(sos.statusCode).toBe(201);
+    expect((await start(u, { ...panic, sosId: sos.json().sos.id })).statusCode).toBe(200);
+    await t.outbox.runOnce();
+    expect(startedPushes().map((p) => p.opts.priority)).toEqual(['high', 'normal']);
+    expect((await stop(u)).statusCode).toBe(204);
   });
 
   it('has the TTL index and the live-only unique index', async () => {

@@ -18,9 +18,16 @@ export const LIVE_LOCATION_IDLE_PURGE_MS = 12 * 60 * 60_000;
 /** How long a stopped session's tombstone (no coordinates) refuses a late start with its id. */
 export const LIVE_LOCATION_TOMBSTONE_MS = 10 * 60_000;
 export const LIVE_LOCATION_MAX_ACCURACY_M = 50_000;
-/** Per-user budgets (route rate limits). Panic starts skip the start budget (SOS limits panic). */
+/** Per-user budgets (route rate limits). Panic starts have their own, far larger budget. */
 export const LIVE_LOCATION_FIX_WRITES_PER_MIN = 12;
 export const LIVE_LOCATION_STARTS_PER_HOUR = 20;
+/**
+ * Panic starts per user per 10 minutes. Never the manual budget (an emergency must not wait behind
+ * an evening of toggling), but bounded: sosId is optional for panic, so nothing else limits them,
+ * and each one can push the partner. One panic takes a few starts (the first, the SOS link, a
+ * restart after Android stopped the service) and the SOS limit allows 3 alerts per 10 minutes.
+ */
+export const LIVE_LOCATION_PANIC_STARTS_PER_10_MIN = 20;
 
 // Local copy of auth's helper: importing it would make auth -> location -> auth an import cycle.
 const isDuplicateKey = (err: unknown) =>

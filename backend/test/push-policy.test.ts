@@ -50,6 +50,11 @@ const TABLE: [
   ['sos.resolved', {}, 'high', true],
   ['sos.delivered', {}, 'normal', false],
   ['location.started', {}, 'high', false],
+  ['location.started', { sharing: { reason: 'manual', sosId: null } }, 'high', false],
+  // A panic share with no SOS yet: the app announces it ("They may be in trouble").
+  ['location.started', { sharing: { reason: 'panic', sosId: null } }, 'high', false],
+  // Linked to its SOS: the app posts nothing (the SOS alarm is the alert), so a silent refresh.
+  ['location.started', { sharing: { reason: 'panic', sosId: '65f000000000000000000001' } }, 'normal', false],
   ['location.stopped', {}, 'normal', false],
   ['something.new', {}, 'normal', false],
   // Games: by action.
@@ -92,7 +97,8 @@ describe('pushPolicyFor', () => {
    * Every high type must end in a visible notification on the recipient's phone, or FCM learns to
    * deprioritise it. Mirrors the app: EventReducer.kt maps these to Incoming items that
    * RisainaNotifier.kt posts (game.updated: only the notifying actions; widget.updated: the quiet
-   * "updated your widget"; sos.*: SosAlert; location.started: the location stream's notification).
+   * "updated your widget"; sos.*: SosAlert; location.started: SafetyNotifier's "is sharing", which
+   * is posted for every share except a panic linked to its SOS, pushed normal above).
    */
   const CLIENT_NOTIFIES: ReadonlySet<string> = new Set([
     'ping.created',

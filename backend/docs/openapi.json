@@ -13412,7 +13412,7 @@
         "tags": [
           "Location"
         ],
-        "description": "Emits location.started (no coordinates; pushed to the partner) when the session is new or its reason, expiry or SOS link changed. A stopped sessionId answers 409 location_not_sharing. Manual starts: 20 per user per hour.",
+        "description": "Emits location.started (no coordinates; pushed to the partner) when the session is new or its reason, expiry or SOS link changed. A stopped sessionId answers 409 location_not_sharing. Manual starts: 20 per user per hour; panic starts have their own 20 per user per 10 minutes. A panic start linked to its SOS is pushed at normal priority (the SOS alarm is the alert).",
         "requestBody": {
           "required": true,
           "content": {

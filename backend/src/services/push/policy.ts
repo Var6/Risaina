@@ -83,9 +83,22 @@ const NORMAL: PushPolicy = {
 };
 const NONE: PushPolicy = { priority: 'none', bypassPrefs: false };
 
+/**
+ * A panic share linked to its SOS: the app posts no "is sharing" for it (the SOS alarm, pushed
+ * itself, is the visible alert), so a high push would end in nothing visible. That covers the start
+ * after the SOS exists and the re-start that links the SOS id. A panic share with no SOS yet stays
+ * high: the app announces it, and it may be the only sign of the emergency while the SOS retries.
+ * Mirrors SafetyNotifier.announces in the app.
+ */
+function isPanicWithSos(payload?: Record<string, unknown> | null): boolean {
+  const sharing = payload?.sharing as { reason?: unknown; sosId?: unknown } | null | undefined;
+  return sharing?.reason === 'panic' && typeof sharing.sosId === 'string' && sharing.sosId !== '';
+}
+
 /** The push policy for an event, before the recipient's preferences are applied. */
 export function pushPolicyFor(type: string, payload?: Record<string, unknown> | null): PushPolicy {
   if (BYPASS_TYPES.has(type)) return { ...BYPASS };
+  if (type === 'location.started' && isPanicWithSos(payload)) return { ...NORMAL };
   if (HIGH_TYPES.has(type)) return { ...HIGH };
   if (type === 'game.updated') {
     const action = typeof payload?.action === 'string' ? payload.action : null;
@@ -93,7 +106,8 @@ export function pushPolicyFor(type: string, payload?: Record<string, unknown> | 
     if (action !== null && GAME_UNPUSHED_ACTIONS.has(action)) return { ...NONE };
   }
   // Receipts, media.ready, lists, memories, milestones, profile/couple changes, the SOS sender's
-  // "seen"/"delivered" ticks, location.stopped and anything unknown: a silent refresh.
+  // "seen"/"delivered" ticks, location.stopped, a panic share linked to its SOS and anything
+  // unknown: a silent refresh.
   return { ...NORMAL };
 }
 
