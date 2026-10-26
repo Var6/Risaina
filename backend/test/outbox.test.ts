@@ -107,6 +107,23 @@ describe('outbox with a push service', () => {
     expect(tok!.lastPushSentPriority).toBe('high');
   });
 
+  it('gives message.created the message id as an opaque ref, nothing else', async () => {
+    push.calls.length = 0;
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `${API}/messages`,
+      headers: bearer(b),
+      payload: { type: 'text', text: 'secret words', idempotencyKey: randomUUID() },
+    });
+    expect(res.statusCode).toBe(201);
+    await t.outbox.runOnce();
+    const call = push.calls.find((c) => c.data.type === 'message.created')!;
+    expect(call.data.ref).toBe(res.json().message.id);
+    expect(Object.keys(call.data).sort()).toEqual(['coupleId', 'eventId', 'pr', 'ref', 'seq', 'type']);
+    expect(JSON.stringify(call.data)).not.toContain('secret');
+    expect(call.opts.priority).toBe('high');
+  });
+
   it('sends silent event types at normal priority with the sync collapse key', async () => {
     // b's ping → a is the recipient (a has a token). ping.delivered from a → b (b has a token).
     const ping = await sendPing(t.app, b);
@@ -213,7 +230,7 @@ describe('outbox with a push service', () => {
     });
   });
 
-  it('pushes silently (normal) inside quiet hours (recipient time zone, window crossing midnight), high with allowPushInQuietHours', async () => {
+  it('still pushes high inside quiet hours (the app posts silently on its quiet channels)', async () => {
     // Recipient a in Asia/Kolkata (UTC+5:30). Build a window that contains "now" and crosses midnight.
     const now = t.clock.now();
     const fmt = new Intl.DateTimeFormat('en-US', {
@@ -246,10 +263,12 @@ describe('outbox with a push service', () => {
     const ping = await sendPing(t.app, b);
     await t.outbox.runOnce();
     const ev = await t.db.events.findOne({ type: 'ping.created', 'payload.ping.id': ping.json().ping.id });
+    // Quiet hours used to skip the push (the widgets froze all night). Now it goes out high: the
+    // phone shows a silent notification, so FCM has no reason to deprioritise it.
     expect(ev!.push.state).toBe('sent');
-    expect(push.calls.find((c) => c.data.type === 'ping.created')!.opts.priority).toBe('normal');
+    expect(push.calls.find((c) => c.data.type === 'ping.created')!.opts.priority).toBe('high');
 
-    // allowPushInQuietHours → sent at full priority
+    // allowPushInQuietHours → the same on the server (the phone then alerts with sound)
     await t.app.inject({
       method: 'PUT',
       url: `${API}/me/preferences`,

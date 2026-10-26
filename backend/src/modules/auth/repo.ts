@@ -77,12 +77,13 @@ export class AuthRepo {
   }
 
   /**
-   * Revokes a session only if nothing ever used it (no access-token request, no refresh) and it is
-   * still live. Atomic, so two retries cannot both win. Returns whether it was revoked.
+   * Revokes a session only if it belongs to this install, nothing ever used it (no access-token
+   * request, no refresh) and it is still live. Atomic, so two retries cannot both win. Returns
+   * whether it was revoked.
    */
-  async revokeIfUnused(sessionId: ObjectId, reason: string, now: Date): Promise<boolean> {
+  async revokeIfUnused(sessionId: ObjectId, deviceId: string, reason: string, now: Date): Promise<boolean> {
     const res = await this.db.sessions.updateOne(
-      { _id: sessionId, revokedAt: null, rotatedAt: null, lastUsedAt: null },
+      { _id: sessionId, deviceId, revokedAt: null, rotatedAt: null, lastUsedAt: null },
       { $set: { revokedAt: now, revokedReason: reason } },
     );
     return res.modifiedCount === 1;

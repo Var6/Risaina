@@ -88,7 +88,7 @@ describe('widget board', () => {
       eventId: ev!._id.toHexString(),
       coupleId: ev!.coupleId.toHexString(),
       seq: String(ev!.seq),
-      pr: 'n', // silent widget refresh: normal priority (services/push/policy.ts)
+      pr: 'h', // the partner's phone posts a quiet "updated your widget" notification
     });
     expect((await t.db.events.findOne({ _id: ev!._id }))!.push.state).toBe('sent');
   });

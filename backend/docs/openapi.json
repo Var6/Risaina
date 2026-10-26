@@ -4294,7 +4294,7 @@
         "tags": [
           "Auth"
         ],
-        "description": "Every refresh token is single use. Presenting a token that was already rotated revokes the whole session family.",
+        "description": "Every refresh token is single use. Presenting a token that was already rotated revokes the whole session family, except within 60 s from the same deviceId while the replacement session is still unused (a response lost to a killed app): then a fresh pair is issued and the unused replacement is revoked.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4306,6 +4306,11 @@
                     "type": "string",
                     "minLength": 20,
                     "maxLength": 200
+                  },
+                  "deviceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                   }
                 },
                 "required": [
@@ -5922,99 +5927,6 @@
             }
           },
           "429": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/devices/{deviceId}/push-ack": {
-      "post": {
-        "summary": "This phone received a push (delivery health)",
-        "tags": [
-          "Devices"
-        ],
-        "description": "Records lastPushAckAt, the priority the push arrived with, whether FCM downgraded it, and optional health flags. Only the caller's own device row is updated; unknown ids are ignored.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "priority": {
-                    "type": "string",
-                    "enum": [
-                      "high",
-                      "normal"
-                    ],
-                    "description": "Priority the push arrived with (RemoteMessage.priority)"
-                  },
-                  "originalPriority": {
-                    "type": "string",
-                    "enum": [
-                      "high",
-                      "normal"
-                    ],
-                    "description": "Priority it was sent with (RemoteMessage.originalPriority)"
-                  },
-                  "healthFlags": {
-                    "maxItems": 16,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]{0,39}$",
-                      "example": "battery_optimized"
-                    }
-                  }
-                },
-                "required": [
-                  "priority",
-                  "originalPriority"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "in": "path",
-            "name": "deviceId",
-            "required": true
-          }
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No content"
-          },
-          "400": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
             "description": "Default Response",
             "content": {
               "application/json": {

@@ -47,16 +47,6 @@ export const TestPushResponse = z.object({
   reason: z.enum(['push_disabled', 'no_tokens']).nullable(),
 });
 
-export const PushAckBody = z
-  .object({
-    priority: Priority.meta({ description: 'Priority the push arrived with (RemoteMessage.priority)' }),
-    originalPriority: Priority.meta({
-      description: 'Priority it was sent with (RemoteMessage.originalPriority)',
-    }),
-    healthFlags: z.array(HealthFlag).max(16).optional(),
-  })
-  .strict();
-
 export const DeviceHealth = z
   .object({
     deviceId: z.string().nullable().meta({ description: "Only for the caller's own phones" }),

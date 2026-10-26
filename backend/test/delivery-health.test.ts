@@ -85,18 +85,16 @@ describe('test push and delivery health', () => {
     expect((await testPush(a, { token: 'x' })).statusCode).toBe(400);
   });
 
-  it('records push acks on my own device only, and flags FCM downgrades', async () => {
-    const ack = await t.app.inject({
-      method: 'POST',
-      url: `${API}/devices/a-phone/push-ack`,
-      headers: bearer(a),
-      payload: {
-        priority: 'normal',
-        originalPriority: 'high',
-        healthFlags: ['battery_optimized', 'standby_rare'],
-      },
+  const events = (s: Session, headers: Record<string, string>) =>
+    t.app.inject({ method: 'GET', url: `${API}/events?since=0`, headers: { ...bearer(s), ...headers } });
+
+  it('records the push ack that rides on GET /events, on my own device only, and flags FCM downgrades', async () => {
+    const res = await events(a, {
+      'x-risaina-device': 'a-phone',
+      'x-risaina-push': 'normal/high',
+      'x-risaina-health': 'battery_optimized,standby_rare',
     });
-    expect(ack.statusCode).toBe(204);
+    expect(res.statusCode).toBe(200);
     const row = await t.db.deviceTokens.findOne({ token: tokA1 });
     expect(row!.lastPushAckAt).toBeInstanceOf(Date);
     expect(row!.lastPushPriority).toBe('normal');
@@ -104,22 +102,21 @@ describe('test push and delivery health', () => {
     expect(row!.healthFlags).toEqual(['battery_optimized', 'standby_rare']);
 
     // b cannot write a's row (deviceId is scoped to the caller).
-    const other = await t.app.inject({
-      method: 'POST',
-      url: `${API}/devices/a-tablet/push-ack`,
-      headers: bearer(b),
-      payload: { priority: 'high', originalPriority: 'high' },
-    });
-    expect(other.statusCode).toBe(204);
+    expect(
+      (await events(b, { 'x-risaina-device': 'a-tablet', 'x-risaina-push': 'high/high' })).statusCode,
+    ).toBe(200);
     expect((await t.db.deviceTokens.findOne({ token: tokA2 }))!.lastPushAckAt).toBeUndefined();
 
-    const bad = await t.app.inject({
-      method: 'POST',
-      url: `${API}/devices/a-phone/push-ack`,
-      headers: bearer(a),
-      payload: { priority: 'high', originalPriority: 'high', healthFlags: ['Not A Code'] },
-    });
-    expect(bad.statusCode).toBe(400);
+    // Malformed headers are ignored and never fail the sync.
+    const malformed: Record<string, string>[] = [
+      { 'x-risaina-device': 'a-tablet', 'x-risaina-push': 'urgent/high' },
+      { 'x-risaina-device': 'a-tablet', 'x-risaina-push': 'high/high', 'x-risaina-health': 'Not A Code' },
+      { 'x-risaina-push': 'high/high' },
+    ];
+    for (const bad of malformed) {
+      expect((await events(a, bad)).statusCode).toBe(200);
+    }
+    expect((await t.db.deviceTokens.findOne({ token: tokA2 }))!.lastPushAckAt).toBeUndefined();
   });
 
   it("shows my phones and my partner's, without tokens or the partner's device ids", async () => {
@@ -187,8 +184,12 @@ describe('refresh grace window', () => {
     await t.close();
   });
 
-  const refresh = (token: string) =>
-    t.app.inject({ method: 'POST', url: `${API}/auth/refresh`, payload: { refreshToken: token } });
+  const refresh = (token: string, deviceId: string | null = 'install-1') =>
+    t.app.inject({
+      method: 'POST',
+      url: `${API}/auth/refresh`,
+      payload: deviceId ? { refreshToken: token, deviceId } : { refreshToken: token },
+    });
 
   it('a retry with the just-rotated token, whose response was lost, gets a fresh pair instead of a sign-out', async () => {
     const s = await register(t.app, 'Ga');
@@ -212,6 +213,16 @@ describe('refresh grace window', () => {
     expect(sessions.filter((x) => x.revokedReason === 'refresh_grace_replaced')).toHaveLength(1);
     expect(sessions.filter((x) => x.revokedReason === 'refresh_reuse')).toHaveLength(0);
     expect((await refresh(fresh.refreshToken)).statusCode).toBe(200);
+  });
+
+  it('only the same install gets the grace: another deviceId, or none, is reuse', async () => {
+    for (const other of ['install-2', null]) {
+      const s = await register(t.app, 'Gd');
+      await refresh(s.tokens.refreshToken); // install-1 rotated it; that response was lost
+      expect((await refresh(s.tokens.refreshToken, other)).statusCode).toBe(401);
+      const family = await t.db.sessions.find({ userId: new ObjectId(s.user.id) }).toArray();
+      expect(family.every((x) => x.revokedReason === 'refresh_reuse')).toBe(true);
+    }
   });
 
   it('after the grace window, presenting a rotated token is reuse and revokes the family', async () => {

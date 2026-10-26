@@ -2,7 +2,6 @@ import type { ObjectId } from 'mongodb';
 import type { Logger } from 'pino';
 import type { Collections } from '../db/collections.js';
 import type { EventDoc, EventType, Preferences } from '../db/types.js';
-import { isInQuietHours } from '../lib/quiet-hours.js';
 import type { Clock } from '../lib/time.js';
 import { type PushPolicy, pushPolicyFor, quietPolicy } from '../services/push/policy.js';
 import type { PushService } from '../services/push/types.js';
@@ -144,6 +143,7 @@ export class OutboxWorker {
           seq: String(event.seq),
           // What the server meant: lets the app tell a push FCM downgraded from one sent as normal.
           pr: priority === 'high' ? 'h' : 'n',
+          ...pushRefFor(event),
         },
         { priority, collapseKey: policy.collapseKey, ttlMs: policy.ttlMs },
       );
@@ -169,16 +169,14 @@ export class OutboxWorker {
   }
 
   /**
-   * Notifications off, or quiet hours (without "still push during quiet hours"): the push is sent
-   * silently at normal priority instead of being skipped, so the recipient's widgets still update;
-   * the app itself stays quiet (quiet channel, or no notification when notifications are off).
-   * An SOS bypasses both preferences and stays high.
+   * Notifications off: the push is sent silently at normal priority instead of being skipped, so the
+   * recipient's widgets still update while the app posts nothing. Quiet hours change nothing here:
+   * the app decides on the phone, posting silently on its quiet channels (it used to be skipped,
+   * which froze the widgets all night). An SOS bypasses the preference and stays high.
    */
   private applyPreferences(event: EventDoc, policy: PushPolicy, prefs: Preferences): PushPolicy {
     if (policy.bypassPrefs || BYPASS_PREFERENCES.has(event.type)) return policy;
-    const muted = !prefs.notificationsEnabled;
-    const quiet = !prefs.allowPushInQuietHours && isInQuietHours(prefs.quietHours, this.now());
-    return muted || quiet ? quietPolicy(policy) : policy;
+    return prefs.notificationsEnabled ? policy : quietPolicy(policy);
   }
 
   private retryOrFail(event: EventDoc, error: string): OutboxOutcome {
@@ -239,4 +237,15 @@ export class OutboxWorker {
         return;
     }
   }
+}
+
+/**
+ * An opaque id the app needs to post a quick notification before it syncs, which the detailed
+ * notification then replaces in place: message.created → the message id (the app's message
+ * notification id is derived from it). Never content.
+ */
+export function pushRefFor(event: Pick<EventDoc, 'type' | 'payload'>): { ref?: string } {
+  if (event.type !== 'message.created') return {};
+  const message = event.payload.message as { id?: unknown } | undefined;
+  return typeof message?.id === 'string' ? { ref: message.id } : {};
 }

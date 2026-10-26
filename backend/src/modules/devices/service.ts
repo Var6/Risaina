@@ -4,7 +4,12 @@ import type { AppContext } from '../../app-context.js';
 import type { DeviceTokenDoc } from '../../db/types.js';
 import type { PushData } from '../../services/push/types.js';
 import { DeviceRepo } from './repo.js';
-import type { DeviceHealth, DeviceHealthResponse, TestPushResponse } from './schemas.js';
+import {
+  type DeviceHealth,
+  type DeviceHealthResponse,
+  HealthFlag,
+  type TestPushResponse,
+} from './schemas.js';
 
 /** The test push is worth nothing once it is late, so FCM may drop it after ten minutes. */
 const TEST_PUSH_TTL_MS = 10 * 60 * 1000;
@@ -69,20 +74,27 @@ export class DeviceService {
     return { scheduled: true, devices: tokens.length, reason: null };
   }
 
-  async ack(
+  /**
+   * The phone received a push. It says so on the GET /events request its sync makes anyway (no
+   * extra request inside the few seconds Android gives the push handler):
+   * `X-Risaina-Device: <deviceId>`, `X-Risaina-Push: <priority>/<originalPriority>` and optionally
+   * `X-Risaina-Health: flag,flag`. Malformed headers are ignored; this never fails the request.
+   */
+  async ackFromHeaders(
     userId: string,
-    deviceId: string,
-    input: { priority: 'high' | 'normal'; originalPriority: 'high' | 'normal'; healthFlags?: string[] },
+    headers: Record<string, string | string[] | undefined>,
   ): Promise<void> {
+    const ack = parsePushAckHeaders(headers);
+    if (!ack) return;
     await this.repo.recordAck(
       new ObjectId(userId),
-      deviceId,
+      ack.deviceId,
       {
-        priority: input.priority,
+        priority: ack.priority,
         // FCM may lower a high push to normal on a phone whose high pushes rarely showed a
         // notification; the app sees both values on the received message.
-        downgraded: input.originalPriority === 'high' && input.priority === 'normal',
-        healthFlags: input.healthFlags ? [...new Set(input.healthFlags)] : undefined,
+        downgraded: ack.originalPriority === 'high' && ack.priority === 'normal',
+        healthFlags: ack.healthFlags,
       },
       this.ctx.now(),
     );
@@ -129,4 +141,34 @@ function toHealth(d: Omit<DeviceTokenDoc, 'token'>, own: boolean): z.infer<typeo
     lastPushDowngraded: d.lastPushDowngraded ?? false,
     healthFlags: d.healthFlags ?? [],
   };
+}
+
+export interface PushAck {
+  deviceId: string;
+  priority: 'high' | 'normal';
+  originalPriority: 'high' | 'normal';
+  healthFlags?: string[];
+}
+
+function header(headers: Record<string, string | string[] | undefined>, name: string): string | null {
+  const v = headers[name];
+  return typeof v === 'string' ? v.trim() : null;
+}
+
+/** Parses the push-ack headers of GET /events, or null when absent or malformed. */
+export function parsePushAckHeaders(headers: Record<string, string | string[] | undefined>): PushAck | null {
+  const deviceId = header(headers, 'x-risaina-device');
+  const push = header(headers, 'x-risaina-push');
+  if (!deviceId || deviceId.length > 128 || !push) return null;
+  const [priority, originalPriority] = push.split('/');
+  const isPriority = (p: string | undefined): p is 'high' | 'normal' => p === 'high' || p === 'normal';
+  if (!isPriority(priority) || !isPriority(originalPriority)) return null;
+  const health = header(headers, 'x-risaina-health');
+  let healthFlags: string[] | undefined;
+  if (health !== null) {
+    const flags = health === '' ? [] : health.split(',').map((f) => f.trim());
+    if (flags.length > 16 || !flags.every((f) => HealthFlag.safeParse(f).success)) return null;
+    healthFlags = [...new Set(flags)];
+  }
+  return { deviceId, priority, originalPriority, healthFlags };
 }

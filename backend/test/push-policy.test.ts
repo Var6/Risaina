@@ -41,7 +41,7 @@ const TABLE: [
   ['list.created', {}, 'normal', false],
   ['list.updated', {}, 'normal', false],
   ['list.deleted', {}, 'normal', false],
-  ['widget.updated', {}, 'normal', false],
+  ['widget.updated', {}, 'high', false],
   ['sos.raised', {}, 'high', true],
   ['sos.acknowledged', {}, 'normal', false],
   // Added by other modules; strings so this file does not depend on them.
@@ -86,6 +86,30 @@ describe('pushPolicyFor', () => {
     }
   });
 
+  /**
+   * Every high type must end in a visible notification on the recipient's phone, or FCM learns to
+   * deprioritise it. Mirrors the app: EventReducer.kt maps these to Incoming items that
+   * RisainaNotifier.kt posts (game.updated: only the notifying actions; widget.updated: the quiet
+   * "updated your widget"; sos.*: SosAlert; location.started: the location stream's notification).
+   */
+  const CLIENT_NOTIFIES: ReadonlySet<string> = new Set([
+    'ping.created',
+    'message.created',
+    'couple.unlinked',
+    'widget.updated',
+    'game.updated',
+    'sos.raised',
+    'sos.resolved',
+    'location.started',
+  ]);
+
+  it('only pushes high what the app turns into a visible notification', () => {
+    for (const [type, payload, priority] of TABLE) {
+      if (priority === 'high')
+        expect(CLIENT_NOTIFIES.has(type), `${type} ${JSON.stringify(payload)}`).toBe(true);
+    }
+  });
+
   it('covers every event type the server can emit', () => {
     const covered = new Set(TABLE.map(([type]) => type));
     for (const type of EVENT_TYPES) expect(covered.has(type), type).toBe(true);
@@ -107,7 +131,7 @@ describe('pushPolicyFor', () => {
   });
 });
 
-describe('quietPolicy (notifications off or quiet hours)', () => {
+describe('quietPolicy (notifications turned off)', () => {
   it('turns a notifying push into a silent normal one instead of skipping it', () => {
     expect(quietPolicy(pushPolicyFor('ping.created', {}))).toEqual({
       priority: 'normal',
@@ -124,7 +148,7 @@ describe('quietPolicy (notifications off or quiet hours)', () => {
   });
 
   it('leaves normal and none unchanged', () => {
-    expect(quietPolicy(pushPolicyFor('widget.updated', {})).priority).toBe('normal');
+    expect(quietPolicy(pushPolicyFor('partner.updated', {})).priority).toBe('normal');
     expect(quietPolicy(pushPolicyFor('game.updated', { action: 'cancelled' })).priority).toBe('none');
   });
 });

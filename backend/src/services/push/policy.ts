@@ -33,12 +33,17 @@ export const SYNC_COLLAPSE_KEY = 'sync';
 /** Silent pushes may wait for the phone longer than notifying ones: the widget refresh still helps. */
 export const NORMAL_PUSH_TTL_MS = 24 * 60 * 60 * 1000;
 
-/** Always end in a visible notification on the recipient's phone. */
+/**
+ * Always end in a visible notification on the recipient's phone. widget.updated ("Their widget":
+ * mood, note or photo) is the main widget content, so it is high too, and the app posts a quiet
+ * "<partner> updated your widget" notification while the widget redraws (main-session decision).
+ */
 const HIGH_TYPES: ReadonlySet<string> = new Set([
   'ping.created',
   'message.created',
   'couple.unlinked',
   'location.started',
+  'widget.updated',
 ]);
 
 /** Safety alerts: high priority, through notifications-off and quiet hours. */
@@ -85,16 +90,17 @@ export function pushPolicyFor(type: string, payload?: Record<string, unknown> | 
     if (action !== null && GAME_NOTIFYING_ACTIONS.has(action)) return { ...HIGH };
     if (action !== null && GAME_UNPUSHED_ACTIONS.has(action)) return { ...NONE };
   }
-  // Receipts, media.ready, lists, memories, milestones, profile/couple/widget changes, the SOS
-  // sender's "seen"/"delivered" ticks, location.stopped and anything unknown: a silent refresh.
+  // Receipts, media.ready, lists, memories, milestones, profile/couple changes, the SOS sender's
+  // "seen"/"delivered" ticks, location.stopped and anything unknown: a silent refresh.
   return { ...NORMAL };
 }
 
 /**
- * The recipient muted notifications, or it is their quiet hours: send a silent normal-priority push
- * instead of none at all, so their widgets still change (the app posts no sound in quiet hours and
- * no notification when notifications are off). It used to skip these pushes for good, which froze
- * the widgets for the whole window. Bypass types (SOS) stay high.
+ * The recipient turned notifications off: send a silent normal-priority push instead of none at
+ * all, so their widgets still change. It used to be skipped for good, which froze the widgets. A
+ * high push the app answers with no notification would also teach FCM to deprioritise the phone.
+ * (Quiet hours stay high: the app still posts, silently, on its quiet channels.) Bypass types (SOS)
+ * stay high.
  */
 export function quietPolicy(policy: PushPolicy): PushPolicy {
   if (policy.bypassPrefs || policy.priority !== 'high') return policy;

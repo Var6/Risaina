@@ -139,12 +139,18 @@ export const authRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
         tags: [TAG],
         summary: 'Rotate a refresh token',
         description:
-          'Every refresh token is single use. Presenting a token that was already rotated revokes the whole session family.',
+          'Every refresh token is single use. Presenting a token that was already rotated revokes the whole session family, ' +
+          'except within 60 s from the same deviceId while the replacement session is still unused (a response lost to a ' +
+          'killed app): then a fresh pair is issued and the unused replacement is revoked.',
         body: RefreshBody,
         response: { 200: TokensResponse, 401: ErrorEnvelope, 429: ErrorEnvelope },
       },
     },
-    async (req) => service.refresh(req.body.refreshToken, { userAgent: req.headers['user-agent'] ?? null }),
+    async (req) =>
+      service.refresh(req.body.refreshToken, {
+        userAgent: req.headers['user-agent'] ?? null,
+        deviceId: req.body.deviceId ?? null,
+      }),
   );
 
   r.post(

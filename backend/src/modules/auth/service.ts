@@ -226,17 +226,20 @@ export class AuthService {
    * The phone presents a token it already rotated. Within REFRESH_GRACE_MS, if the session it was
    * rotated into has never been used (no request with its access token, no refresh with its refresh
    * token), the phone most likely never received that response: revoke the unused replacement and
-   * issue a fresh pair in the same family instead of signing the person out. The user agent must
-   * match (a weak binding; both phones share it, so the "unused" check is the real guard). Anything
-   * else falls through to reuse detection.
+   * issue a fresh pair in the same family instead of signing the person out. Only from the same
+   * install: the replacement must carry the deviceId this request sends (apps that send none get no
+   * grace). Anything else falls through to reuse detection.
    */
   private async graceRetry(session: SessionDoc, meta: SessionMeta, now: Date): Promise<TokensDto | null> {
-    if (!session.rotatedAt || !session.replacedBy || session.revokedAt) return null;
+    if (!session.rotatedAt || !session.replacedBy || session.revokedAt || !meta.deviceId) return null;
     if (now.getTime() - session.rotatedAt.getTime() > REFRESH_GRACE_MS) return null;
-    if (meta.userAgent && session.userAgent && meta.userAgent.slice(0, 200) !== session.userAgent)
-      return null;
     if (session.expiresAt.getTime() <= now.getTime()) return null;
-    const dropped = await this.repo.revokeIfUnused(session.replacedBy, 'refresh_grace_replaced', now);
+    const dropped = await this.repo.revokeIfUnused(
+      session.replacedBy,
+      meta.deviceId,
+      'refresh_grace_replaced',
+      now,
+    );
     if (!dropped) return null;
     this.ctx.hub.revokeSession(session.replacedBy.toHexString());
     const next = await this.createSessionWithId(session.userId, session.familyId, {

@@ -7,7 +7,6 @@ import {
   DeviceHealthResponse,
   DeviceParams,
   DeviceUpsertBody,
-  PushAckBody,
   TestPushBody,
   TestPushResponse,
 } from './schemas.js';
@@ -91,28 +90,6 @@ export const deviceRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => 
       },
     },
     async (req) => service.testPush(req.user!.id, req.body),
-  );
-
-  r.post(
-    '/devices/:deviceId/push-ack',
-    {
-      ...auth,
-      schema: {
-        tags: [TAG],
-        summary: 'This phone received a push (delivery health)',
-        description:
-          'Records lastPushAckAt, the priority the push arrived with, whether FCM downgraded it, and ' +
-          "optional health flags. Only the caller's own device row is updated; unknown ids are ignored.",
-        security,
-        params: DeviceParams,
-        body: PushAckBody,
-        response: { 204: NoContent, 400: ErrorEnvelope, 401: ErrorEnvelope },
-      },
-    },
-    async (req, reply) => {
-      await service.ack(req.user!.id, req.params.deviceId, req.body);
-      return reply.code(204).send(null);
-    },
   );
 
   r.get(
