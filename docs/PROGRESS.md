@@ -147,7 +147,8 @@ on the real phones.
 - ✅ **Push handler order**: SOS first (unchanged), then the safety-net SyncWorker (inside FCM's expedited
   exemption), then a network-free alert for a ping or message, then a sync bounded to 4 s. Each
   notification is posted as its event is applied, so a timeout or a later error never loses one. Photo
-  downloads, delivered receipts and game refreshes moved out of the push handler (to the worker).
+  downloads, delivered receipts and game refreshes run after the sync, only with what is left of the 4 s
+  (the worker does the rest).
 - ✅ **One sync at a time**: the push handler and the workers share a sync instead of fetching side by
   side, but never one that started before their push arrived. Widget recomputes run one at a time, so an
   older one cannot overwrite a newer snapshot.
@@ -172,8 +173,23 @@ on the real phones.
   old gifts (persisted high-water mark, used by both the sync and the socket); opening the app clears the
   gift/ping, game and widget-update notifications (not chat messages); the detailed alert after a quick one
   for the same item is silent; a quick alert never overwrites a notification an earlier sync already posted.
+- ✅ **Review fixes**: sign-out, session expiry, account deletion and unlink clear every partner
+  notification again, unread chat included (opening the app still keeps chat); a new pairing applied by a
+  sync no longer rewinds the event cursor to 0 (which made the next push count as history); the replay mark
+  is written once per fresh start; a sync waiting out a retry backoff is replaced by a fresh expedited one on
+  the next push; the push is recorded before the worker starts, so its ack reaches the server; each shared
+  sync ends after 15 s and one running over 8 s no longer blocks a new push; the photo download runs
+  outside the shared sync; the socket runs receipts once after its replay, beside the collector; a queued
+  game refresh asked for again while it runs runs again, and a receipt the server keeps refusing is dropped
+  after 5 tries; the quick alert can no longer replace the detailed one; game pushes are checked per action
+  against the app's notification texts. Delivery health: "I've done this" turns the phone-maker check green
+  (a later kill brings it back), and ColorOS phones get an "Auto launch list" button next to App info.
 - ❌ Not verified on real phones yet. Main-session device checks: build id on Raina's Realme; with the app
   swiped away and the screen off, a text, a photo and a gift each update the "Us" widget within seconds;
   `dumpsys package com.risaina.app | grep stopped`; Delivery health on ColorOS (which settings screens open;
   "Allow" for the battery exemption); the test push; the lock card on a PIN-locked ColorOS lock screen;
-  Glance responsive sizes drawn by `runComposition` on the realme launcher.
+  Glance responsive sizes drawn by `runComposition` on the realme launcher; on ColorOS, what "Auto launch
+  list" opens; sign out with message notifications showing (they must all go, an SOS must stay).
+- Merge notes for the games stream: `finished` and `matched` are pushed high; add their texts to
+  RisainaNotifier's game branch when the server starts emitting them (backend/test/push-policy.test.ts
+  fails until then).
