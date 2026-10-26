@@ -146,7 +146,7 @@ logged. Hard-deleted on unlink (see "Unlink purge").
 Indexes: `{coupleId:1, createdAt:-1}` (`GET /sos`, export); `{senderId:1, createdAt:-1}` (3 per 10 min).
 
 ### `games`
-`coupleId, kind ('rps'), createdBy, memberIds [2], status, open (bool: status not completed/cancelled),
+`coupleId, kind ('rps'; more kinds below), createdBy, memberIds [2], status, open (bool: status not completed/cancelled),
 round (≥1), moves [{userId, move, at}] (current round, ≤2), winnerId|null, loserId|null, challenge|null,
 answer (≤500)|null, createdAt, updatedAt, completedAt|null, cancelledAt|null, cancelledBy|null`.
 
@@ -166,6 +166,35 @@ transition.
 
 Indexes: `{coupleId:1, createdAt:-1}` (`GET /games`, export); `{coupleId:1}` unique partial `{open: true}`
 (one open game per couple, race-safe).
+
+**More games (games stream): tic-tac-toe, trivia duel, This or That.** `kind` ∈ `rps | tictactoe | trivia |
+this_or_that`. Three new OPTIONAL fields, never in `required` (the live validator can't change, and it sets
+no `additionalProperties`, so it accepts them); every required field above is still written for every kind
+(`moves: []`, `challenge: null`, ...). `moves` can't hold tic-tac-toe moves: the live validator caps it at 2.
+
+| Field | Shape | Missing reads as |
+|---|---|---|
+| `prize` | `'truth_or_dare' \| 'none'` (this_or_that always `'none'`) | `'truth_or_dare'` |
+| `ttt` | `{ board: ('x'\|'o'\|null)[9], xId, turnId\|null, moveCount 0..9, lastCell\|null, line: number[3]\|null }` | `null` (not tic-tac-toe) |
+| `quiz` | `{ source 'opentdb'\|'builtin'\|'curated', category {id,name}\|null, difficulty\|null, deck\|null, items: QuizItem[1..10], players: QuizPlayer[2], matches\|null }` | `null` (not a quiz) |
+
+`QuizItem = { id ('otdb_'+sha256(text)[0..16] | 'tb_..' | curated 'ev-07'), text|null, choices (4 or 2, already
+shuffled), correct (index)|null, category|null, difficulty|null }`. `QuizPlayer = { userId, picks: number[]
+(in order), score, finishedAt|null }`, in `memberIds` order. Trivia answers are one conditional
+`findOneAndUpdate` on `quiz.players.$elemMatch { userId, picks: { $size: item } }` (so answers are sequential,
+and a retry can't answer the next question); the game resolves with a second conditional write on
+`quiz.players: { $not: { $elemMatch: { finishedAt: null } } }`, so only the second finisher resolves it.
+Tic-tac-toe moves are conditional on `status`, `round`, `ttt.moveCount` and `ttt.turnId`.
+
+Example (tic-tac-toe, X to move):
+`{ kind: 'tictactoe', status: 'waiting', open: true, round: 1, prize: 'truth_or_dare', moves: [], challenge: null,
+ttt: { board: [null, null, null, null, 'x', null, 'o', null, null], xId: B, turnId: B, moveCount: 2, lastCell: 6,
+line: null }, quiz: null, ... }`.
+
+No new index: the "avoid recent questions/prompts" reads (`{coupleId, kind}`, newest 30 trivia or 5 This or
+That games, projecting `quiz.items.id`) use `{coupleId:1, createdAt:-1}`. `test/fixtures/games-validator.live.json`
+is a frozen copy of the deployed validator; a test inserts every document shape the new games write into a
+collection created with it.
 
 ### Later optional fields (never `required`; a readWrite-only DB user cannot collMod)
 

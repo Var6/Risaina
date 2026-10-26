@@ -538,7 +538,7 @@ RpsMove = 'rock'|'paper'|'scissors'|'thread'
 GameStatus = 'waiting'|'draw'|'revealed'|'challenged'|'chosen'|'awaiting_confirmation'|'completed'|'cancelled'
 
 // HTTP responses: viewer-specific
-Game { id, coupleId, kind: 'rps', createdBy, createdAt, updatedAt,
+Game { id, coupleId, kind: string /* 'rps' here; see More games */, createdBy, createdAt, updatedAt,
        status: GameStatus,
        myMove: RpsMove|null,          // my move in the current round
        partnerMoved: boolean,         // partner has moved in the current round
@@ -654,6 +654,108 @@ succeed and the later event may also say `'moved'` while already carrying the re
 `status`.)
 
 `GET /me/export` adds `games: Game[]` (viewer-specific, newest first, bounded to 1000, counted in `truncated`).
+
+### More games: tic-tac-toe, trivia duel, This or That
+
+Additive (games stream). Everything above still holds for `rps`, and older apps keep working: `{ kind: 'rps' }`,
+`/move` and every `Game` field they read are unchanged. New kinds: `tictactoe`, `trivia`, `this_or_that`.
+Still **one open game per couple, of any kind** (`coupleId_open_unique`); the app's picker offers "End it and start".
+
+**Tolerant reader.** In responses `kind` is a plain string (requests still validate the enum): responses are
+serialized through the Zod schemas, so an enum there would turn `GET /games`, `GET /games/:id` and
+`GET /me/export` into a 500 as soon as the database held a kind the running build doesn't know (for example
+after a rollback). Clients must render an unknown kind as "Update Risaina to play this game".
+
+**Prize.** `Game.prize: 'truth_or_dare' | 'none'` (absent on older games ⇒ `'truth_or_dare'`). With
+`'truth_or_dare'` a decided round goes to `revealed` and the blind truth or dare above follows, for any
+competitive kind. With `'none'` ("just for fun") a decided round goes straight to `completed` (winner and loser
+set, `challenge: null`). This or That has no winner and always reports `'none'`.
+
+```ts
+// added to Game (HTTP, viewer-specific); rps fields stay present for every kind (myMove: null, partnerMoved: false, ...)
+Game += { prize: 'truth_or_dare'|'none',
+          ttt: TicTacToe | null,      // tictactoe only
+          quiz: Quiz | null }         // trivia and this_or_that only
+
+TicTacToe { board: ('x'|'o'|null)[9] /* index = row*3+col */, xId, turnId: string|null /* null once over */,
+            lastCell: number|null, line: number[3]|null /* winning cells */, moveCount: 0..9,
+            myMark: 'x'|'o', myTurn: boolean }
+
+Quiz { source: 'opentdb'|'builtin'|'curated',
+       attribution: string|null,      // "Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0" when source is opentdb
+       category: { id, name }|null, difficulty: 'easy'|'medium'|'hard'|null, deck: string|null,
+       total: number,                 // trivia 5, this_or_that 7
+       items: QuizItem[],             // see visibility below
+       myAnswered, partnerAnswered,   // counts, always
+       myFinished, partnerFinished,   // booleans, always
+       myScore: number|null,          // trivia only, always
+       partnerScore: number|null,     // trivia, once BOTH finished
+       matches: number|null }         // this_or_that, once BOTH finished
+
+QuizItem { index, text: string|null /* null for This or That */, choices: string[] /* trivia 4, this_or_that 2 */,
+           category: string|null, difficulty: string|null,
+           myChoice: number|null,
+           correct: number|null,      // trivia: only for items the viewer already answered
+           partnerChoice: number|null }  // only once BOTH finished
+
+// added to GameEventView (events, viewer-neutral): never question text, choices, correct answers or picks
+GameEventView += { prize, ttt: TicTacToe minus myMark/myTurn | null,
+                   quiz: { source, categoryName, deck, total,
+                           progress: { userId, answered, finished }[],
+                           scores: { userId, score }[] | null,   // trivia, once both finished
+                           matches: number|null } | null }
+```
+
+**Quiz visibility** (every HTTP response, `details.game` of errors and `GET /me/export`):
+
+| | Trivia duel | This or That |
+|---|---|---|
+| `items` | the answered ones plus the current one (all once both finished; only answered ones after a cancel) | all 7 prompts from the start (they aren't secret) |
+| `correct` | only for items the viewer answered | always null |
+| `partnerChoice`, `partnerScore`, `matches` | only once both finished, never after a midway cancel | same |
+
+**Endpoints** (same auth and shared write rate limit as above):
+
+| Method | Path | Body | Success | Notes |
+|---|---|---|---|---|
+| GET | `/games/catalog` | | `200 { kinds: {kind,title,emoji,blurb,competitive}[], trivia: {questionCount, difficulties, categories: {id,name}[], attribution, attributionUrl}, thisOrThat: {promptCount, decks: {id,name,emoji}[]} }` | On an older server this path hits `/games/:id` and answers `404`, which the app reads as "rps only" |
+| POST | `/games` | one of `{ kind:'rps', prize?:'none' }`, `{ kind:'tictactoe', prize?:'none' }`, `{ kind:'trivia', prize?:'none', category?: 9\|11\|12\|14\|15\|17\|21\|22\|23\|27, difficulty?: 'easy'\|'medium'\|'hard' }`, `{ kind:'this_or_that', deck?: 'mix'\|'everyday'\|'us'\|'travel_food'\|'dreams' }` | `201 { game }` | Strict per kind. `prize` accepts only `'none'`: the default is expressed by leaving it out, so a "Play again" body is valid on every server version. Trivia waits up to `TRIVIA_TIMEOUT_MS` for questions |
+| POST | `/games/:id/play` | one of `{ kind:'rps', move }`, `{ kind:'tictactoe', cell: 0..8 }`, `{ kind:'trivia', item: 0..4, choice: 0..3 }`, `{ kind:'this_or_that', picks: (0\|1)[] }` | `200 { game }` | `kind` must match the game. Trivia: `item` must be the next unanswered one, so a retried answer gets `409 already_moved`, never the next question. This or That: all picks in one request, one per prompt, in order |
+| POST | `/games/:id/end` | (none) | `200 { game }` (`completed`, no winner) | Either player, status `draw` only; calls the draw off |
+| POST | `/games/:id/rematch` | (none) | `200 { game }` | Status `draw` (rps, tictactoe, trivia). Tic-tac-toe: board cleared, X swaps (the previous O moves first). Trivia: 5 new questions, both players reset. This or That never draws |
+
+Order of checks on `/play` and `/move`: the kind (`400`, message "Update Risaina to play this game",
+`details: [{ path: '/kind' }]`), then the status (`409 invalid_game_state`), then the turn or role, then the move.
+So an older app tapping on a newer kind of game, even a finished one, is always told to update.
+
+| Status | `error.code` | When |
+|---|---|---|
+| 409 | `not_your_turn` | tic-tac-toe move by the player whose turn it isn't; `details.game` |
+| 409 | `invalid_move` | tic-tac-toe cell already taken; trivia `item` ahead of the next unanswered one ("Answer question n first"); `details.game` |
+| 409 | `already_moved` | trivia `item` already answered; This or That picks already sent |
+| 400 | `validation_failed` | kind mismatch (path `/kind`); This or That `picks` of the wrong length (path `/picks`); option on the wrong kind |
+
+**Rules.**
+- Tic-tac-toe: the invitee plays X and moves first; X swaps on each rematch. A line ⇒ `revealed` (or
+  `completed` with prize `'none'`), a full board ⇒ `draw`. Each move is one conditional write on
+  `moveCount` and `turnId`, so two taps can never both land.
+- Trivia duel: 5 questions fetched **server-side** from Open Trivia Database (one curated category; "any"
+  picks a random curated one; base64; 3.5 s timeout; one call per 5.5 s per process). On a timeout, network
+  error, rate limit (HTTP 429 with `response_code` 5), bad answer or within the throttle it falls back to a
+  built-in set written in-house (`source: 'builtin'`). Answers are sequential and final; when both finished,
+  the higher score wins, equal scores are a `draw`.
+- This or That: 7 curated PG prompts from a deck, avoiding the couple's last 5 rounds when possible. When both
+  sent their picks the game is `completed` with `quiz.matches` (no winner, no prize).
+
+**Events.** Still `game.updated`. New actions: `answered` (one trivia answer that didn't finish the player's
+set), `finished` (this player is done, the partner isn't), `matched` (This or That, both done) and `ended` (a
+draw called off). Whether an action is pushed is decided by the outbox push policy (delivery stream), not by
+the games module: `answered`, `cancelled` and `ended` are stored and sent live over the WebSocket but never
+pushed; the others are pushed to the partner.
+
+**Rollout.** Deploy the tolerant-reader commit first, then the games backend, then the APK on both phones.
+Before any rollback of the games backend, cancel open games of the new kinds: an older build's
+`findOpen` would still see them and block new rps games.
 
 ### Shared chat wallpaper
 
