@@ -198,6 +198,8 @@ class DeviceStateReader @Inject constructor(
      * Swipe-kills, force-stops and freezes, after the fact (Android 11+). ColorOS often reports its
      * own cleanups as "other" with a description, which is shown as is.
      */
+    // REASON_FREEZER is an Android 13 constant, inlined at compile time; older versions never report it.
+    @android.annotation.SuppressLint("InlinedApi")
     @androidx.annotation.RequiresApi(30)
     private fun lastKill(): AppKill? = runCatching {
         val am = context.getSystemService(ActivityManager::class.java) ?: return null
@@ -205,7 +207,7 @@ class DeviceStateReader @Inject constructor(
             val kind = when (e.reason) {
                 android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "swiped"
                 android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "stopped"
-                REASON_FREEZER -> "frozen"
+                android.app.ApplicationExitInfo.REASON_FREEZER -> "frozen"
                 android.app.ApplicationExitInfo.REASON_OTHER -> "other"
                 else -> null
             }
@@ -220,8 +222,6 @@ class DeviceStateReader @Inject constructor(
 
     private companion object {
         const val PLAY_SERVICES = "com.google.android.gms"
-        /** ApplicationExitInfo.REASON_FREEZER (Android 13); the value is reported on any version. */
-        const val REASON_FREEZER = 14
     }
 }
 

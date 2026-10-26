@@ -212,10 +212,11 @@ private fun lastPushLine(d: DeliverySnapshot): String {
 }
 
 /**
- * "Build 0.2.0+1a2b3c4 · last push message.created, arrived high (sent high) · widgets drawn 2".
- * The build id answers "is this phone on the new version?"; arrived vs sent shows an FCM downgrade.
+ * "Build 0.2.0+1a2b3c4 · last push message.created, arrived high (sent high) · widgets drawn 2 ·
+ * background sync 5 min ago". The build id answers "is this phone on the new version?"; arrived vs
+ * sent shows an FCM downgrade; the background sync time shows whether Android lets the worker run.
  */
-internal fun technicalLine(build: String, d: DeliverySnapshot): String = buildList {
+internal fun technicalLine(build: String, d: DeliverySnapshot, now: Long = System.currentTimeMillis()): String = buildList {
     add("Build $build")
     d.lastPushType?.let { type ->
         val arrived = d.lastPushPriority?.let { p -> ", arrived $p" + (d.lastPushOriginalPriority?.let { " (sent $it)" } ?: "") } ?: ""
@@ -224,6 +225,7 @@ internal fun technicalLine(build: String, d: DeliverySnapshot): String = buildLi
     if (d.lastWidgetDrawAt != null) {
         add("widgets drawn ${d.lastWidgetDrawn}" + if (d.lastWidgetFallbacks > 0) ", queued ${d.lastWidgetFallbacks}" else "")
     }
+    d.lastWorkerRunAt?.let { add("background sync ${relative(it, now)}") }
 }.joinToString(" · ")
 
 private fun partnerLine(s: DeliveryHealthUiState): String? {
@@ -248,8 +250,8 @@ private fun flagWords(flag: String): String? = when (flag) {
     else -> null
 }
 
-private fun relative(millis: Long): String {
-    val mins = (System.currentTimeMillis() - millis) / 60_000
+private fun relative(millis: Long, now: Long = System.currentTimeMillis()): String {
+    val mins = (now - millis) / 60_000
     return when {
         mins < 1 -> "just now"
         mins < 60 -> "$mins min ago"
