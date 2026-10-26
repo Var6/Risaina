@@ -322,3 +322,26 @@ yet**, and the emulator was not used (the main session needed it).
   refresh-reuse grace window is delivery's; Home shows a banner instead of the design's "📍 Live" chip;
   the partner gets no "is sharing" notice for a panic share whose SOS never got through.
 
+
+## Emulator verification of the merged round (2026-10-26)
+All three streams merged into one branch (plus the input-box, chat-scroll and lock-card fixes found while
+testing). Backend 338/338 tests; Android 269 unit tests, lint 0 errors. Verified on the Android 16 emulator
+against a local server running this code with push enabled, the app process killed for every "closed" case:
+
+| Area | Result |
+|---|---|
+| Chat box while 5 messages arrive | ✅ typed text kept exactly; box empty after sending, nothing comes back |
+| New messages in an open chat | ✅ open at the newest, new arrivals scroll in, reading position kept when scrolled up (bug found and fixed) |
+| Widget with the app closed | ✅ "Us" widget updated 8–10 s after the partner's message (push +2 s, sync +6 s, drawn +8 s), glowing "New" |
+| Partner updates "Their widget" | ✅ widget redraws and a quiet "updated your widget" notification appears |
+| Gift on the lock-screen card | ✅ "A gift from …" only while unseen; calm line (no gift, no time) after opening; calms ~4 s after leaving |
+| SOS: notifications OFF, ringer silent, app killed | ✅ alarm service started from the push, alarm sound on the alarm stream, volume raised to max and restored, alarm vibration; opening Risaina shows the alarm screen; "I'm on it" stops it; sender sees delivered + acknowledged |
+| SOS with the screen asleep (notifications on) | ✅ full-screen alarm wakes the screen, after giving the alarm notification its own group (Android auto-grouping had suppressed it) |
+| Ping with the app open | ✅ 1.25 s heartbeat vibration in the app, no notification |
+| Live location | ✅ permission flow, partner sees position/accuracy/battery/expiry, stop deletes it on the server (manual updates every 60 s by design) |
+| Panic | ✅ a tap sends nothing, a 2 s hold sends; panic location updates every 15 s; "I'm safe now" resolves the SOS and deletes the location |
+| Games | ✅ tic-tac-toe (win → truth-or-dare prize), trivia duel with live Open Trivia DB questions and attribution, This or That ("In sync: 5 of 7") |
+| Delivery health card | ✅ build id, last push and priority, widget draws, test push ("It took 0.2 s") |
+
+Not verifiable here: Realme/ColorOS background behaviour on Raina's phone, a real lock screen with a PIN and
+fingerprint, OS lock-screen widgets. **The server changes are not live until main is pushed (Render deploys it).**
