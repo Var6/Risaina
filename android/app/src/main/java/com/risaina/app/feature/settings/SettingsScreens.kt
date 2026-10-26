@@ -330,7 +330,14 @@ fun ProfileScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
-    var name by remember(s.profile?.displayName) { mutableStateOf(s.profile?.displayName ?: "") }
+    // The saved name only refills the field while the person is not editing it. It used to be keyed on
+    // the saved name, so any profile refresh in the background erased what they were typing.
+    var name by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(s.profile?.displayName ?: "") }
+    var nameEdited by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(s.profile?.displayName) {
+        val saved = s.profile?.displayName ?: return@LaunchedEffect
+        if (!nameEdited || name.trim() == saved) { name = saved; nameEdited = false }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::updateAvatar) }
     Frame("Your profile", onBack) {
         Spacer(Modifier.height(16.dp))
@@ -340,7 +347,7 @@ fun ProfileScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
             OutlineButton("Change photo", onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !s.busy)
         }
         Spacer(Modifier.height(24.dp))
-        RisainaTextField(name, { name = it }, "What should your partner see?", supporting = "Shown on their home screen and widgets")
+        RisainaTextField(name, { name = it; nameEdited = true }, "What should your partner see?", supporting = "Shown on their home screen and widgets")
         Spacer(Modifier.height(8.dp))
         OutlineButton("Save name", onClick = { vm.updateName(name) }, enabled = name.trim().length >= 2 && name.trim() != s.profile?.displayName && !s.busy)
         Spacer(Modifier.height(16.dp))
@@ -430,10 +437,23 @@ private fun CityPicker(current: String?, onSearch: suspend (String) -> List<com.
 @Composable
 private fun BirthdayEditor(current: String?, busy: Boolean, onSave: (String?) -> Unit) {
     val parsed = com.risaina.app.core.domain.Birthday.parse(current)
-    var day by remember(current) { mutableStateOf(parsed?.monthDay?.dayOfMonth?.toString() ?: "") }
-    var month by remember(current) { mutableStateOf(parsed?.monthDay?.monthValue ?: 0) }
-    var year by remember(current) { mutableStateOf(parsed?.year?.toString() ?: "") }
-    var hideYear by remember(current) { mutableStateOf(parsed != null && parsed.year == null) }
+    // Fields start from the saved birthday and are only refilled from it while the person is not editing,
+    // so a background refresh never wipes a half-typed date (they were keyed on the saved value before).
+    var day by remember { mutableStateOf(parsed?.monthDay?.dayOfMonth?.toString() ?: "") }
+    var month by remember { mutableStateOf(parsed?.monthDay?.monthValue ?: 0) }
+    var year by remember { mutableStateOf(parsed?.year?.toString() ?: "") }
+    var hideYear by remember { mutableStateOf(parsed != null && parsed.year == null) }
+    var edited by remember { mutableStateOf(false) }
+    LaunchedEffect(current) {
+        val typed = (BirthdayInput.validate(day, month, if (hideYear) "" else year) as? BirthdayInput.Result.Ok)?.wire
+        if (!edited || typed == current) {
+            day = parsed?.monthDay?.dayOfMonth?.toString() ?: ""
+            month = parsed?.monthDay?.monthValue ?: 0
+            year = parsed?.year?.toString() ?: ""
+            hideYear = parsed != null && parsed.year == null
+            edited = false
+        }
+    }
     var monthMenu by remember { mutableStateOf(false) }
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     val months = remember(locale) { java.time.Month.entries.map { it.getDisplayName(java.time.format.TextStyle.FULL, locale) } }
@@ -445,18 +465,18 @@ private fun BirthdayEditor(current: String?, busy: Boolean, onSave: (String?) ->
     )
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
-        RisainaTextField(day, { day = it.filter(Char::isDigit).take(2) }, "Day", modifier = Modifier.width(76.dp),
+        RisainaTextField(day, { day = it.filter(Char::isDigit).take(2); edited = true }, "Day", modifier = Modifier.width(76.dp),
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
         Column(Modifier.weight(1f)) {
             OutlineButton(if (month in 1..12) months[month - 1] else "Month", onClick = { monthMenu = true }, modifier = Modifier.fillMaxWidth())
             androidx.compose.material3.DropdownMenu(expanded = monthMenu, onDismissRequest = { monthMenu = false }) {
-                months.forEachIndexed { i, m -> androidx.compose.material3.DropdownMenuItem(text = { Text(m) }, onClick = { month = i + 1; monthMenu = false }) }
+                months.forEachIndexed { i, m -> androidx.compose.material3.DropdownMenuItem(text = { Text(m) }, onClick = { month = i + 1; monthMenu = false; edited = true }) }
             }
         }
-        RisainaTextField(if (hideYear) "" else year, { year = it.filter(Char::isDigit).take(4) }, "Year", modifier = Modifier.width(96.dp), enabled = !hideYear,
+        RisainaTextField(if (hideYear) "" else year, { year = it.filter(Char::isDigit).take(4); edited = true }, "Year", modifier = Modifier.width(96.dp), enabled = !hideYear,
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
     }
-    ToggleRow("Keep my birth year private", "Your partner sees only the day and month", hideYear, { hideYear = it })
+    ToggleRow("Keep my birth year private", "Your partner sees only the day and month", hideYear, { hideYear = it; edited = true })
     if (result is BirthdayInput.Result.Invalid && (day.isNotEmpty() || month != 0)) {
         Text(result.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }

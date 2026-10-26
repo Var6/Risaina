@@ -115,18 +115,39 @@ class TheirWidgetViewModel @Inject constructor(
         TheirWidgetUi(p?.displayName ?: "them", d, mems.take(30), b.first, b.second, l)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TheirWidgetUi())
 
+    /**
+     * The note being typed, in Compose snapshot state read directly by the field. It used to sit in
+     * the combined [state] flow, whose emissions lag behind keystrokes, so older text could be put
+     * back while typing. [BoardDraft.note] in [state] is kept in sync for the preview only.
+     */
+    var noteText by androidx.compose.runtime.mutableStateOf("")
+        private set
+
+    /** Set once the person touches anything, so a late load never overwrites what they are doing. */
+    @Volatile private var edited = false
+
     init {
         viewModelScope.launch {
+            // What was last sent, from this phone's copy first (instant), then fresh from the server.
+            // Either one only fills the editor if the person has not started editing; previously the
+            // server reply arrived seconds later and replaced whatever they had begun to type.
+            boards.mine.first()?.let(::applyLoaded)
             boards.refresh()
-            boards.mine.first()?.let { m -> draft.value = BoardDraft(m.note ?: "", m.mood, m.emoji, m.photoMediaId) }
+            boards.mine.first()?.let(::applyLoaded)
             loaded.value = true
         }
     }
 
-    fun setNote(v: String) = draft.update { it.copy(note = v.take(140)) }
-    fun setMood(v: String?) = draft.update { it.copy(mood = if (it.mood == v) null else v) }
-    fun setEmoji(v: String?) = draft.update { it.copy(emoji = if (it.emoji == v) null else v) }
-    fun setPhoto(id: String?) = draft.update { it.copy(photoMediaId = if (it.photoMediaId == id) null else id) }
+    private fun applyLoaded(m: com.risaina.app.core.network.WidgetBoardDto) {
+        if (edited) return
+        noteText = m.note ?: ""
+        draft.value = BoardDraft(noteText, m.mood, m.emoji, m.photoMediaId)
+    }
+
+    fun setNote(v: String) { edited = true; noteText = v.take(140); draft.update { it.copy(note = noteText) } }
+    fun setMood(v: String?) { edited = true; draft.update { it.copy(mood = if (it.mood == v) null else v) } }
+    fun setEmoji(v: String?) { edited = true; draft.update { it.copy(emoji = if (it.emoji == v) null else v) } }
+    fun setPhoto(id: String?) { edited = true; draft.update { it.copy(photoMediaId = if (it.photoMediaId == id) null else id) } }
     suspend fun image(mediaId: String): Any? = media.localFile(mediaId) ?: media.ensureCached(mediaId, "image/jpeg").getOrNull()
 
     fun uploadPhoto(uri: Uri) {
@@ -134,7 +155,7 @@ class TheirWidgetViewModel @Inject constructor(
             busy.value = 0f to false
             runCatching { compressor.compress(uri) }.onSuccess { c ->
                 when (val r = media.upload(MediaCategory.PHOTO, c.file, c.mimeType, width = c.width, height = c.height) { p -> busy.value = p to false }) {
-                    is AppResult.Success -> draft.update { it.copy(photoMediaId = r.value.id) }
+                    is AppResult.Success -> { edited = true; draft.update { it.copy(photoMediaId = r.value.id) } }
                     is AppResult.Failure -> effects.trySend(r.error.message ?: "Upload failed")
                 }
                 c.file.delete()
@@ -144,7 +165,7 @@ class TheirWidgetViewModel @Inject constructor(
     }
 
     fun publish(onDone: () -> Unit) {
-        val d = draft.value
+        val d = draft.value.copy(note = noteText)
         viewModelScope.launch {
             busy.value = null to true
             when (val r = boards.publish(d.note, d.emoji, d.mood, null)) {
@@ -155,7 +176,7 @@ class TheirWidgetViewModel @Inject constructor(
         }
     }
 
-    fun clearAll() { draft.value = BoardDraft() }
+    fun clearAll() { edited = true; noteText = ""; draft.value = BoardDraft() }
 }
 
 private val MOODS = listOf("Missing you", "Thinking of you", "Can't wait to see you", "Proud of you", "Sleepy, love you", "Busy but yours", "Call me?", "Sending a hug")
@@ -195,7 +216,7 @@ fun TheirWidgetScreen(onBack: () -> Unit, vm: TheirWidgetViewModel = hiltViewMod
             Spacer(Modifier.height(8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { MOODS.forEach { m -> FilterChip(selected = d.mood == m, onClick = { vm.setMood(m) }, label = { Text(m) }) } }
             Spacer(Modifier.height(16.dp))
-            RisainaTextField(d.note, vm::setNote, "A little note (optional)", singleLine = false, minLines = 2, supporting = "${d.note.length}/140")
+            RisainaTextField(vm.noteText, vm::setNote, "A little note (optional)", singleLine = false, minLines = 2, supporting = "${vm.noteText.length}/140")
             Spacer(Modifier.height(16.dp))
             SectionHeader("An emoji")
             Spacer(Modifier.height(8.dp))
