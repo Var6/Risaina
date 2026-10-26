@@ -173,6 +173,8 @@ import kotlinx.serialization.json.JsonObject
     val event: EventDto? = null,
     val code: String? = null,
     val message: String? = null,
+    /** safety stream: a live location frame (`type: "location"`), never stored or replayed. */
+    val location: LiveLocationDto? = null,
 )
 
 @Serializable data class ListItemDto(val id: String? = null, val text: String, val done: Boolean = false, val doneBy: String? = null, val doneAt: String? = null)
@@ -194,8 +196,12 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class SosDto(
     val id: String, val coupleId: String, val senderId: String, val recipientId: String,
     val message: String? = null, val createdAt: String, val acknowledgedAt: String? = null,
+    // safety stream (absent from older servers, hence the defaults)
+    val panic: Boolean = false, val deliveredAt: String? = null, val resolvedAt: String? = null,
+    val delivery: SosDeliveryDto? = null,
 )
-@Serializable data class CreateSosRequest(val message: String? = null)
+/** null fields are omitted (explicitNulls = false), so an ordinary SOS still works on an older server. */
+@Serializable data class CreateSosRequest(val message: String? = null, val panic: Boolean? = null, val idempotencyKey: String? = null)
 @Serializable data class SosResponse(val sos: SosDto)
 @Serializable data class SosList(val items: List<SosDto>)
 /**
@@ -228,3 +234,40 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class GameCompleteRequest(val answer: String? = null)
 @Serializable data class HealthResponse(val status: String, val version: String? = null, val checks: JsonObject? = null)
 @Serializable data class ExportResponse(@SerialName("user") val user: UserDto, val couple: CoupleDto? = null)
+
+// ---- safety stream: SOS receipts and live location ----------------------------------------------
+
+/** What the partner's phone reported when the SOS rang: device state only, never content. */
+@Serializable data class SosDeliveryDto(
+    val alarmMuted: Boolean? = null, val fgsStarted: Boolean? = null,
+    val notificationsEnabled: Boolean? = null, val interruptionFilter: String? = null,
+)
+@Serializable data class SosDeliveredRequest(
+    val priority: String? = null, val originalPriority: String? = null, val latencyMs: Long? = null,
+    val alarmMuted: Boolean? = null, val alarmVolume: Int? = null, val ringerMode: String? = null,
+    val interruptionFilter: String? = null, val notificationsEnabled: Boolean? = null,
+    val canUseFullScreenIntent: Boolean? = null, val fgsStarted: Boolean? = null,
+)
+@Serializable data class SosTestRequest(val delaySeconds: Int = 15)
+@Serializable data class SosTestResponse(val queued: Boolean = false, val devices: Int = 0)
+
+@Serializable data class LocationFixDto(val lat: Double, val lng: Double, val accuracyM: Double, val at: String, val batteryPct: Int? = null)
+/** `ageMs` comes from the phone's monotonic clock, so a wrong wall clock cannot misplace the fix. */
+@Serializable data class LocationFixInput(val lat: Double, val lng: Double, val accuracyM: Double, val ageMs: Long, val batteryPct: Int? = null)
+@Serializable data class LiveLocationDto(
+    val sessionId: String, val userId: String, val reason: String = "manual", val sosId: String? = null,
+    val startedAt: String, val expiresAt: String? = null, val updatedAt: String,
+    val lastSeenAt: String? = null, val fix: LocationFixDto? = null,
+)
+@Serializable data class LiveLocationStateDto(val mine: LiveLocationDto? = null, val partner: LiveLocationDto? = null)
+/**
+ * `mode` is always sent (encodeDefaults): with explicitNulls = false a null duration disappears, and a
+ * missing duration must never be read as "until I turn it off".
+ */
+@Serializable data class StartSharingRequest(
+    val sessionId: String, val mode: String, val durationMinutes: Int? = null,
+    val reason: String = "manual", val sosId: String? = null, val fix: LocationFixInput? = null,
+)
+@Serializable data class PutFixRequest(val sessionId: String, val fix: LocationFixInput)
+@Serializable data class PutFixResponse(val accepted: Boolean = true)
+@Serializable data class SharingResponse(val sharing: LiveLocationDto)

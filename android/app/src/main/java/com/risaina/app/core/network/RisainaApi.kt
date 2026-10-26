@@ -108,6 +108,16 @@ class RisainaApi @Inject constructor(
     suspend fun createSos(req: CreateSosRequest): SosResponse = client.post("sos") { json(req) }.body()
     suspend fun ackSos(id: String): SosResponse = client.post("sos/$id/ack") { json(EmptyBody) }.body()
     suspend fun sosList(): SosList = client.get("sos") { parameter("limit", 10) }.body()
+    // safety stream: delivery receipt, "I'm safe now", server test alarm, live location
+    suspend fun sosDelivered(id: String, req: SosDeliveredRequest): SosResponse = client.post("sos/$id/delivered") { json(req) }.body()
+    suspend fun resolveSos(id: String): SosResponse = client.post("sos/$id/resolve") { json(EmptyBody) }.body()
+    suspend fun sosTest(req: SosTestRequest): SosTestResponse = client.post("sos/test") { json(req) }.body()
+    suspend fun locationSharing(): LiveLocationStateDto = client.get("location/sharing").body()
+    suspend fun startSharing(req: StartSharingRequest): SharingResponse = client.post("location/sharing") { json(req) }.body()
+    suspend fun putFix(req: PutFixRequest): PutFixResponse = client.put("location/sharing/fix") { json(req) }.body()
+    suspend fun stopSharing(sessionId: String?, reason: String = "stopped") {
+        client.delete("location/sharing") { if (sessionId != null) parameter("sessionId", sessionId); parameter("reason", reason) }
+    }
 
     // ---- games (rock–paper–scissors with truth or dare) ----
     suspend fun games(): GameList = client.get("games") { parameter("limit", 20) }.body()

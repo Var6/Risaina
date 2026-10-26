@@ -41,6 +41,8 @@ class EventSocket @Inject constructor(
     @Named("plain") private val client: HttpClient,
     private val sessionStore: SessionStore,
     private val json: Json,
+    // safety stream: live location frames go straight to the in-memory repository (never stored)
+    private val liveLocations: dagger.Lazy<com.risaina.app.core.location.LiveLocationRepository>,
 ) {
     private val _state = MutableStateFlow(SocketState.DISCONNECTED)
     val state: StateFlow<SocketState> = _state
@@ -75,6 +77,7 @@ class EventSocket @Inject constructor(
                             "event" -> msg.event?.let { emit(SocketMessage.Event(it)) }
                             "synced" -> { _state.value = SocketState.LIVE; emit(SocketMessage.Synced) }
                             "revoked" -> { emit(SocketMessage.Revoked); return@webSocket }
+                            "location" -> msg.location?.let { liveLocations.get().onLiveFrame(it) }
                             else -> Unit
                         }
                     }

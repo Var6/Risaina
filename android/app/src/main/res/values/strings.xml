@@ -9,4 +9,8 @@
     <string name="widget_voice_note_description">The latest voice note</string>
     <string name="widget_gift_description">The latest gift from your partner</string>
     <string name="widget_us_description">Everything in one: their latest ping, gift, note or photo, your countdown, and a button to reach them</string>
+    <!-- safety -->
+    <string name="shortcut_panic_short">I\'m in trouble</string>
+    <string name="shortcut_panic_long">I\'m in trouble: alert my partner</string>
+    <string name="shortcut_panic_disabled">Sign in to Risaina first</string>
 </resources>

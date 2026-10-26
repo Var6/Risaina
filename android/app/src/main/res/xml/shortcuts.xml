@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher long-press shortcut. It only opens the hold-to-send panic screen: nothing is sent until
+     the user holds the button for 2 seconds there. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_panic"
+        android:shortcutDisabledMessage="@string/shortcut_panic_disabled"
+        android:shortcutId="panic"
+        android:shortcutLongLabel="@string/shortcut_panic_long"
+        android:shortcutShortLabel="@string/shortcut_panic_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="risaina://app/panic"
+            android:targetClass="com.risaina.app.MainActivity"
+            android:targetPackage="com.risaina.app" />
+    </shortcut>
+</shortcuts>
