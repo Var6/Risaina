@@ -425,7 +425,12 @@ export const GameEventChallenge = z
 const gameCommon = {
   id: IdString,
   coupleId: IdString,
-  kind: GameKind,
+  // A plain string in RESPONSES on purpose (tolerant reader): responses are serialized through
+  // these schemas, so an enum here would turn every GET /games into a 500 the moment the database
+  // holds a kind this build does not know (e.g. after a rollback). Requests still use GameKind.
+  kind: z.string().meta({
+    description: 'Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds.',
+  }),
   createdBy: IdString,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

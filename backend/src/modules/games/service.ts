@@ -37,6 +37,12 @@ export const BEATS: Record<RpsMove, readonly RpsMove[]> = {
   scissors: ['paper', 'thread'],
   thread: ['rock', 'paper'],
 };
+/** 400 for a request meant for another kind of game (typically an older app on a newer game). */
+function kindMismatch(kind: string) {
+  const message = 'Update Risaina to play this game';
+  return errors.validation(message, [{ path: '/kind', message: `This game is ${kind}` }]);
+}
+
 const OPEN_STATUSES: GameStatus[] = [
   'waiting',
   'draw',
@@ -120,6 +126,9 @@ export class GameService {
     const uid = new ObjectId(userId);
     const game = await this.mustFind(couple, id);
     const hasMoved = (g: GameDoc) => g.moves.some((m) => m.userId.equals(uid));
+    // The kind check comes before the status check so an older app tapping on a newer kind of game
+    // always gets the "update Risaina" answer, never a confusing state error.
+    if ((game.kind as string) !== 'rps') throw kindMismatch(game.kind);
     if (game.status !== 'waiting') {
       throw errors.invalidGameState(`Cannot move while the game is ${game.status}`, toGameDto(game, userId));
     }

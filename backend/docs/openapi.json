@@ -1355,9 +1355,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "rps"
-            ]
+            "description": "Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds."
           },
           "createdBy": {
             "type": "string",
@@ -1516,9 +1514,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "rps"
-            ]
+            "description": "Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds."
           },
           "createdBy": {
             "type": "string",
@@ -3098,9 +3094,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "rps"
-            ]
+            "description": "Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds."
           },
           "createdBy": {
             "type": "string",
@@ -3260,9 +3254,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "rps"
-            ]
+            "description": "Game kind: rps, tictactoe, trivia or this_or_that. Clients must tolerate unknown kinds."
           },
           "createdBy": {
             "type": "string",
