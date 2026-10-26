@@ -19,6 +19,8 @@ import com.risaina.app.core.domain.QuietHoursPolicy
 import com.risaina.app.core.model.MessageType
 import com.risaina.app.core.sync.Incoming
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -44,6 +46,15 @@ class RisainaNotifier @Inject constructor(
         ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
 
     /**
+     * The quick alert ("is thinking of you") checks the database and then posts; the sync applies
+     * the same item and posts the detailed one under the same id. The SyncWorker starts in this
+     * process at once, so the two can interleave: without this lock the generic line could land
+     * after the detailed one and replace it for good. Held across check and post on the quick path,
+     * and across the post of every detailed notification.
+     */
+    private val postLock = Mutex()
+
+    /**
      * Opening Risaina means the partner's ping or gift, the game nudge and "updated your widget" were
      * seen: remove those notifications so an old gift never lingers in the shade. Chat messages stay
      * until read or tapped (they are not "seen" just because the app opened on Home), and SOS, the
@@ -54,6 +65,23 @@ class RisainaNotifier @Inject constructor(
         nm.cancel(PING_NOTIFICATION_ID)
         nm.cancel(GAME_NOTIFICATION_ID)
         nm.cancel(WIDGET_NOTIFICATION_ID)
+    }
+
+    /**
+     * Sign-out, session expiry, account deletion and unlink wipe the chat on this phone, so
+     * everything the partner sent must leave the shade and the lock screen too, unread chat messages
+     * included (their text would otherwise outlive the wipe). [clearPartnerAlerts] keeps chat on
+     * purpose and is only for opening the app. A ringing SOS stays: it must reach the person.
+     */
+    fun clearAllPartnerNotifications() {
+        clearPartnerAlerts()
+        val nm = NotificationManagerCompat.from(context)
+        nm.cancel(TEST_NOTIFICATION_ID)
+        runCatching {
+            context.getSystemService(android.app.NotificationManager::class.java)?.activeNotifications
+                ?.filter { clearedOnPurge(it.id, it.notification.channelId) }
+                ?.forEach { nm.cancel(it.tag, it.id) }
+        }
     }
 
     /**
@@ -76,6 +104,10 @@ class RisainaNotifier @Inject constructor(
         if (appInForeground()) return // the UI reveals it in place
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
         val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
+        postLock.withLock { postDetailed(item, prefs, partner, quiet) }
+    }
+
+    private fun postDetailed(item: Incoming, prefs: com.risaina.app.core.model.Preferences, partner: String, quiet: Boolean) {
         when (item) {
             is Incoming.NewPing -> {
                 val p = item.ping
@@ -166,20 +198,23 @@ class RisainaNotifier @Inject constructor(
      */
     suspend fun notifyPingArrivedFast(pingId: String?) {
         if (!canPost()) return
-        // Pushes are handled one after another, so an earlier push's sync may already have brought
-        // this ping and posted its real notification: a generic line would only overwrite it.
-        if (pingId != null && pingDao.byId(pingId) != null) return
         val prefs = preferencesStore.current()
         if (!prefs.notificationsEnabled || appInForeground()) return
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
         val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
-        post(
-            id = PING_NOTIFICATION_ID,
-            channel = if (quiet) NotificationChannels.PINGS_QUIET else NotificationChannels.PINGS,
-            title = "$partner is thinking of you", body = "Tap to see", deepLink = "risaina://app/home",
-            category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
-        )
-        diagnostics.recordFastAlert(FAST_PING, pingId)
+        postLock.withLock {
+            // An earlier push's sync, or the SyncWorker running right now, may already have brought
+            // this ping and posted its real notification: a generic line would only overwrite it.
+            // Checked under the lock, so the sync cannot post in between (see postLock).
+            if (pingId != null && pingDao.byId(pingId) != null) return
+            post(
+                id = PING_NOTIFICATION_ID,
+                channel = if (quiet) NotificationChannels.PINGS_QUIET else NotificationChannels.PINGS,
+                title = "$partner is thinking of you", body = "Tap to see", deepLink = "risaina://app/home",
+                category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
+            )
+            diagnostics.recordFastAlert(FAST_PING, pingId)
+        }
     }
 
     /**
@@ -190,20 +225,22 @@ class RisainaNotifier @Inject constructor(
      */
     suspend fun notifyMessageArrivedFast(messageId: String) {
         if (!canPost()) return
-        // Already synced (see notifyPingArrivedFast): its real notification was posted, or was left
-        // out on purpose; a generic "Sent you a message" must not replace it.
-        if (messageDao.byId(messageId) != null) return
         val prefs = preferencesStore.current()
         if (!prefs.notificationsEnabled || appInForeground()) return
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
         val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
-        post(
-            id = messageNotificationId(messageId),
-            channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
-            title = partner, body = "Sent you a message", deepLink = "risaina://app/messages",
-            category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
-        )
-        diagnostics.recordFastAlert(FAST_MESSAGE, messageId)
+        postLock.withLock {
+            // Already synced (see notifyPingArrivedFast): its real notification was posted, or was
+            // left out on purpose; a generic "Sent you a message" must not replace it.
+            if (messageDao.byId(messageId) != null) return
+            post(
+                id = messageNotificationId(messageId),
+                channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
+                title = partner, body = "Sent you a message", deepLink = "risaina://app/messages",
+                category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
+            )
+            diagnostics.recordFastAlert(FAST_MESSAGE, messageId)
+        }
     }
 
     /**
@@ -231,6 +268,19 @@ class RisainaNotifier @Inject constructor(
 
         /** One notification per chat message; the quick and the detailed post share it. */
         fun messageNotificationId(messageId: String): Int = messageId.hashCode()
+
+        private val PARTNER_CHANNELS = setOf(
+            NotificationChannels.PINGS, NotificationChannels.PINGS_QUIET,
+            NotificationChannels.MESSAGES, NotificationChannels.MESSAGES_QUIET, WIDGET_CHANNEL,
+        )
+        private val PARTNER_IDS = setOf(PING_NOTIFICATION_ID, GAME_NOTIFICATION_ID, TEST_NOTIFICATION_ID, WIDGET_NOTIFICATION_ID)
+
+        /**
+         * Whether [clearAllPartnerNotifications] removes a showing notification: anything on a
+         * partner channel or with a partner id, never the SOS alarm. Pure (NotifierPurgeTest).
+         */
+        fun clearedOnPurge(id: Int, channelId: String?): Boolean =
+            id != SosAlert.ID && (channelId in PARTNER_CHANNELS || id in PARTNER_IDS)
         private const val FAST_PING = "ping"
         private const val FAST_MESSAGE = "message"
 

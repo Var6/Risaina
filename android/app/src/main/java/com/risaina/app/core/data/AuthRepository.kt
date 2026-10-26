@@ -125,7 +125,7 @@ class AuthRepository @Inject constructor(
         widgetSnapshotStore.clear()
         widgetBoardRepository.clear()
         lockScreenCard.cancel()
-        notifier.clearPartnerAlerts()
+        notifier.clearAllPartnerNotifications()
         preferencesStore.setOnboardingDone(true) // returning users skip the welcome carousel
     }
 }
