@@ -147,8 +147,9 @@ class EventReducer @Inject constructor(
                 val g = p.obj("game")
                 val id = (g?.get("id") as? kotlinx.serialization.json.JsonPrimitive)?.content
                 if (id != null) {
-                    gameRepository.refreshOne(id)
                     val action = p.str("action")
+                    // Games stream: re-fetches the game, except a partner's single trivia answer (applied from the event).
+                    gameRepository.onEvent(id, action, event.actorId, fromPartner = event.actorId != me, view = g)
                     if (event.actorId != me && action != null) {
                         out += Incoming.Game(
                             id, action, kind = g.str("kind") ?: "rps",

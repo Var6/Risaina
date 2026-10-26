@@ -8,6 +8,7 @@ import com.risaina.app.core.network.CreateGameRequest
 import com.risaina.app.core.network.DeckDto
 import com.risaina.app.core.network.GameCatalogDto
 import com.risaina.app.core.network.GameDto
+import com.risaina.app.core.network.GameEventViewDto
 import com.risaina.app.core.network.GameKindDto
 import com.risaina.app.core.network.GamePlayRequest
 import com.risaina.app.core.network.GameResponse
@@ -20,8 +21,33 @@ import com.risaina.app.core.network.apiCall
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Event views are read leniently: a newer server may add fields. */
+private val eventJson = Json { ignoreUnknownKeys = true; coerceInputValues = true; explicitNulls = false }
+
+/**
+ * My copy of a trivia duel after the partner ([partnerId]) answered one more question, or null when
+ * that can't be derived locally (not a duel in play, another round, the partner just finished) and
+ * the game must be re-fetched instead. Only `partnerAnswered` and `updatedAt` change: the partner's
+ * picks and score stay sealed until both have finished, so nothing else in my view moves.
+ */
+internal fun withPartnerProgress(local: GameDto, event: GameEventViewDto, partnerId: String): GameDto? {
+    val q = local.quiz ?: return null
+    if (local.kind != GameKinds.TRIVIA || event.kind != GameKinds.TRIVIA) return null
+    if (local.status != "waiting" || event.status != "waiting" || event.round != local.round) return null
+    val p = event.quiz?.progress?.firstOrNull { it.userId == partnerId } ?: return null
+    if (p.finished) return null
+    // A catch-up sync can apply an older event after a newer re-fetch: progress never goes back.
+    if (p.answered <= q.partnerAnswered) return local
+    return local.copy(
+        updatedAt = event.updatedAt ?: local.updatedAt,
+        quiz = q.copy(partnerAnswered = p.answered),
+    )
+}
 
 /** Game kinds the server knows. Anything else is a newer game this build can't play. */
 object GameKinds {
@@ -95,6 +121,23 @@ class GameRepository @Inject constructor(private val api: RisainaApi) {
 
     suspend fun refresh(): AppResult<Unit> = apiCall { api.games() }.onSuccess { _games.value = it.items }.map { }
     suspend fun refreshOne(id: String) { apiCall { api.game(id) }.onSuccess { put(it.game) } }
+
+    /**
+     * A `game.updated` event (socket or catch-up sync). Normally the game is re-fetched, because
+     * only the server can build this viewer's view. One exception keeps a push-triggered sync
+     * inside its few seconds: the partner answering one more trivia question changes nothing in my
+     * view except their progress count, which the event itself carries. Applying it locally saves
+     * a GET per answer; otherwise the partner's "finished" push waits behind four of them.
+     */
+    suspend fun onEvent(id: String, action: String?, actorId: String, fromPartner: Boolean, view: JsonObject?) {
+        if (fromPartner && action == "answered" && view != null) {
+            val event = runCatching { eventJson.decodeFromJsonElement(GameEventViewDto.serializer(), view) }.getOrNull()
+            val local = _games.value.firstOrNull { it.id == id }
+            val merged = if (event != null && local != null) withPartnerProgress(local, event, actorId) else null
+            if (merged != null) { put(merged); return }
+        }
+        refreshOne(id)
+    }
 
     suspend fun start(opts: GameStartOptions = GameStartOptions()): AppResult<GameDto> =
         apiCall { api.createGame(opts.toRequest()) }.onSuccess { put(it.game) }.map { it.game }

@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -70,7 +71,7 @@ fun GamePickerSheet(
     // The last choices are kept for the session, so "another round, same settings" is one tap.
     var kind by rememberSaveable { mutableStateOf(GameKinds.TICTACTOE) }
     var withPrize by rememberSaveable { mutableStateOf(true) }
-    var category by rememberSaveable { mutableStateOf(-1) } // -1 = any
+    var category by rememberSaveable { mutableIntStateOf(-1) } // -1 = any
     var difficulty by rememberSaveable { mutableStateOf("") } // "" = any
     var deck by rememberSaveable { mutableStateOf("mix") }
     var confirm by remember { mutableStateOf<GameStartOptions?>(null) }

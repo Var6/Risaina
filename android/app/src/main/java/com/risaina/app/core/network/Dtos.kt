@@ -276,3 +276,10 @@ import kotlinx.serialization.json.JsonObject
     val kinds: List<GameKindDto> = emptyList(), val trivia: TriviaCatalogDto = TriviaCatalogDto(),
     val thisOrThat: ThisOrThatCatalogDto = ThisOrThatCatalogDto(), val legacyServer: Boolean = false,
 )
+/** The parts of a `game.updated` event view the app reads without a re-fetch (progress only, never secrets). */
+@Serializable data class QuizProgressDto(val userId: String, val answered: Int = 0, val finished: Boolean = false)
+@Serializable data class QuizEventDto(val total: Int = 0, val progress: List<QuizProgressDto> = emptyList())
+@Serializable data class GameEventViewDto(
+    val id: String, val kind: String = "rps", val status: String = "", val round: Int = 1,
+    val updatedAt: String? = null, val quiz: QuizEventDto? = null,
+)

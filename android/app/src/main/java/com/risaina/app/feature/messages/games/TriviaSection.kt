@@ -129,7 +129,7 @@ private fun AnswerReview(q: QuizDto, partner: String) {
             Text("${item.index + 1}. ${item.text.orEmpty()}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
             val right = item.correct?.let { item.choices.getOrNull(it) }
             Text("You: ${pickLabel(item, item.myChoice)}", style = MaterialTheme.typography.bodySmall)
-            Text("$partner:${pickLabel(item, item.partnerChoice)}", style = MaterialTheme.typography.bodySmall)
+            Text("$partner: ${pickLabel(item, item.partnerChoice)}", style = MaterialTheme.typography.bodySmall)
             if (right != null) Text("Answer: $right", style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted)
         }
     }
