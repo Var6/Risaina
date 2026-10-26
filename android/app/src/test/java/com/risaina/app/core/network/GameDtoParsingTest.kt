@@ -51,13 +51,14 @@ class GameDtoParsingTest {
             GameResponse.serializer(),
             """{"game":{$common,"kind":"trivia","status":"waiting","prize":"truth_or_dare","ttt":null,
                "quiz":{"source":"opentdb","attribution":"Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0",
-                 "category":{"id":23,"name":"History"},"difficulty":null,"deck":null,"total":5,
+                 "category":{"id":23,"name":"History"},"requestedCategoryId":null,"difficulty":null,"deck":null,"total":5,
                  "items":[{"index":0,"text":"Who?","choices":["A","B","C","D"],"category":"History","difficulty":"easy","myChoice":2,"correct":2,"partnerChoice":null},
                           {"index":1,"text":"When?","choices":["A","B","C","D"],"category":"History","difficulty":"easy","myChoice":null,"correct":null,"partnerChoice":null}],
                  "myAnswered":1,"partnerAnswered":3,"myFinished":false,"partnerFinished":false,"myScore":1,"partnerScore":null,"matches":null}}}""",
         ).game
         val q = g.quiz!!
         assertEquals("History", q.category?.name)
+        assertNull(q.requestedCategoryId) // asked for "any"; History is what it resolved to
         assertEquals(2, q.items.size)
         assertEquals(2, q.items[0].correct)
         assertNull(q.items[1].correct)

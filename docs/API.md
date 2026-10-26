@@ -683,7 +683,9 @@ TicTacToe { board: ('x'|'o'|null)[9] /* index = row*3+col */, xId, turnId: strin
 
 Quiz { source: 'opentdb'|'builtin'|'curated',
        attribution: string|null,      // "Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0" when source is opentdb
-       category: { id, name }|null, difficulty: 'easy'|'medium'|'hard'|null, deck: string|null,
+       category: { id, name }|null,   // trivia: where the questions came from
+       requestedCategoryId: number|null,  // trivia: what was asked for; null = any (send it back for "Play again")
+       difficulty: 'easy'|'medium'|'hard'|null, deck: string|null,
        total: number,                 // trivia 5, this_or_that 7
        items: QuizItem[],             // see visibility below
        myAnswered, partnerAnswered,   // counts, always

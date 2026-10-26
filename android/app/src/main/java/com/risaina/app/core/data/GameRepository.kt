@@ -89,7 +89,8 @@ data class GameStartOptions(
         fun from(g: GameDto) = GameStartOptions(
             kind = g.kind,
             justForFun = g.prize == "none" && g.kind in GameKinds.COMPETITIVE,
-            category = g.quiz?.category?.id.takeIf { g.kind == GameKinds.TRIVIA },
+            // What was asked for, not what "any" happened to resolve to, so "any" stays any.
+            category = g.quiz?.requestedCategoryId.takeIf { g.kind == GameKinds.TRIVIA },
             difficulty = g.quiz?.difficulty.takeIf { g.kind == GameKinds.TRIVIA },
             deck = g.quiz?.deck.takeIf { g.kind == GameKinds.THIS_OR_THAT },
         )

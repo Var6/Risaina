@@ -1656,6 +1656,19 @@
               }
             ]
           },
+          "requestedCategoryId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia: the category asked for; null = any (a new round picks a curated one at random). Reuse it for \"Play again\"."
+          },
           "difficulty": {
             "anyOf": [
               {
@@ -1749,6 +1762,7 @@
           "source",
           "attribution",
           "category",
+          "requestedCategoryId",
           "difficulty",
           "deck",
           "total",
@@ -4120,6 +4134,19 @@
               }
             ]
           },
+          "requestedCategoryId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trivia: the category asked for; null = any (a new round picks a curated one at random). Reuse it for \"Play again\"."
+          },
           "difficulty": {
             "anyOf": [
               {
@@ -4213,6 +4240,7 @@
           "source",
           "attribution",
           "category",
+          "requestedCategoryId",
           "difficulty",
           "deck",
           "total",

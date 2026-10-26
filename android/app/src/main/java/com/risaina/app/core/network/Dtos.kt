@@ -254,6 +254,8 @@ import kotlinx.serialization.json.JsonObject
 )
 @Serializable data class QuizDto(
     val source: String = "builtin", val attribution: String? = null, val category: QuizCategoryDto? = null,
+    /** Trivia: the category asked for; null = any. `category` is the one the questions came from. */
+    val requestedCategoryId: Int? = null,
     val difficulty: String? = null, val deck: String? = null, val total: Int = 0,
     val items: List<QuizItemDto> = emptyList(), val myAnswered: Int = 0, val partnerAnswered: Int = 0,
     val myFinished: Boolean = false, val partnerFinished: Boolean = false,

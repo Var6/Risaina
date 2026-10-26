@@ -17,7 +17,7 @@ import type {
 } from '../../db/types.js';
 import { iso, isoOrNull } from '../../lib/time.js';
 import { OPENTDB_ATTRIBUTION } from '../games/catalog.js';
-import { bothFinished } from '../games/rules/quiz.js';
+import { bothFinished, requestedCategory } from '../games/rules/quiz.js';
 import type {
   CoupleDto,
   EventDto,
@@ -361,6 +361,7 @@ function toQuizView(g: GameDoc, q: QuizState, viewerId: string): NonNullable<Gam
     source: q.source,
     attribution: q.source === 'opentdb' ? OPENTDB_ATTRIBUTION : null,
     category: q.category ? { id: q.category.id, name: q.category.name } : null,
+    requestedCategoryId: trivia ? requestedCategory(q) : null,
     difficulty: q.difficulty,
     deck: q.deck,
     total,

@@ -34,7 +34,7 @@ class GameStartOptionsTest {
 
     @Test fun `just for fun and the trivia options carry over`() {
         val opts = GameStartOptions.from(
-            game(GameKinds.TRIVIA, "none", QuizDto(source = "opentdb", category = QuizCategoryDto(23, "History"), difficulty = "hard", deck = "ignored")),
+            game(GameKinds.TRIVIA, "none", QuizDto(source = "opentdb", category = QuizCategoryDto(23, "History"), requestedCategoryId = 23, difficulty = "hard", deck = "ignored")),
         )
         assertTrue(opts.justForFun)
         val req = opts.toRequest()
@@ -42,6 +42,14 @@ class GameStartOptionsTest {
         assertEquals(23, req.category)
         assertEquals("hard", req.difficulty)
         assertNull(req.deck)
+    }
+
+    @Test fun `any category stays any, not the category it was served from`() {
+        val opts = GameStartOptions.from(
+            game(GameKinds.TRIVIA, "truth_or_dare", QuizDto(source = "opentdb", category = QuizCategoryDto(27, "Animals"), requestedCategoryId = null)),
+        )
+        assertNull(opts.category)
+        assertNull(opts.toRequest().category)
     }
 
     @Test fun `rps keeps working against older servers`() {

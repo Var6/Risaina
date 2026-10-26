@@ -10,7 +10,13 @@ import {
   TRIVIA_QUESTION_COUNT,
 } from '../src/modules/games/catalog.js';
 import { sampleAvoiding, shuffled } from '../src/modules/games/random.js';
-import { bothFinished, matchesCount, newPlayers, triviaOutcome } from '../src/modules/games/rules/quiz.js';
+import {
+  bothFinished,
+  matchesCount,
+  newPlayers,
+  requestedCategory,
+  triviaOutcome,
+} from '../src/modules/games/rules/quiz.js';
 import { applyMove, LINES, markOf, newRound, winningLine } from '../src/modules/games/rules/tictactoe.js';
 import { pickPrompts, THIS_OR_THAT_PROMPTS } from '../src/modules/games/this-or-that.js';
 import { TRIVIA_FALLBACK } from '../src/modules/games/trivia-fallback.js';
@@ -98,6 +104,14 @@ describe('quiz rules', () => {
       matchesCount({ players: [p(0, [0, 1, 1, 0, 0, 1, 1], true), p(0, [0, 1, 0, 0, 1, 1, 0], true)] }),
     ).toBe(4);
     expect(matchesCount({ players: [p(0, [1, 1], true), p(0, [1, 1], true)] })).toBe(2);
+  });
+
+  it('a new trivia round asks for what was picked: "any" stays any, older docs use the served category', () => {
+    const history = { id: 23, name: 'History' };
+    expect(requestedCategory({ category: history, requestedCategory: null })).toBeNull();
+    expect(requestedCategory({ category: history, requestedCategory: 23 })).toBe(23);
+    expect(requestedCategory({ category: history })).toBe(23);
+    expect(requestedCategory({ category: null })).toBeNull();
   });
 });
 

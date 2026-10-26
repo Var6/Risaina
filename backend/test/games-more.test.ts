@@ -18,7 +18,9 @@ class FakeTrivia implements TriviaSource {
     const b = ++this.batch;
     return {
       source: 'opentdb',
-      category: req.category === null ? null : { id: req.category, name: 'History' },
+      // Like Open Trivia DB: "any" (null) is served from one curated category, here General knowledge.
+      category:
+        req.category === null ? { id: 9, name: 'General knowledge' } : { id: req.category, name: 'History' },
       items: Array.from({ length: req.count }, (_, i) => ({
         id: `fake_${b}_${i}`,
         text: `Secret question ${b}.${i}?`,
@@ -330,6 +332,7 @@ describe('trivia duel', () => {
       source: 'opentdb',
       attribution: 'Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0',
       category: { id: 23, name: 'History' },
+      requestedCategoryId: 23,
       difficulty: 'easy',
       total: 5,
       myAnswered: 0,
@@ -472,6 +475,8 @@ describe('trivia duel', () => {
   it('a tie is a draw; rematch brings 5 new questions and resets both players', async () => {
     const g = (await post(b, '/games', { kind: 'trivia' })).json().game;
     expect(trivia.calls.at(-1)).toMatchObject({ category: null, difficulty: null });
+    // "Any" was served from one category, but it stays "any" for a rematch and for "Play again".
+    expect(g.quiz).toMatchObject({ category: { id: 9 }, requestedCategoryId: null });
     const firstIds = (await raw(g.id))!.quiz!.items.map((i) => i.id);
     expect(trivia.calls.at(-1)!.exclude.has('fake_1_0')).toBe(true); // recent duel's questions avoided
     for (const s of [a, b])
@@ -484,7 +489,13 @@ describe('trivia duel', () => {
     const re = await post(b, `/games/${g.id}/rematch`);
     expect(re.statusCode).toBe(200);
     expect(re.json().game).toMatchObject({ status: 'waiting', round: 2 });
-    expect(re.json().game.quiz).toMatchObject({ myAnswered: 0, partnerAnswered: 0, myScore: 0 });
+    expect(re.json().game.quiz).toMatchObject({
+      myAnswered: 0,
+      partnerAnswered: 0,
+      myScore: 0,
+      requestedCategoryId: null,
+    });
+    expect(trivia.calls.at(-1)).toMatchObject({ category: null, difficulty: null });
     const newIds = (await raw(g.id))!.quiz!.items.map((i) => i.id);
     expect(newIds.some((x) => firstIds.includes(x))).toBe(false);
     for (const x of firstIds) expect(trivia.calls.at(-1)!.exclude.has(x)).toBe(true);

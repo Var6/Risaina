@@ -483,6 +483,9 @@ export interface QuizPlayer {
 export interface QuizState {
   source: 'opentdb' | 'builtin' | 'curated';
   category: { id: number; name: string } | null; // trivia: the category the questions came from
+  // trivia: the category asked for; null = "any", so a rematch or "Play again" picks a curated one at
+  // random again instead of repeating the one "any" resolved to. Absent on the first builds ⇒ category.id.
+  requestedCategory?: number | null;
   difficulty: TriviaDifficulty | null; // trivia: as requested (null = any)
   deck: string | null; // this_or_that deck id
   items: QuizItem[]; // trivia 5, this_or_that 7

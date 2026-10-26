@@ -18,7 +18,7 @@ import { toGameDto, toGameEventView } from '../shared/dto.js';
 import type { GameDto } from '../shared/schemas.js';
 import { gameCatalog, THIS_OR_THAT_PROMPT_COUNT, TRIVIA_QUESTION_COUNT } from './catalog.js';
 import { GameRepo } from './repo.js';
-import { bothFinished, matchesCount, newPlayers, triviaOutcome } from './rules/quiz.js';
+import { bothFinished, matchesCount, newPlayers, requestedCategory, triviaOutcome } from './rules/quiz.js';
 import { applyMove, markOf, newRound } from './rules/tictactoe.js';
 import type { CreateGameInput, PlayInput } from './schemas.js';
 import { DARES, TRUTHS } from './suggestions.js';
@@ -277,13 +277,7 @@ export class GameService {
     } else if (game.kind === 'trivia' && game.quiz) {
       const q = game.quiz;
       const avoid = new Set(q.items.map((i) => i.id));
-      set.quiz = await this.triviaQuiz(
-        couple._id,
-        game.memberIds,
-        q.category?.id ?? null,
-        q.difficulty,
-        avoid,
-      );
+      set.quiz = await this.triviaQuiz(couple._id, game.memberIds, requestedCategory(q), q.difficulty, avoid);
     }
     const updated = await this.repo.transition(game._id, 'draw', { round: game.round }, set, { round: 1 });
     if (!updated) return this.raceLost(couple, userId, id, 'A rematch is only possible after a draw');
@@ -512,6 +506,7 @@ export class GameService {
     return {
       source: r.source,
       category: r.category,
+      requestedCategory: category,
       difficulty,
       deck: null,
       items: r.items,

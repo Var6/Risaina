@@ -493,6 +493,10 @@ export const Quiz = z
       .nullable()
       .meta({ description: 'Credit to show on the card (CC BY-SA 4.0) when source is opentdb' }),
     category: QuizCategory.nullable(),
+    requestedCategoryId: z.number().int().nullable().meta({
+      description:
+        'Trivia: the category asked for; null = any (a new round picks a curated one at random). Reuse it for "Play again".',
+    }),
     difficulty: z.enum(TRIVIA_DIFFICULTIES).nullable(),
     deck: z.string().nullable(),
     total: z.number().int().min(1),

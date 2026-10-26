@@ -176,7 +176,7 @@ no `additionalProperties`, so it accepts them); every required field above is st
 |---|---|---|
 | `prize` | `'truth_or_dare' \| 'none'` (this_or_that always `'none'`) | `'truth_or_dare'` |
 | `ttt` | `{ board: ('x'\|'o'\|null)[9], xId, turnId\|null, moveCount 0..9, lastCell\|null, line: number[3]\|null }` | `null` (not tic-tac-toe) |
-| `quiz` | `{ source 'opentdb'\|'builtin'\|'curated', category {id,name}\|null, difficulty\|null, deck\|null, items: QuizItem[1..10], players: QuizPlayer[2], matches\|null }` | `null` (not a quiz) |
+| `quiz` | `{ source 'opentdb'\|'builtin'\|'curated', category {id,name}\|null, requestedCategory?: number\|null (null = any), difficulty\|null, deck\|null, items: QuizItem[1..10], players: QuizPlayer[2], matches\|null }` | `null` (not a quiz) |
 
 `QuizItem = { id ('otdb_'+sha256(text)[0..16] | 'tb_..' | curated 'ev-07'), text|null, choices (4 or 2, already
 shuffled), correct (index)|null, category|null, difficulty|null }`. `QuizPlayer = { userId, picks: number[]
