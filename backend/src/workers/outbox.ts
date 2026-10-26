@@ -242,10 +242,13 @@ export class OutboxWorker {
 /**
  * An opaque id the app needs to post a quick notification before it syncs, which the detailed
  * notification then replaces in place: message.created → the message id (the app's message
- * notification id is derived from it). Never content.
+ * notification id is derived from it); ping.created → the ping id (the app skips the quick alert
+ * when an earlier sync already brought that ping, so a generic line never overwrites the real one).
+ * Never content.
  */
 export function pushRefFor(event: Pick<EventDoc, 'type' | 'payload'>): { ref?: string } {
-  if (event.type !== 'message.created') return {};
-  const message = event.payload.message as { id?: unknown } | undefined;
-  return typeof message?.id === 'string' ? { ref: message.id } : {};
+  const key = event.type === 'message.created' ? 'message' : event.type === 'ping.created' ? 'ping' : null;
+  if (!key) return {};
+  const item = event.payload[key] as { id?: unknown } | undefined;
+  return typeof item?.id === 'string' ? { ref: item.id } : {};
 }

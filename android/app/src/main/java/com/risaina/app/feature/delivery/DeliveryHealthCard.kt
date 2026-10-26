@@ -166,6 +166,12 @@ fun DeliveryHealthCard(modifier: Modifier = Modifier, vm: DeliveryHealthViewMode
                 )
             }
             partnerLine(s)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted) }
+            Spacer(Modifier.height(6.dp))
+            // For a helper looking at this screen: which build the phone runs and what the last push was.
+            Text(
+                technicalLine(com.risaina.app.BuildConfig.VERSION_NAME, s.diagnostics),
+                style = MaterialTheme.typography.labelSmall, color = Risaina.colors.textMuted,
+            )
             Spacer(Modifier.height(12.dp))
             SecondaryButton(if (s.sendingTest) "Sending…" else "Send me a test push", onClick = vm::sendTestPush, enabled = !s.sendingTest)
             s.testMessage?.let {
@@ -205,6 +211,21 @@ private fun lastPushLine(d: DeliverySnapshot): String {
     return "Last push received ${relative(at)}$took.$sync"
 }
 
+/**
+ * "Build 0.2.0+1a2b3c4 · last push message.created, arrived high (sent high) · widgets drawn 2".
+ * The build id answers "is this phone on the new version?"; arrived vs sent shows an FCM downgrade.
+ */
+internal fun technicalLine(build: String, d: DeliverySnapshot): String = buildList {
+    add("Build $build")
+    d.lastPushType?.let { type ->
+        val arrived = d.lastPushPriority?.let { p -> ", arrived $p" + (d.lastPushOriginalPriority?.let { " (sent $it)" } ?: "") } ?: ""
+        add("last push $type$arrived")
+    }
+    if (d.lastWidgetDrawAt != null) {
+        add("widgets drawn ${d.lastWidgetDrawn}" + if (d.lastWidgetFallbacks > 0) ", queued ${d.lastWidgetFallbacks}" else "")
+    }
+}.joinToString(" · ")
+
 private fun partnerLine(s: DeliveryHealthUiState): String? {
     val name = s.partnerName ?: return null
     val first = name.substringBefore(" ")
@@ -223,6 +244,7 @@ private fun flagWords(flag: String): String? = when (flag) {
     "standby_rare", "standby_restricted" -> "Android rarely wakes Risaina"
     "data_saver" -> "Data Saver blocks background data"
     "no_play_services" -> "no Google Play services"
+    "force_stopped" -> "Risaina was force-stopped"
     else -> null
 }
 

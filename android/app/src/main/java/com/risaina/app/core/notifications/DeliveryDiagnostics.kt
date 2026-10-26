@@ -49,6 +49,19 @@ data class DeliverySnapshot(
     }
 }
 
+/** When a detailed notification follows the quick one posted from its push. Pure (FastAlertsTest). */
+object FastAlerts {
+    /** Long enough for a slow sync or the SyncWorker after a Doze wake; short enough to never mute a new item. */
+    const val WINDOW_MS = 2 * 60_000L
+
+    /**
+     * True when the quick alert at [fastAt] (0 = none) was for [ref] (or for an unknown item, from
+     * an older server) and is under [WINDOW_MS] old: the detailed post must then not alert again.
+     */
+    fun follows(fastAt: Long, fastRef: String?, ref: String, now: Long): Boolean =
+        fastAt > 0 && now - fastAt in 0 until WINDOW_MS && (fastRef == null || fastRef == ref)
+}
+
 /**
  * Small, synchronous diagnostics store. SharedPreferences rather than DataStore on purpose: the push
  * handler writes here first thing, on its own thread, and the expedited SyncWorker may run in a
@@ -105,11 +118,17 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
 
     /**
      * When a generic alert ("is thinking of you", "sent you a message") was posted straight from a
-     * push, before any network. The detailed notification that follows uses it to avoid buzzing a
-     * second time (see RisainaNotifier). Persisted because the SyncWorker may post it in a new process.
+     * push, before any network, and for which item ([ref]: the ping or message id, null when the
+     * push carried none). The detailed notification for that item uses it to avoid buzzing a second
+     * time (see RisainaNotifier). Persisted because the SyncWorker may post it in a new process.
      */
-    fun recordFastAlert(kind: String, now: Long = System.currentTimeMillis()) { prefs.edit().putLong(K_FAST_PREFIX + kind, now).apply() }
-    fun lastFastAlertAt(kind: String): Long = prefs.getLong(K_FAST_PREFIX + kind, 0L)
+    fun recordFastAlert(kind: String, ref: String?, now: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong(K_FAST_PREFIX + kind, now).putString(K_FAST_REF_PREFIX + kind, ref).apply()
+    }
+
+    /** The last quick alert of this kind: when (0 = never) and for which item (null = unknown). */
+    fun lastFastAlert(kind: String): Pair<Long, String?> =
+        prefs.getLong(K_FAST_PREFIX + kind, 0L) to prefs.getString(K_FAST_REF_PREFIX + kind, null)
 
     fun snapshot(): DeliverySnapshot {
         val p = prefs
@@ -131,9 +150,6 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         )
     }
 
-    /** Sign-out: forget everything (the next account starts clean). */
-    fun clear() { prefs.edit().clear().apply() }
-
     companion object {
         const val TEST_PUSH_TYPE = "test.push"
         private const val PREFS = "delivery_diagnostics"
@@ -151,6 +167,7 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         private const val K_WORKER_AT = "worker_at"
         private const val K_TEST_AT = "test_push_at"
         private const val K_FAST_PREFIX = "fast_alert_at_"
+        private const val K_FAST_REF_PREFIX = "fast_alert_ref_"
         private const val K_ACK_PRIORITY = "ack_priority"
         private const val K_ACK_ORIGINAL = "ack_original_priority"
     }

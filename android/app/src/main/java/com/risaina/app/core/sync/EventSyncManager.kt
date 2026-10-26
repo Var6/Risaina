@@ -99,15 +99,21 @@ class EventSyncManager @Inject constructor(
      * Fetch and apply everything after the cursor. Returns the new incoming items.
      *
      * One sync at a time: the push handler, the expedited SyncWorker and the periodic worker share a
-     * running sync (their options merge), instead of fetching the same events side by side.
+     * sync (their options merge), instead of fetching the same events side by side. A caller only
+     * shares a sync that started at or after [notBefore] (the push's arrival), so it never settles
+     * for one that fetched before its event existed (see [SingleFlight]).
      * With [notify], each new item's notification is posted as soon as its event is applied, before
      * the widgets are recomputed (see [runPagedSync]), so a caller's deadline or a later error never
      * loses one. [fetchMedia] = false leaves a new photo's download to a later sync (the worker), so
      * text, pings and gifts reach the widgets first.
      */
-    suspend fun syncOnce(notify: Boolean = false, fetchMedia: Boolean = true): AppResult<List<Incoming>> {
+    suspend fun syncOnce(
+        notify: Boolean = false,
+        fetchMedia: Boolean = true,
+        notBefore: Long = System.currentTimeMillis(),
+    ): AppResult<List<Incoming>> {
         if (sessionStore.current() == null) return AppResult.Success(emptyList())
-        return flights.run(SyncOptions(notify, fetchMedia)) { flight -> runSync(flight) }
+        return flights.run(SyncOptions(notify, fetchMedia), notBefore) { flight -> runSync(flight) }
     }
 
     private suspend fun runSync(flight: SingleFlight.Flight<SyncOptions>): AppResult<List<Incoming>> {

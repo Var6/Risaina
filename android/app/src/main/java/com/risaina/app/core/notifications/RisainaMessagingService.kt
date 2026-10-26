@@ -12,7 +12,8 @@ import javax.inject.Inject
 
 /**
  * FCM entry point. Messages are data-only: `{type, eventId, coupleId, seq, pr, ref?}`, never
- * content (`ref` is the message id of a message.created, so a quick notification can be replaced).
+ * content (`ref` is the opaque id of a message.created or ping.created item, so a quick
+ * notification can be replaced in place, or skipped when an earlier sync already brought the item).
  *
  * Firebase gives this handler only a few seconds ("long enough to render a notification"), and
  * realme/ColorOS freezes or kills the app soon after it returns. So, in this order:
@@ -43,23 +44,27 @@ class RisainaMessagingService : FirebaseMessagingService() {
             val name = runCatching { runBlocking { coupleDao.partner()?.displayName } }.getOrNull() ?: "your partner"
             sosAlert.show(name, null, null)
         }
+        // A sync that began before this moment cannot contain this push's event (see SingleFlight).
+        val receivedAt = System.currentTimeMillis()
         val type = message.data["type"]
         val isTest = type == DeliveryDiagnostics.TEST_PUSH_TYPE
         if (!isTest) runCatching { SyncWorker.enqueueFromPush(applicationContext) }
         // Also queues "this phone received a push", which rides on the sync's first request.
         diagnostics.recordPush(type, message.priority, message.originalPriority, message.sentTime)
-        runCatching { runBlocking { handle(type, message.data["ref"], isTest) } }
+        runCatching { runBlocking { handle(type, message.data["ref"]?.takeIf { it.isNotBlank() }, isTest, receivedAt) } }
     }
 
-    private suspend fun handle(type: String?, ref: String?, isTest: Boolean) {
+    private suspend fun handle(type: String?, ref: String?, isTest: Boolean, receivedAt: Long) {
         when {
             isTest -> notifier.notifyTestPush(diagnostics.snapshot().lastPushLatencyMillis)
-            type == "ping.created" -> runCatching { notifier.notifyPingArrivedFast() }
+            type == "ping.created" -> runCatching { notifier.notifyPingArrivedFast(ref) }
             // Without the message id (an older server) the quick alert could not be replaced, so skip it.
-            type == "message.created" && !ref.isNullOrBlank() -> runCatching { notifier.notifyMessageArrivedFast(ref) }
+            type == "message.created" && ref != null -> runCatching { notifier.notifyMessageArrivedFast(ref) }
         }
         val start = SystemClock.elapsedRealtime()
-        val result = withTimeoutOrNull(SYNC_BUDGET_MS) { syncManager.syncOnce(notify = true, fetchMedia = false) }
+        val result = withTimeoutOrNull(SYNC_BUDGET_MS) {
+            syncManager.syncOnce(notify = true, fetchMedia = false, notBefore = receivedAt)
+        }
         diagnostics.recordSync(
             when (result) {
                 null -> "timeout"

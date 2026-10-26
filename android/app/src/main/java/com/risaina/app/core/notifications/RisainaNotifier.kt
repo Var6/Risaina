@@ -33,6 +33,8 @@ class RisainaNotifier @Inject constructor(
     private val coupleDao: CoupleDao,
     private val time: TimeProvider,
     private val diagnostics: DeliveryDiagnostics,
+    private val pingDao: com.risaina.app.core.database.PingDao,
+    private val messageDao: com.risaina.app.core.database.MessageDao,
 ) {
     private fun canPost(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED &&
@@ -55,12 +57,17 @@ class RisainaNotifier @Inject constructor(
     }
 
     /**
-     * A generic alert for this kind was posted from the push moments ago. The detailed notification
-     * then arrives silently: updating the same id in place is silent anyway (onlyAlertOnce), but if
-     * the person already tapped or dismissed the generic one, a fresh post would buzz a second time.
+     * A generic alert for this very item ([ref]) was posted from its push moments ago. The detailed
+     * notification then arrives silently: updating the same id in place is silent anyway
+     * (onlyAlertOnce), but if the person already tapped or dismissed the generic one, a fresh post
+     * would buzz a second time. Matched per item, so another ping or message that came in the same
+     * sync (and had no quick alert of its own) still alerts. A quick alert from an older server
+     * carries no item id and matches any item of its kind.
      */
-    private fun followsFastAlert(kind: String): Boolean =
-        System.currentTimeMillis() - diagnostics.lastFastAlertAt(kind) in 0 until FAST_ALERT_WINDOW_MS
+    private fun followsFastAlert(kind: String, ref: String): Boolean {
+        val (at, fastRef) = diagnostics.lastFastAlert(kind)
+        return FastAlerts.follows(at, fastRef, ref, System.currentTimeMillis())
+    }
 
     suspend fun notifyIncoming(item: Incoming) {
         if (!canPost()) return
@@ -87,7 +94,7 @@ class RisainaNotifier @Inject constructor(
                 post(
                     id = PING_NOTIFICATION_ID,
                     onlyAlertOnce = true,
-                    silent = followsFastAlert(FAST_PING),
+                    silent = followsFastAlert(FAST_PING, p.id),
                     channel = if (quiet) NotificationChannels.PINGS_QUIET else NotificationChannels.PINGS,
                     title = title, body = body, deepLink = "risaina://app/ping/${p.id}",
                     category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
@@ -107,7 +114,7 @@ class RisainaNotifier @Inject constructor(
                 post(
                     id = messageNotificationId(m.id),
                     onlyAlertOnce = true,
-                    silent = followsFastAlert(FAST_MESSAGE),
+                    silent = followsFastAlert(FAST_MESSAGE, m.id),
                     channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
                     title = partner, body = body, deepLink = "risaina://app/messages",
                     category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
@@ -153,11 +160,15 @@ class RisainaNotifier @Inject constructor(
 
     /**
      * Called straight from the FCM service, before any network sync, so the partner's phone buzzes
-     * within a second. Content is generic (the push carries no content); the sync that follows
-     * updates the same notification silently with the real ping.
+     * within a second. Content is generic (the push carries no content, only the ping's opaque id
+     * [pingId], absent from older servers); the sync that follows updates the same notification
+     * silently with the real ping.
      */
-    suspend fun notifyPingArrivedFast() {
+    suspend fun notifyPingArrivedFast(pingId: String?) {
         if (!canPost()) return
+        // Pushes are handled one after another, so an earlier push's sync may already have brought
+        // this ping and posted its real notification: a generic line would only overwrite it.
+        if (pingId != null && pingDao.byId(pingId) != null) return
         val prefs = preferencesStore.current()
         if (!prefs.notificationsEnabled || appInForeground()) return
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
@@ -168,7 +179,7 @@ class RisainaNotifier @Inject constructor(
             title = "$partner is thinking of you", body = "Tap to see", deepLink = "risaina://app/home",
             category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
         )
-        diagnostics.recordFastAlert(FAST_PING)
+        diagnostics.recordFastAlert(FAST_PING, pingId)
     }
 
     /**
@@ -179,6 +190,9 @@ class RisainaNotifier @Inject constructor(
      */
     suspend fun notifyMessageArrivedFast(messageId: String) {
         if (!canPost()) return
+        // Already synced (see notifyPingArrivedFast): its real notification was posted, or was left
+        // out on purpose; a generic "Sent you a message" must not replace it.
+        if (messageDao.byId(messageId) != null) return
         val prefs = preferencesStore.current()
         if (!prefs.notificationsEnabled || appInForeground()) return
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
@@ -189,7 +203,7 @@ class RisainaNotifier @Inject constructor(
             title = partner, body = "Sent you a message", deepLink = "risaina://app/messages",
             category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
         )
-        diagnostics.recordFastAlert(FAST_MESSAGE)
+        diagnostics.recordFastAlert(FAST_MESSAGE, messageId)
     }
 
     /**
@@ -219,7 +233,6 @@ class RisainaNotifier @Inject constructor(
         fun messageNotificationId(messageId: String): Int = messageId.hashCode()
         private const val FAST_PING = "ping"
         private const val FAST_MESSAGE = "message"
-        private const val FAST_ALERT_WINDOW_MS = 2 * 60_000L
 
         /** "0.8 s", "12 s", "3 min". */
         fun formatLatency(ms: Long): String = when {

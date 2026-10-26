@@ -34,7 +34,7 @@ sealed interface Incoming {
     data class NewPing(val ping: Ping) : Incoming
     data class NewMessage(val message: Message) : Incoming
     data object Unlinked : Incoming
-    /** Partner changed what my widgets show (no notification; widgets refresh). */
+    /** Partner changed what my widgets show: widgets refresh, and a quiet "updated your widget" line is posted. */
     data object WidgetChanged : Incoming
     data class Sos(val id: String) : Incoming
     data class Game(val id: String, val action: String) : Incoming

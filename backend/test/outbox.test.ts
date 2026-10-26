@@ -78,7 +78,7 @@ describe('outbox with a push service', () => {
     expect(push.calls).toHaveLength(0);
   });
 
-  it('sends a data-only payload {type,eventId,coupleId,seq,pr} to the OTHER member only', async () => {
+  it('sends a data-only payload {type,eventId,coupleId,seq,pr,ref} to the OTHER member only', async () => {
     const tokenB = `fcm-b-${randomUUID()}`;
     const tokenA = `fcm-a-${randomUUID()}`;
     await registerDevice(b, tokenB);
@@ -97,8 +97,10 @@ describe('outbox with a push service', () => {
       coupleId: ev!.coupleId.toHexString(),
       seq: String(ev!.seq),
       pr: 'h',
+      // The ping id only (opaque): lets the app skip its quick alert for a ping it already synced.
+      ref: ping.json().ping.id,
     });
-    expect(Object.keys(call.data).sort()).toEqual(['coupleId', 'eventId', 'pr', 'seq', 'type']); // no content leaks
+    expect(Object.keys(call.data).sort()).toEqual(['coupleId', 'eventId', 'pr', 'ref', 'seq', 'type']); // no content leaks
     // A ping shows a notification: high priority, never collapsed with other pushes.
     expect(call.opts).toEqual({ priority: 'high', collapseKey: undefined, ttlMs: undefined });
     // Delivery health: FCM accepted it for b's phone.
