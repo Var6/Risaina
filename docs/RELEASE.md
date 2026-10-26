@@ -1,30 +1,41 @@
 # Release checklist
 
-## Signing
-1. Create a keystore (keep it out of git): `keytool -genkeypair -v -keystore risaina-release.jks -alias risaina -keyalg RSA -keysize 4096 -validity 10000`
-2. Create `android/keystore.properties` (gitignored):
+## Signing (Google Play upload key)
+1. The upload key lives outside git (`docs/private/` is gitignored). To make a new one:
+   `keytool -genkeypair -v -keystore risaina-upload.jks -storetype PKCS12 -alias upload -keyalg RSA -keysize 4096 -validity 10000`
+   Back it up. If it is ever lost, Play Console → Setup → App signing can reset the upload key; the app
+   signing key itself is held by Google (Play App Signing).
+2. `android/keystore.properties` (gitignored) points Gradle at it:
    ```
-   storeFile=/absolute/path/risaina-release.jks
+   storeFile=/absolute/path/risaina-upload.jks
    storePassword=...
-   keyAlias=risaina
+   keyAlias=upload
    keyPassword=...
    ```
-3. Add a `signingConfigs.release` block to `android/app/build.gradle.kts` that reads that file
-   (left out deliberately so the project builds without a keystore).
-4. `./gradlew :app:assembleRelease` (or `bundleRelease` for Play).
+   `app/build.gradle.kts` reads this file; without it a release build is unsigned.
+3. `./gradlew :app:bundleRelease` → `app/build/outputs/bundle/release/app-release.aab` (upload this to
+   Play). `:app:assembleRelease` makes a signed APK of the same build for testing on a phone.
 
-## Before any public release
-- [ ] `risaina.apiBaseUrl` points at the production API over HTTPS
-- [ ] `google-services.json` present; push verified end-to-end on two devices
-- [ ] Backend: `NODE_ENV=production`, R2 driver, Atlas, strong secret, health green
-- [ ] All backend tests pass; Android unit tests and lint pass; instrumented tests run on a device
-- [ ] Two-device journey in `docs/TESTING.md` completed
-- [ ] Privacy policy reviewed (`docs/PRIVACY_POLICY_DRAFT.md`)
-- [ ] Permissions review: INTERNET, ACCESS_NETWORK_STATE, VIBRATE, POST_NOTIFICATIONS,
-      RECORD_AUDIO (runtime, on tap), SET_WALLPAPER — nothing else
+## Version numbers
+versionCode is the number of commits on the branch you build from, versionName is `0.2.0+<commit>`.
+Play refuses a versionCode that is not higher than the last upload, so build every upload from `main`
+(or a branch ahead of it), and never squash or force-push `main`.
+
+## Before any Play upload
+- [ ] `risaina.apiBaseUrl` is the production API over `https://` (a release build refuses anything else)
+- [ ] `google-services.json` present; push verified end to end on two devices
+- [ ] Backend: `NODE_ENV=production`, R2 driver, Atlas, strong secret, health green, and the deployed
+      version serves `/privacy` and `/delete-account`
+- [ ] All backend tests pass; Android unit tests and lint pass
+- [ ] The R8 release build tried on a phone: sign-in, chat with a photo, a ping from a widget, an SOS
+      test, live location start and stop
+- [ ] Permissions review. Allowed on Play: INTERNET, ACCESS_NETWORK_STATE, VIBRATE, POST_NOTIFICATIONS,
+      RECORD_AUDIO (on tap), ACCESS_NOTIFICATION_POLICY, USE_FULL_SCREEN_INTENT (declared in Play
+      Console), FOREGROUND_SERVICE with SPECIAL_USE (SOS) and LOCATION (live location), WAKE_LOCK,
+      SCHEDULE_EXACT_ALARM, ACCESS_FINE/COARSE_LOCATION. Not allowed for this app: USE_EXACT_ALARM,
+      REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, the systemExempted service type, ACCESS_BACKGROUND_LOCATION
 - [ ] Known limitations acknowledged (`docs/KNOWN_LIMITATIONS.md`)
-- [ ] Version code/name bumped in `app/build.gradle.kts`
 
-## Debug APK (the current target)
+## Debug APK (sideloading)
 `cd android && ./gradlew :app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`.
-Install on both phones with `adb install -r`.
+A debug build cannot update a Play install (different signing key): uninstall one before the other.

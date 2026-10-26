@@ -89,7 +89,7 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
         composable<ForgotPassword> { ForgotPasswordScreen(onBack = back) }
 
         composable<PairingIntro> { PairingIntroScreen(onContinue = { navController.navigate(Pairing) { popUpTo<PairingIntro> { inclusive = true } } }) }
-        composable<Pairing> { PairingScreen() }
+        composable<Pairing> { PairingScreen(onPrivacy = { navController.navigate(PrivacySettings) }, onAbout = { navController.navigate(About) }) }
         composable<NotificationPermission> { NotificationPermissionScreen(onDone = back) }
 
         composable<Home>(deepLinks = listOf(navDeepLink<Home>(basePath = "risaina://app/home"))) {

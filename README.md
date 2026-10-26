@@ -63,7 +63,7 @@ Cloudflare R2 bucket. See `docs/R2_SETUP.md`.
 - `docs/TESTING.md` — how to run every test layer and what each covers
 - `docs/RELEASE.md` — release checklist and signing
 - `docs/KNOWN_LIMITATIONS.md`, `docs/TROUBLESHOOTING.md`
-- `docs/PRIVACY_POLICY_DRAFT.md` — draft for review before any public release
+- `docs/PRIVACY_POLICY_DRAFT.md` — where the published privacy policy and account-deletion page live
 - `docs/PROGRESS.md` — what is done and verified
 
 ## Licences

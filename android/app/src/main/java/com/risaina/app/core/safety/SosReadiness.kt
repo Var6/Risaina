@@ -82,7 +82,7 @@ object SosReadiness {
             if (s.ignoringBatteryOptimizations) ReadinessCheck("battery", CheckStatus.OK, "Battery use is unrestricted")
             else ReadinessCheck(
                 "battery", CheckStatus.ACTION, "Battery saving can delay an SOS",
-                "Let Risaina run without battery limits so an SOS reaches you straight away. In the list, pick Risaina and choose Don't optimise.", ReadinessFix.BATTERY, "Open",
+                "Let Risaina run without battery limits so an SOS reaches you straight away. In the list, switch to All apps, pick Risaina and choose Don't optimise.", ReadinessFix.BATTERY, "Open",
             ),
         )
         if (s.backgroundRestricted) add(

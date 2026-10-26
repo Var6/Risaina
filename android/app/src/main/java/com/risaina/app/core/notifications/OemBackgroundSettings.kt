@@ -87,8 +87,9 @@ object OemBackgroundSettings {
     }
 
     /**
-     * Opens Android's list of battery-optimised apps, where the person picks Risaina and chooses
-     * "Don't optimise" (or "Unrestricted"). Falls back to App info, which has the same switch.
+     * Opens Android's list of battery-optimised apps. It opens on the apps that are already exempt, so
+     * the person switches it to "All apps", picks Risaina and chooses "Don't optimise" (the card says
+     * so). Falls back to App info, which has the same switch.
      */
     fun requestBatteryExemption(context: Context): Boolean =
         tryStart(context, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) ||

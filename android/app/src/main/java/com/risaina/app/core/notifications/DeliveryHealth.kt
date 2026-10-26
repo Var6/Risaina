@@ -102,7 +102,7 @@ object DeliveryHealthRules {
 
         add(
             if (s.ignoringBatteryOptimizations) HealthCheck("battery", HealthStatus.OK, "Battery: unrestricted", "Android lets Risaina wake up for your partner.")
-            else HealthCheck("battery", HealthStatus.WARNING, "Battery optimisation is on", "Android may hold alerts and widget updates until you open the app. In the list, pick Risaina and choose Don't optimise.", HealthAction.BATTERY_EXEMPTION, "Open"),
+            else HealthCheck("battery", HealthStatus.WARNING, "Battery optimisation is on", "Android may hold alerts and widget updates until you open the app. In the list, switch to All apps, pick Risaina and choose Don't optimise.", HealthAction.BATTERY_EXEMPTION, "Open"),
         )
         if (s.backgroundRestricted) {
             add(HealthCheck("restricted", HealthStatus.PROBLEM, "Background use is restricted", "Risaina can't wake up when your partner reaches out. Set battery use to Unrestricted.", HealthAction.APP_INFO, "Open App info"))

@@ -129,8 +129,9 @@ class SosAlarmService : Service() {
     }
 
     /**
-     * specialUse is the only type: Google Play reserves systemExempted for system apps and alarm-clock
-     * apps. A start from the high-priority FCM message is allowed for any type.
+     * specialUse is the only type: Android reserves systemExempted for system apps and specific system
+     * integrations, and Google Play's declaration form does not list it. A start from the high-priority
+     * FCM message is allowed for any type.
      */
     private fun enterForeground(state: RingState): Boolean {
         val notification = sosAlert.alarmNotification(state)

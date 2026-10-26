@@ -72,7 +72,7 @@ fun PairingIntroScreen(onContinue: () -> Unit) {
 }
 
 @Composable
-fun PairingScreen(vm: PairingViewModel = hiltViewModel()) {
+fun PairingScreen(onPrivacy: () -> Unit = {}, onAbout: () -> Unit = {}, vm: PairingViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { vm.refresh() }
     val context = LocalContext.current
@@ -162,6 +162,9 @@ fun PairingScreen(vm: PairingViewModel = hiltViewModel()) {
         }
         Spacer(Modifier.height(24.dp))
         GhostButton("Sign out", onClick = vm::signOut, modifier = Modifier.align(Alignment.CenterHorizontally))
+        // Your data, the privacy policy and "Delete my account" are reachable without a partner.
+        GhostButton("Privacy & account", onClick = onPrivacy, modifier = Modifier.align(Alignment.CenterHorizontally))
+        GhostButton("About Risaina", onClick = onAbout, modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(24.dp))
     }
 }

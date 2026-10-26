@@ -34,6 +34,7 @@ import com.google.android.gms.location.Priority
 /**
  * The one-time setup before sharing location, then nothing on later taps:
  * 1. manual sharing needs notifications (a share is never started without its visible notification);
+ *    panic and SOS ask for them too but go on without them, because an emergency must not be blocked;
  * 2. location permission, after a short explanation (precise and approximate together, so the user
  *    can choose approximate);
  * 3. the phone's location switch, through Google's "turn on location" dialog.
@@ -91,6 +92,8 @@ fun rememberLocationAccessFlow(
         if (granted && NotificationManagerCompat.from(context).areNotificationsEnabled()) afterNotifications()
         else blocked("Sharing always shows a notification so you know it's on. Allow Risaina's notifications first.")
     }
+    // Panic and SOS: ask once, then carry on whatever the answer.
+    val optionalNotificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { afterNotifications() }
 
     if (rationale) AlertDialog(
         onDismissRequest = { rationale = false },
@@ -98,8 +101,9 @@ fun rememberLocationAccessFlow(
         text = {
             Text(
                 "Risaina sends your location to $partnerName while sharing is on, even when the app is closed or the screen is off. " +
-                    "A notification shows the whole time, and you can stop from it. Nothing is kept after you stop. " +
-                    "You can choose approximate location if you prefer.",
+                    (if (NotificationManagerCompat.from(context).areNotificationsEnabled()) "A notification shows the whole time, and you can stop from it. "
+                    else "Risaina's notifications are off, so no notification will show while you share. You can stop in Risaina at any time. ") +
+                    "Nothing is kept after you stop. You can choose approximate location if you prefer.",
             )
         },
         confirmButton = {
@@ -130,10 +134,10 @@ fun rememberLocationAccessFlow(
 
     return {
         when {
-            !requireNotifications -> afterNotifications()
             Build.VERSION.SDK_INT >= 33 &&
                 ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ->
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                (if (requireNotifications) notificationLauncher else optionalNotificationLauncher).launch(Manifest.permission.POST_NOTIFICATIONS)
+            !requireNotifications -> afterNotifications()
             !NotificationManagerCompat.from(context).areNotificationsEnabled() ->
                 blocked("Sharing always shows a notification so you know it's on. Turn on Risaina's notifications first.")
             else -> afterNotifications()

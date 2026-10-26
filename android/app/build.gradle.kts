@@ -147,7 +147,10 @@ val checkReleaseApiBaseUrl by tasks.registering {
         }
     }
 }
-tasks.named { it == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseApiBaseUrl) }
+// Only the tasks that write a release APK or bundle: `./gradlew test` or `check` on a machine set up for
+// the emulator compiles the release variant too, and must not fail for it.
+tasks.named { it in setOf("packageRelease", "packageReleaseBundle", "packageReleaseUniversalApk") }
+    .configureEach { dependsOn(checkReleaseApiBaseUrl) }
 
 dependencies {
     implementation(libs.androidx.core.ktx)

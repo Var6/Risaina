@@ -29,10 +29,12 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.risaina.app.core.designsystem.components.ConnectivityBanner
 import com.risaina.app.core.designsystem.theme.Risaina
+import com.risaina.app.navigation.About
 import com.risaina.app.navigation.ForgotPassword
 import com.risaina.app.navigation.Home
 import com.risaina.app.navigation.Pairing
 import com.risaina.app.navigation.PairingIntro
+import com.risaina.app.navigation.PrivacySettings
 import com.risaina.app.navigation.RisainaNavHost
 import com.risaina.app.navigation.SignIn
 import com.risaina.app.navigation.SignUp
@@ -107,13 +109,18 @@ private fun routeName(route: Any): String = route::class.qualifiedName ?: route.
 /** Destinations that belong to each gate. Anything not listed for an auth/pairing gate is a HOME destination. */
 private val authRoutes = listOf(Welcome, SignIn, SignUp, ForgotPassword).map(::routeName)
 private val pairingRoutes = listOf(PairingIntro, Pairing).map(::routeName)
+/** Open before pairing too: deleting the account and reading the privacy policy never need a partner. */
+private val accountRoutes = listOf(PrivacySettings, About).map(::routeName)
 
 private fun NavHostController.resetToGate(gate: Gate) {
     val current = currentBackStackEntry?.destination?.route ?: ""
+    // Privacy or About opened from the pairing screen sits on top of it: once paired, back must not
+    // return to the pairing screen, so that stack is reset to Home too.
+    val overPairing = previousBackStackEntry?.destination?.route.orEmpty().let { prev -> pairingRoutes.any { prev.startsWith(it) } }
     val belongs = when (gate) {
         Gate.WELCOME, Gate.SIGN_IN -> authRoutes.any { current.startsWith(it) }
-        Gate.PAIRING -> pairingRoutes.any { current.startsWith(it) }
-        Gate.HOME -> authRoutes.none { current.startsWith(it) } && pairingRoutes.none { current.startsWith(it) } && current.isNotEmpty()
+        Gate.PAIRING -> (pairingRoutes + accountRoutes).any { current.startsWith(it) }
+        Gate.HOME -> authRoutes.none { current.startsWith(it) } && pairingRoutes.none { current.startsWith(it) } && current.isNotEmpty() && !overPairing
         Gate.LOADING -> true
     }
     if (belongs) return

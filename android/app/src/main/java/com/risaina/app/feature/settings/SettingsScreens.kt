@@ -388,16 +388,16 @@ fun AboutScreen(onBack: () -> Unit) {
         // Open-Meteo's free API is CC BY 4.0, which asks for credit and a link to the licence.
         SectionHeader("Weather")
         LinkedText(
-            "Weather data by Open-Meteo.com, under CC BY 4.0. The app sends Open-Meteo only the rounded position of the city your partner chose.",
+            "Weather data by Open-Meteo.com, under CC BY 4.0. The app sends Open-Meteo the rounded position of the city your partner chose, and the text you type when you search for your own city.",
             listOf("Open-Meteo.com" to LegalLinks.OPEN_METEO, "CC BY 4.0" to LegalLinks.CC_BY_4),
             Modifier.padding(top = 8.dp),
         )
         Spacer(Modifier.height(16.dp))
         SectionHeader("Privacy")
-        Text("No analytics and no ads. Firebase Cloud Messaging delivers notifications. The server only ever receives what you choose to send.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
+        Text("No analytics and no ads. Firebase Cloud Messaging delivers notifications. Besides what you send, the server receives a few technical details with no content (phone model, app version, notification and battery status, and the alarm volume when an SOS rings) so a missed alert can be explained.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
         LinkedText(
-            "Read the privacy policy, or delete your account on the web. To report a problem or abuse, contact us.",
-            listOf("privacy policy" to LegalLinks.privacyPolicy, "delete your account on the web" to LegalLinks.deleteAccount, "contact us" to LegalLinks.contact),
+            "Read the privacy policy and how to delete your account. To report a problem or abuse, contact us.",
+            listOf("privacy policy" to LegalLinks.privacyPolicy, "how to delete your account" to LegalLinks.deleteAccount, "contact us" to LegalLinks.contact),
             Modifier.padding(top = 8.dp),
         )
     }
