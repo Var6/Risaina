@@ -6,12 +6,12 @@ import com.risaina.app.core.location.LiveLocationController
 import com.risaina.app.core.location.LiveLocationRepository
 import com.risaina.app.core.network.EventDto
 import com.risaina.app.core.network.LiveLocationDto
-import com.risaina.app.core.network.LiveLocationStateDto
 import com.risaina.app.core.network.RisainaApi
 import com.risaina.app.core.network.SosDto
 import com.risaina.app.core.notifications.SosAlert
 import com.risaina.app.core.sos.SosAlarmController
 import com.risaina.app.core.sos.SosLocalState
+import com.risaina.app.core.sync.DeferredEffects
 import com.risaina.app.testutil.contextWithPrefs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -40,6 +40,7 @@ class SafetyEventsTest {
     private val sosAlert = mockk<SosAlert>(relaxed = true)
     private val notifier = mockk<SafetyNotifier>(relaxed = true)
     private val controller = mockk<LiveLocationController>(relaxed = true)
+    private val deferred = mockk<DeferredEffects>(relaxed = true)
     private lateinit var events: SafetyEvents
 
     private val now = Instant.now()
@@ -50,7 +51,7 @@ class SafetyEventsTest {
         coEvery { coupleDao.partner() } returns null
         events = SafetyEvents(
             json, coupleDao, SosRepository(api), SosLocalState(contextWithPrefs()), alarm, sosAlert,
-            LiveLocationRepository(api), { controller }, notifier,
+            LiveLocationRepository(api), { controller }, notifier, deferred,
         )
     }
 
@@ -65,10 +66,10 @@ class SafetyEventsTest {
         mapOf("sos" to json.encodeToJsonElement(SosDto.serializer(), SosDto("s$seq", "c1", PARTNER, ME, "help", at.toString(), panic = true))),
     )
     private fun resolved(seq: Long, at: Instant) = event(seq, "sos.resolved", at, mapOf("sosId" to "s${seq - 1}", "resolvedAt" to at.toString()))
-    private fun session(id: String, at: Instant, reason: String = "manual") =
-        LiveLocationDto(sessionId = id, userId = PARTNER, reason = reason, startedAt = at.toString(), expiresAt = null, updatedAt = at.toString())
-    private fun started(seq: Long, at: Instant, reason: String = "manual") =
-        event(seq, "location.started", at, mapOf("sharing" to json.encodeToJsonElement(LiveLocationDto.serializer(), session("loc$seq", at, reason))))
+    private fun session(id: String, at: Instant, reason: String = "manual", sosId: String? = null) =
+        LiveLocationDto(sessionId = id, userId = PARTNER, reason = reason, sosId = sosId, startedAt = at.toString(), expiresAt = null, updatedAt = at.toString())
+    private fun started(seq: Long, at: Instant, reason: String = "manual", sosId: String? = null) =
+        event(seq, "location.started", at, mapOf("sharing" to json.encodeToJsonElement(LiveLocationDto.serializer(), session("loc$seq", at, reason, sosId))))
     private fun stopped(seq: Long, at: Instant) =
         event(seq, "location.stopped", at, mapOf("sessionId" to "loc${seq - 1}", "userId" to PARTNER, "stoppedAt" to at.toString(), "reason" to "stopped"))
 
@@ -82,31 +83,40 @@ class SafetyEventsTest {
         coVerify(exactly = 0) { notifier.partnerSharingStarted(any(), any()) }
         // A replayed start is not even re-checked with the server: it is history.
         coVerify(exactly = 0) { api.locationSharing() }
+        verify(exactly = 0) { deferred.checkPartnerLocation() }
     }
 
     @Test
-    fun `fresh events still notify, after the server confirms a partner's share`() = runTest {
+    fun `fresh events still notify, with no network inside apply`() = runTest {
         events.apply(resolved(2, now), ME)
         verify(exactly = 1) { sosAlert.postSafeNow(any()) }
 
-        coEvery { api.locationSharing() } returns LiveLocationStateDto(partner = session("loc3", now))
         events.apply(started(3, now), ME)
+        coVerify(exactly = 1) { notifier.partnerSharingStarted(any(), any()) }
+        // apply holds the sync's apply lock inside the push handler's few seconds: no GET here.
+        // The server re-check (a stop still on its way, a purge) runs later, deferred.
+        coVerify(exactly = 0) { api.locationSharing() }
+        verify(exactly = 1) { deferred.checkPartnerLocation() }
+    }
+
+    @Test
+    fun `a fresh panic share linked to an SOS posts no is-sharing notification (the SOS alarm covers it)`() = runTest {
+        events.apply(started(3, now, reason = "panic", sosId = "s1"), ME)
+        coVerify(exactly = 0) { notifier.partnerSharingStarted(any(), any()) }
+    }
+
+    @Test
+    fun `a fresh panic share whose SOS has not gone through yet is announced`() = runTest {
+        // A high-priority push (backend push policy), and maybe the only sign of the emergency for now.
+        events.apply(started(3, now, reason = "panic"), ME)
         coVerify(exactly = 1) { notifier.partnerSharingStarted(any(), any()) }
     }
 
     @Test
-    fun `a fresh panic share posts no is-sharing notification (the SOS alarm covers it)`() = runTest {
-        coEvery { api.locationSharing() } returns LiveLocationStateDto(partner = session("loc3", now, reason = "panic"))
-        events.apply(started(3, now, reason = "panic"), ME)
-        coVerify(exactly = 0) { notifier.partnerSharingStarted(any(), any()) }
-    }
-
-    @Test
-    fun `a fresh start the server no longer shows is not announced`() = runTest {
-        // Its stop is still on the way (or it was purged without an event).
-        coEvery { api.locationSharing() } returns LiveLocationStateDto(partner = null)
+    fun `a stop applied after the start removes the notification`() = runTest {
         events.apply(started(3, now), ME)
-        coVerify(exactly = 0) { notifier.partnerSharingStarted(any(), any()) }
+        events.apply(stopped(4, now), ME)
+        verify(exactly = 1) { notifier.cancelPartnerSharing() }
     }
 
     private companion object {

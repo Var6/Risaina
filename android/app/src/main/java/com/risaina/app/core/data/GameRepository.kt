@@ -169,14 +169,15 @@ class GameRepository @Inject constructor(private val api: RisainaApi) {
     /**
      * Re-fetches the games a catch-up batch marked, once each. After a full replay ([full]: a new
      * sign-in or pairing), or with several games due, one list request replaces them all. Stops at
-     * the first retryable failure; whatever is left stays marked for the next sync.
+     * the first retryable failure; whatever is left stays marked for the next sync. Returns that
+     * failure (null when nothing is left to fetch), so the caller's retry queue keeps the job.
      */
-    suspend fun flushStale(full: Boolean = false) {
-        if (stale.isEmpty()) return
-        if (full || stale.size > MAX_SINGLE_REFRESHES) { refresh(); return }
+    suspend fun flushStale(full: Boolean = false): AppError? {
+        if (stale.isEmpty()) return null
+        if (full || stale.size > MAX_SINGLE_REFRESHES) return refresh().errorOrNull()?.takeIf { it.isRetryable }
         while (true) {
-            val id = stale.firstOrNull() ?: return
-            if (refreshOne(id).errorOrNull()?.isRetryable == true) return
+            val id = stale.firstOrNull() ?: return null
+            refreshOne(id).errorOrNull()?.takeIf { it.isRetryable }?.let { return it }
         }
     }
 

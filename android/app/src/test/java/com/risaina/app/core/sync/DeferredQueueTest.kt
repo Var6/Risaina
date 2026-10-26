@@ -61,6 +61,22 @@ class DeferredQueueTest {
         assertEquals(listOf("ack:1", "ack:2"), ran)
     }
 
+    @Test fun anItemQueuedAgainAfterThisDrainRanItRunsAgain() = runTest {
+        // The drain refreshed the stale games, then sends a receipt; meanwhile a new move marks a
+        // game stale and queues "games:stale" again. A drain started for it returns at once (this
+        // one holds the lock), so this one must not skip it as already tried.
+        val q = DeferredQueue(MemoryStorage())
+        q.add("games:stale"); q.add("ack:1")
+        val ran = mutableListOf<String>()
+        q.drain { item ->
+            ran += item
+            if (item == "ack:1" && ran.count { it == "games:stale" } == 1) q.add("games:stale")
+            EffectOutcome.DONE
+        }
+        assertEquals(2, ran.count { it == "games:stale" })
+        assertTrue(q.pending().isEmpty())
+    }
+
     @Test fun aFailingItemRunsOncePerDrainAndIsDroppedAfterMaxFailures() = runTest {
         val storage = MemoryStorage()
         val q = DeferredQueue(storage)

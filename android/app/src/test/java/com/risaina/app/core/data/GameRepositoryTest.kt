@@ -124,18 +124,19 @@ class GameRepositoryTest {
         server["g"] = trivia(status = "revealed", partnerAnswered = 5)
         repo.onEvent("g", "revealed", partner, fromPartner = true, view = event(5, finished = true, status = "revealed"), defer = true)
         offline = true
-        repo.flushStale()
+        // Reported, so the deferred queue keeps its "games:stale" job for the next drain.
+        assertTrue(repo.flushStale() is AppError.Offline)
         assertTrue(repo.games.value.isEmpty())
 
         offline = false
-        repo.flushStale()
+        assertEquals(null, repo.flushStale())
         assertEquals(listOf("GET games/g", "GET games/g"), requests)
         assertEquals("revealed", repo.games.value.single().status)
     }
 
     @Test fun `a game that is gone is not retried forever`() = runTest {
         repo.onEvent("gone", "cancelled", partner, fromPartner = true, view = event(1, id = "gone"), defer = true)
-        repo.flushStale()
+        assertEquals("a 404 is not worth retrying", null, repo.flushStale())
         repo.flushStale()
         assertEquals(listOf("GET games/gone"), requests)
     }

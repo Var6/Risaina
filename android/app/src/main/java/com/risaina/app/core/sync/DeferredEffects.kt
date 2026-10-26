@@ -15,9 +15,9 @@ import javax.inject.Singleton
 
 /**
  * Network follow-ups of applying an event (the "delivered" receipt for a ping, re-fetching a game,
- * re-loading the partner after pairing). They used to run inside the reducer, so in the push handler
- * they used up the few seconds Android gives it and held the apply lock before the widgets were
- * drawn. Now the reducer only queues them; callers run [drain] once notifications and widgets are
+ * re-loading the partner after pairing, re-checking the partner's live location). They used to run
+ * inside the reducer, so in the push handler they used up the few seconds Android gives it and held
+ * the apply lock before the widgets were drawn. Now the reducer only queues them; callers run [drain] once notifications and widgets are
  * done (the push handler with what is left of its budget, the SyncWorker after it, the foreground
  * socket once it has caught up). The queue is persisted, so a phone frozen mid-way still sends the
  * receipt later. Every effect is idempotent on the server.
@@ -28,6 +28,8 @@ class DeferredEffects @Inject constructor(
     private val pingRepository: PingRepository,
     private val gameRepository: GameRepository,
     private val coupleRepository: dagger.Lazy<CoupleRepository>,
+    private val liveRepo: com.risaina.app.core.location.LiveLocationRepository,
+    private val safetyNotifier: com.risaina.app.core.safety.SafetyNotifier,
 ) {
     private val prefs get() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -45,6 +47,12 @@ class DeferredEffects @Inject constructor(
     /** Games marked stale by events (GameRepository.onEvent): fetched once each, or as one list after a replay. */
     fun refreshStaleGames(full: Boolean) = queue.add(if (full) GAMES_FULL else GAMES_STALE)
     fun refreshMe() = queue.add(ME)
+    /**
+     * "Is the partner still sharing?" asked of the server after "is sharing" was posted from the
+     * event (an old start whose stop is still on its way, or a share purged without an event, must
+     * not keep saying so). A GET in the reducer would hold the apply lock in the push handler.
+     */
+    fun checkPartnerLocation() = queue.add(LOCATION_CHECK)
 
     fun pending(): Set<String> = queue.pending()
 
@@ -57,10 +65,16 @@ class DeferredEffects @Inject constructor(
         try {
             when {
                 item.startsWith(ACK) -> pingRepository.acknowledgeDelivered(item.removePrefix(ACK)).outcome()
-                item == GAMES_STALE -> { gameRepository.flushStale(); EffectOutcome.DONE }
-                item == GAMES_FULL -> { gameRepository.flushStale(full = true); EffectOutcome.DONE }
+                // Done only once no stale game is left: a fetch that failed (timeout, server waking up)
+                // keeps the job queued for the next drain, or the card would show the old board
+                // until another game event came.
+                item == GAMES_STALE -> gameRepository.flushStale().outcome()
+                item == GAMES_FULL -> gameRepository.flushStale(full = true).outcome()
                 item.startsWith(GAME) -> { gameRepository.refreshOne(item.removePrefix(GAME)); EffectOutcome.DONE }
                 item == ME -> coupleRepository.get().refreshMe().outcome()
+                item == LOCATION_CHECK -> liveRepo.refresh().also { r ->
+                    if (r is AppResult.Success && liveRepo.state.value.partner == null) safetyNotifier.cancelPartnerSharing()
+                }.outcome()
                 else -> EffectOutcome.DONE
             }
         } catch (c: CancellationException) {
@@ -72,9 +86,11 @@ class DeferredEffects @Inject constructor(
 
     // After sign-out or unlink a queued receipt fails with a non-retryable error and is dropped, so
     // the queue needs no explicit clearing.
-    private fun AppResult<*>.outcome(): EffectOutcome = when {
-        this !is AppResult.Failure || !error.isRetryable -> EffectOutcome.DONE
-        error is AppError.Offline -> EffectOutcome.OFFLINE
+    private fun AppResult<*>.outcome(): EffectOutcome = (this as? AppResult.Failure)?.error.outcome()
+
+    private fun AppError?.outcome(): EffectOutcome = when {
+        this == null || !isRetryable -> EffectOutcome.DONE
+        this is AppError.Offline -> EffectOutcome.OFFLINE
         else -> EffectOutcome.FAILED
     }
 
@@ -87,6 +103,7 @@ class DeferredEffects @Inject constructor(
         const val GAMES_STALE = "games:stale"
         const val GAMES_FULL = "games:all"
         const val ME = "me"
+        const val LOCATION_CHECK = "location:check"
     }
 }
 
@@ -105,7 +122,8 @@ enum class EffectOutcome {
  * (DeferredQueueTest).
  *
  * - An item queued again while it runs (a second game move while the first refresh is in flight)
- *   runs again: the first run may have fetched the state before the newer event.
+ *   runs again: the first run may have fetched the state before the newer event. So does one queued
+ *   again after this drain already ran it.
  * - Each item runs at most once per drain otherwise, so an item that keeps failing cannot spin.
  * - An item that fails on the server side [MAX_FAILURES] times is dropped (a receipt the server keeps
  *   refusing would otherwise be retried on every sync forever). Offline runs do not count.
@@ -124,10 +142,15 @@ class DeferredQueue(private val storage: Storage) {
     /** The item being run right now, and whether it was queued again meanwhile. Guarded by [lock]. */
     private var running: String? = null
     private var requeued = false
+    /** What the drain under way has already run (null when none runs). Guarded by [lock]. */
+    private var drainTried: MutableSet<String>? = null
 
     fun add(item: String) = synchronized(lock) {
         storage.saveItems(storage.items() + item)
-        if (item == running) requeued = true
+        // Queued again after the running drain already ran it (a newer game move while that drain
+        // sends receipts): run it again, or the drain would skip it as tried, and a drain started
+        // meanwhile returned at once because this one holds the lock.
+        if (item == running) requeued = true else drainTried?.remove(item)
     }
 
     fun pending(): Set<String> = synchronized(lock) { storage.items() }
@@ -138,13 +161,13 @@ class DeferredQueue(private val storage: Storage) {
      */
     suspend fun drain(wait: Boolean = true, run: suspend (String) -> EffectOutcome) {
         if (wait) drainMutex.lock() else if (!drainMutex.tryLock()) return
+        val tried = mutableSetOf<String>()
+        synchronized(lock) { drainTried = tried }
         try {
-            val tried = mutableSetOf<String>()
             while (true) {
                 val item = synchronized(lock) {
-                    storage.items().firstOrNull { it !in tried }?.also { running = it; requeued = false }
+                    storage.items().firstOrNull { it !in tried }?.also { running = it; requeued = false; tried += it }
                 } ?: return
-                tried += item
                 var outcome: EffectOutcome? = null
                 try {
                     outcome = run(item)
@@ -168,6 +191,7 @@ class DeferredQueue(private val storage: Storage) {
                 }
             }
         } finally {
+            synchronized(lock) { drainTried = null }
             drainMutex.unlock()
         }
     }

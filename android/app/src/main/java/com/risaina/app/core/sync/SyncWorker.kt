@@ -43,6 +43,8 @@ class SyncWorker @AssistedInject constructor(
     private val messageRepository: MessageRepository,
     private val preferencesRepository: PreferencesRepository,
     private val diagnostics: DeliveryDiagnostics,
+    private val deferred: DeferredEffects,
+    private val safetyNotifier: com.risaina.app.core.safety.SafetyNotifier,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -51,6 +53,9 @@ class SyncWorker @AssistedInject constructor(
         // Joins the push handler's sync if it is still running (one sync at a time), then fetches a
         // new widget photo, which the push handler may not have had the time for.
         val result = syncManager.syncOnce(notify = notify, fetchMedia = true)
+        // A partner's share that the server purged without an event (12 h with no fix: their phone
+        // died) would say "is sharing" for ever: while it shows, each sync (the hourly one too) asks.
+        if (safetyNotifier.partnerSharingShown()) deferred.checkPartnerLocation()
         // Receipts and game refreshes: network follow-ups kept out of the push handler's few seconds.
         runCatching { syncManager.runDeferred() }
         messageRepository.drainOutbox()

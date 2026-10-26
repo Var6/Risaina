@@ -27,8 +27,8 @@ import javax.inject.Singleton
 /**
  * The sos.* and location.* branches of the event reducer. Events replay (fresh sign-in, re-pairing,
  * a late sync), so nothing here may ring or notify for something that is over: the SOS ring follows
- * SosRingPolicy and the local SOS state, and notifications are only posted for fresh events after
- * re-checking the server.
+ * SosRingPolicy and the local SOS state, and notifications are only posted for fresh events (a
+ * fresh "is sharing" is re-checked with the server afterwards, outside the apply lock).
  */
 @Singleton
 class SafetyEvents @Inject constructor(
@@ -41,6 +41,7 @@ class SafetyEvents @Inject constructor(
     private val liveRepo: LiveLocationRepository,
     private val liveController: dagger.Lazy<LiveLocationController>,
     private val notifier: SafetyNotifier,
+    private val deferred: com.risaina.app.core.sync.DeferredEffects,
 ) {
     suspend fun apply(event: EventDto, me: String): List<Incoming> {
         val p = event.payload
@@ -79,12 +80,14 @@ class SafetyEvents @Inject constructor(
                     liveController.get().onServerSessionChanged(session)
                 } else {
                     liveRepo.onPartnerStarted(session)
-                    // Re-check with the server first: an old start whose stop is still on its way (or a
-                    // session purged without an event) must not announce "is sharing".
-                    if (fresh && session.reason != "panic") {
-                        withTimeoutOrNull(3_000) { liveRepo.refresh() }
-                        val current = liveRepo.state.value.partner
-                        if (current?.sessionId == session.sessionId) notifier.partnerSharingStarted(partnerName(), current)
+                    // Posted from the event itself, with no network here: apply runs under the sync's
+                    // apply lock, inside the push handler's few seconds, and this high push exists
+                    // for exactly this notification. A stop applied later in the same sync removes
+                    // it; the server re-check runs after notifications and widgets (deferred) and
+                    // removes it if the share is already gone (a stop still on its way, a purge).
+                    if (fresh && SafetyNotifier.announces(session)) {
+                        notifier.partnerSharingStarted(partnerName(), session)
+                        deferred.checkPartnerLocation()
                     }
                 }
             }
