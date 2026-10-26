@@ -1,5 +1,6 @@
 package com.risaina.app.feature.lists
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -35,6 +35,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -153,31 +155,59 @@ fun ListDetailScreen(id: String, onBack: () -> Unit, vm: ListsViewModel = hiltVi
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
     val l = list
     var confirmDelete by remember { mutableStateOf(false) }
-    // Local editable copy; re-seeded only when the server version changes (e.g. partner edited).
-    var seededVersion by remember { mutableStateOf(-1) }
+    // The editor's own copy. A new version refills it only when it is someone else's change (the
+    // partner, or the server's copy after a conflict), never when it is this phone's own save coming
+    // back: that used to replace what was typed since the save went out (see ListEditorSync).
+    var seededVersion by remember { mutableIntStateOf(-1) }
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var pinned by remember { mutableStateOf(false) }
-    val items = remember { mutableStateListOf<ListItem>() }
+    val rows = remember { mutableStateListOf<EditRow>() }
+    var nextKey by remember { mutableLongStateOf(0L) }
     var newItem by remember { mutableStateOf("") }
     LaunchedEffect(l?.version) {
-        if (l != null && l.version != seededVersion) {
-            seededVersion = l.version; title = l.title; body = l.body; pinned = l.pinned
-            items.clear(); items.addAll(l.items)
+        if (l == null || l.version == seededVersion) return@LaunchedEffect
+        val own = seededVersion != -1 && vm.takeOwnEcho(l)
+        seededVersion = l.version
+        if (own) {
+            ListEditorSync.adoptIds(rows, l.items).forEachIndexed { i, r -> if (rows[i] != r) rows[i] = r }
+        } else {
+            title = l.title; body = l.body; pinned = l.pinned
+            val fresh = ListEditorSync.reseed(rows, l.items) { nextKey++ }
+            rows.clear(); rows.addAll(fresh)
         }
     }
-    fun save(immediate: Boolean = false) { l?.let { vm.schedule(it, title, body, items.toList(), pinned, immediate) } }
+    fun save(immediate: Boolean = false) { l?.let { vm.schedule(it, title, body, rows.map { r -> r.item }, pinned, immediate) } }
     fun addFrom(text: String) {
         val parts = vm.splitPasted(text)
         if (parts.isEmpty()) return
-        items.addAll(parts.map { ListItem(null, it, false) }); newItem = ""; save()
+        rows.addAll(parts.map { EditRow(nextKey++, ListItem(null, it, false)) }); newItem = ""; save()
     }
+    // Rows are found by their key when edited: the index or row captured at composition can be out
+    // of date by then (an id adopted, or the partner's change refilled the list).
+    fun update(key: Long, change: (ListItem) -> ListItem) {
+        val i = rows.indexOfFirst { it.key == key }
+        if (i >= 0) { rows[i] = rows[i].copy(item = change(rows[i].item)); save() }
+    }
+    fun remove(key: Long) {
+        val i = rows.indexOfFirst { it.key == key }
+        if (i >= 0) { rows.removeAt(i); save() }
+    }
+    // Leaving saves at once what has not been saved (the debounced save would be dropped with the
+    // screen), by the arrow and by system back alike. Nothing changed: no save, so just looking at a
+    // list no longer makes a new version that shows the partner "edited".
+    fun leave() {
+        val cur = l
+        if (cur != null && ListEditorSync.sent(cur, title, body, rows.map { it.item }, pinned) != ListEditorSync.contentOf(cur)) save(immediate = true)
+        onBack()
+    }
+    BackHandler(onBack = ::leave)
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {},
-                navigationIcon = { IconButton(onClick = { save(immediate = true); onBack() }) { Icon(BackIcon, contentDescription = "Back") } },
+                navigationIcon = { IconButton(onClick = ::leave) { Icon(BackIcon, contentDescription = "Back") } },
                 actions = {
                     IconButton(onClick = { pinned = !pinned; save() }) { Icon(PushPinIcon, contentDescription = if (pinned) "Unpin" else "Pin", tint = if (pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                     IconButton(onClick = { confirmDelete = true }) { Icon(DeleteIcon, contentDescription = "Delete") }
@@ -201,12 +231,13 @@ fun ListDetailScreen(id: String, onBack: () -> Unit, vm: ListsViewModel = hiltVi
                 TextField(body, { body = it.take(10_000); save() }, textStyle = RisainaTextStyles.noteSerif, placeholder = { Text("Write or paste anything…") },
                     colors = clear, modifier = Modifier.fillMaxWidth(), minLines = 8)
             } else {
-                itemsIndexed(items, key = { i, it -> it.id ?: "new-$i" }) { i, item ->
+                items(rows, key = { it.key }) { r ->
+                    val item = r.item
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = item.done, onCheckedChange = { items[i] = item.copy(done = it); save() })
-                        TextField(item.text, { items[i] = item.copy(text = it.take(300)); save() }, colors = clear, modifier = Modifier.weight(1f),
+                        Checkbox(checked = item.done, onCheckedChange = { done -> update(r.key) { it.copy(done = done) } })
+                        TextField(item.text, { v -> update(r.key) { it.copy(text = v.take(300)) } }, colors = clear, modifier = Modifier.weight(1f),
                             textStyle = MaterialTheme.typography.bodyLarge.copy(textDecoration = if (item.done) TextDecoration.LineThrough else null, color = if (item.done) Risaina.colors.textMuted else MaterialTheme.colorScheme.onSurface))
-                        IconButton(onClick = { items.removeAt(i); save() }) { Icon(CloseIcon, contentDescription = "Remove item") }
+                        IconButton(onClick = { remove(r.key) }) { Icon(CloseIcon, contentDescription = "Remove item") }
                     }
                 }
                 item {

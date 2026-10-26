@@ -11,6 +11,7 @@ import com.risaina.app.core.model.ListKind
 import com.risaina.app.core.model.SharedList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +23,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Pasting several lines into "add item" creates one item per line (bullets, numbering and [ ] stripped). */
@@ -77,16 +81,48 @@ class ListsViewModel @Inject constructor(
     fun observe(id: String): Flow<SharedList?> = repo.observe(id)
 
     // ---- editing with debounced auto-save ----
-    private var saveJob: Job? = null
+    private class Draft(val list: SharedList, val title: String, val body: String, val items: List<ListItem>, val pinned: Boolean)
 
+    private var pending: Draft? = null
+    private var debounce: Job? = null
+    private val saving = Mutex()
+    private val chain = SaveChain()
+    private val lastSent = HashMap<String, ListEditorSync.Content>()
+
+    /**
+     * Saves after a short pause in typing. A keystroke only cancels the wait, never a request already
+     * on its way: cancelling one the server had already applied left this phone a version behind, so
+     * the next save hit a false "your partner just changed this" and the editor was refilled with the
+     * older copy. Saves go out one at a time, the latest edit only, each from the version the
+     * previous one produced. A save that has started also finishes if the screen closes.
+     */
     fun schedule(list: SharedList, title: String, body: String, items: List<ListItem>, pinned: Boolean, immediate: Boolean = false) {
-        saveJob?.cancel()
-        saveJob = viewModelScope.launch {
+        pending = Draft(list, title, body, items, pinned)
+        debounce?.cancel()
+        debounce = viewModelScope.launch {
             if (!immediate) delay(700)
-            val r = repo.save(list, title.ifBlank { list.title }, body, items.filter { it.text.isNotBlank() }, pinned)
-            if (r is AppResult.Failure) effects.trySend(r.error.message ?: "Couldn't save")
+            withContext(NonCancellable) { flush() }
         }
     }
+
+    private suspend fun flush() {
+        saving.withLock {
+            val d = pending ?: return
+            pending = null
+            val expected = chain.expected(d.list.id, d.list.version)
+            lastSent[d.list.id] = ListEditorSync.sent(d.list, d.title, d.body, d.items, d.pinned)
+            when (val r = repo.save(d.list.copy(version = expected), d.title.ifBlank { d.list.title }, d.body, d.items.filter { it.text.isNotBlank() }, d.pinned)) {
+                is AppResult.Success -> chain.record(d.list.id, expected, r.value.version)
+                is AppResult.Failure -> effects.trySend(r.error.message ?: "Couldn't save")
+            }
+        }
+    }
+
+    /**
+     * Whether [list] is this phone's last save coming back (the editor already has it, and maybe more
+     * typed since). Asked once per new version; anything else is someone else's change.
+     */
+    fun takeOwnEcho(list: SharedList): Boolean = lastSent.remove(list.id) == ListEditorSync.contentOf(list)
 
     fun delete(id: String, onDone: () -> Unit) {
         viewModelScope.launch { when (val r = repo.delete(id)) { is AppResult.Success -> onDone(); is AppResult.Failure -> effects.trySend(r.error.message ?: "Couldn't delete") } }
