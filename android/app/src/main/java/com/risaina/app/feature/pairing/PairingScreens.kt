@@ -165,6 +165,7 @@ fun PairingScreen(onPrivacy: () -> Unit = {}, onAbout: () -> Unit = {}, vm: Pair
         // Your data, the privacy policy and "Delete my account" are reachable without a partner.
         GhostButton("Privacy & account", onClick = onPrivacy, modifier = Modifier.align(Alignment.CenterHorizontally))
         GhostButton("About Risaina", onClick = onAbout, modifier = Modifier.align(Alignment.CenterHorizontally))
+        GhostButton("Report a problem or abuse", onClick = { com.risaina.app.feature.settings.reportProblem(context) }, modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(24.dp))
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,7 +56,9 @@ fun WelcomeScreen(
     ) {
         Mark(Modifier.align(Alignment.TopCenter).padding(top = 120.dp).size(168.dp).graphicsLayer { alpha = reveal; scaleX = 0.9f + 0.1f * reveal; scaleY = scaleX })
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().statusBarsPadding().navigationBarsPadding().padding(horizontal = 28.dp, vertical = 32.dp),
+            // Scrolls when the screen is short (landscape, large text) instead of clipping the last lines.
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().statusBarsPadding().navigationBarsPadding()
+                .verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 28.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text("Risaina", style = MaterialTheme.typography.displayLarge, color = Palette.WarmIvory, modifier = Modifier.alpha(reveal))
@@ -76,16 +79,18 @@ fun WelcomeScreen(
             } else {
                 PrimaryButton(text = "Get started", onClick = onGetStarted, modifier = Modifier.fillMaxWidth().alpha(reveal))
             }
+            // Right under the buttons that create an account, so a short screen never squeezes it out.
+            Spacer(Modifier.height(10.dp))
+            com.risaina.app.feature.settings.LinkedText(
+                com.risaina.app.feature.settings.AGREE_TO_TERMS, com.risaina.app.feature.settings.agreeToTermsLinks,
+                Modifier.alpha(reveal), color = Palette.MutedOnDark, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
             if (error != null) {
                 Spacer(Modifier.height(8.dp))
                 Text(error, style = MaterialTheme.typography.bodySmall, color = Palette.Blush, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
             Spacer(Modifier.height(6.dp))
             GhostButton(text = "I already have an account", onClick = onSignIn, modifier = Modifier.alpha(reveal))
-            com.risaina.app.feature.settings.LinkedText(
-                com.risaina.app.feature.settings.AGREE_TO_TERMS, com.risaina.app.feature.settings.agreeToTermsLinks,
-                Modifier.alpha(reveal), color = Palette.MutedOnDark, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
         }
     }
 }

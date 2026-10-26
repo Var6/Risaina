@@ -211,6 +211,25 @@ describe('invitations & couple', () => {
     await expect(pair(t.app, b, c)).resolves.toMatch(/^[a-f0-9]{24}$/);
   });
 
+  it("accepting a code revokes the acceptor's own open code, so an unlink can't be undone with it", async () => {
+    const a = await register(t.app, 'Pia');
+    const b = await register(t.app, 'Raj');
+    const codeFromA = await invite(a); // A shares a code with B...
+    const codeFromB = await invite(b); // ...and B shares one with A at the same time
+    expect((await accept(a, codeFromB.code)).statusCode).toBe(200);
+    const unlink = await t.app.inject({
+      method: 'POST',
+      url: `${API}/couple/unlink`,
+      headers: bearer(a),
+      payload: { confirm: true },
+    });
+    expect(unlink.statusCode).toBe(204);
+    const again = await accept(b, codeFromA.code);
+    expect(again.statusCode).toBe(410);
+    const meA = await t.app.inject({ method: 'GET', url: `${API}/me`, headers: bearer(a) });
+    expect(meA.json().couple?.status ?? null).not.toBe('active');
+  });
+
   it('PATCH /couple updates shared fields and emits couple.updated', async () => {
     const a = await register(t.app, 'Quin');
     const b = await register(t.app, 'Rae');

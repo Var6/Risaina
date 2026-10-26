@@ -139,6 +139,9 @@ export class InvitationService {
       throw errors.alreadyPaired();
     }
 
+    // The acceptor may have handed out a code of their own before entering this one. Left open, that
+    // code would let this same partner pair with them again after an unlink without them doing anything.
+    await this.repo.revokeOpenForInviter(uid, now);
     this.ctx.inviteLimiter.reset(`${userId}:${ip}`);
 
     const dto = toCoupleDto(couple);

@@ -1,5 +1,8 @@
 package com.risaina.app.feature.settings
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,8 +29,24 @@ object LegalLinks {
     val deleteAccount = "$base/delete-account"
     val terms = "$base/terms"
     val contact = "$base/privacy#contact"
+    /** Where reports of abuse and problems go (the contact on the privacy policy and the Play listing). */
+    const val CONTACT_EMAIL = "rk.remo12345@gmail.com"
     const val OPEN_METEO = "https://open-meteo.com"
     const val CC_BY_4 = "https://creativecommons.org/licenses/by/4.0/"
+}
+
+/**
+ * "Report a problem or abuse": an email to the developer, with the app version filled in. Google Play
+ * asks for an in-app way to report. Without an email app, the contact section of the privacy policy.
+ */
+fun reportProblem(context: Context) {
+    val subject = Uri.encode("Risaina report")
+    val body = Uri.encode("What happened, and when:\n\n\n(App version ${BuildConfig.VERSION_NAME})")
+    val email = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${LegalLinks.CONTACT_EMAIL}?subject=$subject&body=$body"))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(email) }.onFailure {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(LegalLinks.contact)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
 }
 
 /** Shown where an account can be created: by email, or by Google on the welcome and sign-in screens. */

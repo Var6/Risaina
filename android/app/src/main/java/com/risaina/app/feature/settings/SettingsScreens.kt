@@ -126,6 +126,7 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
     val s by vm.state.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
     val uriHandler = LocalUriHandler.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
     var confirmUnlink by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
@@ -192,6 +193,7 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         if (s.profile?.emailVerified == false) Row(com.risaina.app.feature.common.MailIcon, "Confirm your email", "Needed to recover your account", nav.verifyEmail)
         Row(InfoIcon, "About Risaina", "Version ${BuildConfig.VERSION_NAME}", nav.about)
         Row(LockIcon, "Privacy policy", "Opens in your browser", { runCatching { uriHandler.openUri(LegalLinks.privacyPolicy) } })
+        Row(com.risaina.app.feature.common.MailIcon, "Report a problem or abuse", "Email the developer", { reportProblem(context) })
         Row(LogoutIcon, "Sign out", null, { confirmSignOut = true })
     }
 
@@ -396,7 +398,7 @@ fun AboutScreen(onBack: () -> Unit) {
         SectionHeader("Privacy")
         Text("No analytics and no ads. Firebase Cloud Messaging delivers notifications. Besides what you send, the server receives a few technical details with no content (phone model, app version, notification and battery status, and the alarm volume when an SOS rings) so a missed alert can be explained.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
         LinkedText(
-            "Read the terms of use, the privacy policy and how to delete your account. To report a problem or abuse, contact us.",
+            "Read the terms of use, the privacy policy and how to delete your account. To report a problem or abuse, use Report a problem or abuse in Settings, or contact us.",
             listOf("terms of use" to LegalLinks.terms, "privacy policy" to LegalLinks.privacyPolicy, "how to delete your account" to LegalLinks.deleteAccount, "contact us" to LegalLinks.contact),
             Modifier.padding(top = 8.dp),
         )
