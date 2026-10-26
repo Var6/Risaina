@@ -110,7 +110,13 @@ class EventReducer @Inject constructor(
                 val couple = json.decodeFromJsonElement(CoupleDto.serializer(), it)
                 val partner = coupleDao.partner()
                 coupleDao.replace(couple.toEntity(), partner)
-                if (couple.status.equals("active", true) && partner == null) deferred.refreshMe()
+                if (couple.status.equals("active", true)) {
+                    // Bind the couple here, before the cursor moves past this event, so the queued
+                    // refreshMe finds it already bound and does not rewind the cursor to 0 after
+                    // this sync (SessionStore.adoptCouple).
+                    sessionStore.adoptActiveCoupleId(couple.id)
+                    if (partner == null) deferred.refreshMe()
+                }
             }
             "partner.updated" -> p.obj("partner")?.let {
                 val partner = json.decodeFromJsonElement(PartnerDto.serializer(), it)
