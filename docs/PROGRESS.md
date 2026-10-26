@@ -371,5 +371,11 @@ Release build `0.2.0+8f18d57` (versionCode 69) tested on the emulator against th
 sync, weather, message and ping notifications with the app in the background, SOS ringing in silent mode
 with the `specialUse` service and stopped by "I'm on it" (sender saw delivered and acknowledged), and an
 unpaired account deleting itself from the pairing screen (email erased on the server). Backend 341/341,
-Android 270 unit tests. **Still to do:** the developer name and contact email in
-`backend/src/modules/legal/routes.ts`, push so Render serves the pages, then Play Console.
+Android 270 unit tests.
+
+Later the same day: developer name and contact filled in from the Play account (Organization account
+"Rishabh_Stark"). While recording the Play declaration videos, Android 15 was found bundling the live
+location notification with other Risaina notifications, hiding Stop sharing; it and the lock card now have
+groups of their own (as the SOS alarm already had). Final upload: `0.2.0+86936e9`, versionCode 72. Both
+videos recorded on the emulator from that build (location start → notification → Stop sharing; SOS on a
+sleeping phone in silent mode → full-screen alarm → "I'm on it").
