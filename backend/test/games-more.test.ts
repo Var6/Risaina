@@ -84,7 +84,9 @@ describe('catalog and create validation', () => {
       'this_or_that',
     ]);
     expect(c.trivia.categories).toHaveLength(10);
-    expect(c.trivia.attribution).toBe('Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0');
+    expect(c.trivia.attribution).toBe('Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened.');
+    expect(c.trivia.attributionUrl).toBe('https://opentdb.com');
+    expect(c.trivia.licenseUrl).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
     expect(c.thisOrThat.promptCount).toBe(7);
   });
 
@@ -330,7 +332,7 @@ describe('trivia duel', () => {
     expect(trivia.calls.at(-1)).toMatchObject({ count: 5, category: 23, difficulty: 'easy' });
     expect(g.quiz).toMatchObject({
       source: 'opentdb',
-      attribution: 'Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0',
+      attribution: 'Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened.',
       category: { id: 23, name: 'History' },
       requestedCategoryId: 23,
       difficulty: 'easy',

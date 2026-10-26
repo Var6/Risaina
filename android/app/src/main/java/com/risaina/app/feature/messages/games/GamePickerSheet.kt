@@ -221,7 +221,7 @@ private fun KindOptions(
                 Text("Difficulty", style = MaterialTheme.typography.labelLarge)
                 ChipRow(listOf("" to "Any") + catalog.trivia.difficulties.map { it to it.replaceFirstChar { c -> c.uppercase() } }, difficulty, onDifficulty)
                 Spacer(Modifier.height(4.dp))
-                Muted(catalog.trivia.attribution.ifBlank { "Questions from Open Trivia Database" })
+                AttributionLine(catalog.trivia.attribution.ifBlank { null })
             }
             GameKinds.THIS_OR_THAT -> {
                 Text("Deck", style = MaterialTheme.typography.labelLarge)

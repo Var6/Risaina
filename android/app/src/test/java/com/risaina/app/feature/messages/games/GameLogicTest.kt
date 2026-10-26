@@ -2,6 +2,7 @@ package com.risaina.app.feature.messages.games
 
 import com.risaina.app.core.common.AppError
 import com.risaina.app.core.data.GameKinds
+import com.risaina.app.core.data.GameRepository
 import com.risaina.app.core.network.GameChallengeDto
 import com.risaina.app.core.network.GameDto
 import com.risaina.app.core.network.QuizDto
@@ -105,5 +106,24 @@ class GameLogicTest {
         assertEquals("Update Risaina to play this game", gameErrorMessage(AppError.Validation("Update Risaina to play this game"), "chess", "Bea", "f"))
         assertEquals("f", gameErrorMessage(AppError.Validation("Request validation failed"), null, "Bea", "f"))
         assertEquals("You're offline", gameErrorMessage(AppError.Offline(), null, "Bea", "f"))
+    }
+
+    // ---- attribution ----
+
+    @Test fun `the credit links the source to opentdb and CC BY-SA 4_0 to the licence`() {
+        val credit = GameRepository.OPENTDB_ATTRIBUTION
+        val links = attributionLinks(credit).map { (start, end, url) -> credit.substring(start, end) to url }
+        assertEquals(
+            listOf(
+                "Open Trivia Database (opentdb.com)" to "https://opentdb.com",
+                "CC BY-SA 4.0" to "https://creativecommons.org/licenses/by-sa/4.0/",
+            ),
+            links,
+        )
+        assertTrue("the change to category names is indicated", credit.contains("Category names shortened"))
+    }
+
+    @Test fun `a credit worded differently still links somewhere`() {
+        assertEquals(listOf(Triple(0, 9, "https://opentdb.com")), attributionLinks("Questions"))
     }
 }

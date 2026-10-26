@@ -2,6 +2,7 @@ package com.risaina.app.feature.messages.games
 
 import com.risaina.app.core.common.AppError
 import com.risaina.app.core.data.GameKinds
+import com.risaina.app.core.data.GameRepository
 import com.risaina.app.core.network.GameDto
 import com.risaina.app.core.network.QuizDto
 import com.risaina.app.core.network.TttDto
@@ -126,4 +127,21 @@ fun gameErrorMessage(error: AppError, kind: String?, partner: String, fallback: 
     }
     is AppError.Validation -> if (error.message == "Request validation failed") fallback else error.message ?: fallback
     else -> error.message ?: fallback
+}
+
+// ---- attribution ----
+
+/**
+ * The links in the Open Trivia Database credit, as [start, end) ranges: the source's name to the
+ * site and "CC BY-SA 4.0" to the licence (the licence asks for both). A credit worded some other
+ * way links as a whole to the site.
+ */
+fun attributionLinks(credit: String): List<Triple<Int, Int, String>> {
+    val links = mutableListOf<Triple<Int, Int, String>>()
+    Regex("""Open Trivia Database( \(opentdb\.com\))?""").find(credit)
+        ?.let { links += Triple(it.range.first, it.range.last + 1, GameRepository.OPENTDB_URL) }
+    val licence = "CC BY-SA 4.0"
+    credit.indexOf(licence).takeIf { it >= 0 }
+        ?.let { links += Triple(it, it + licence.length, GameRepository.OPENTDB_LICENSE_URL) }
+    return links.ifEmpty { listOf(Triple(0, credit.length, GameRepository.OPENTDB_URL)) }
 }

@@ -133,6 +133,7 @@ export const CatalogResponse = z
       categories: z.array(z.object({ id: z.number().int(), name: z.string() })),
       attribution: z.string(),
       attributionUrl: z.string(),
+      licenseUrl: z.string().meta({ description: 'The CC BY-SA 4.0 licence; link it from the credit too' }),
     }),
     thisOrThat: z.object({
       promptCount: z.number().int(),

@@ -270,8 +270,13 @@ class GameRepository @Inject constructor(private val api: RisainaApi) {
         /** An older server: stone-paper-scissors only, and none of the new options. */
         val LEGACY_CATALOG = GameCatalogDto(kinds = listOf(RPS_KIND), legacyServer = true)
 
-        /** Open Trivia Database's licence (CC BY-SA 4.0) requires this credit wherever its questions show. */
-        const val OPENTDB_ATTRIBUTION = "Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0"
+        /**
+         * Open Trivia Database's licence (CC BY-SA 4.0) requires this credit wherever its questions
+         * show, with links to the source and the licence. The server shortens category labels
+         * ("Entertainment: Film" becomes "Film"), and the licence asks for changes to be indicated.
+         */
+        const val OPENTDB_ATTRIBUTION = "Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened."
         const val OPENTDB_URL = "https://opentdb.com"
+        const val OPENTDB_LICENSE_URL = "https://creativecommons.org/licenses/by-sa/4.0/"
     }
 }

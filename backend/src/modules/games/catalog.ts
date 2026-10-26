@@ -6,12 +6,16 @@ export const TRIVIA_QUESTION_COUNT = 5;
 export const THIS_OR_THAT_PROMPT_COUNT = 7;
 
 /**
- * Open Trivia Database data is CC BY-SA 4.0: the credit and a link must be shown wherever its
- * questions are (the trivia card and Settings → About). Question text is never edited beyond
- * decoding, so no share-alike obligation arises from our side.
+ * Open Trivia Database data is CC BY-SA 4.0. Wherever its questions are shown (the trivia card and
+ * Settings → About) the app shows this credit, linking the source and the licence (§3(a)(1)(C)).
+ * Question and answer text is never edited beyond decoding. The per-question category labels are
+ * shortened ("Entertainment: Film" becomes "Film", see shortCategoryLabel), and the licence asks
+ * for changes to be indicated (§3(a)(1)(B)), so the credit says so.
  */
-export const OPENTDB_ATTRIBUTION = 'Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0';
+export const OPENTDB_ATTRIBUTION =
+  'Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened.';
 export const OPENTDB_URL = 'https://opentdb.com';
+export const OPENTDB_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/4.0/';
 
 /**
  * Curated OpenTDB categories, each with plenty of verified multiple-choice questions (live counts
@@ -99,6 +103,7 @@ export function gameCatalog() {
       categories: TRIVIA_CATEGORIES.map((c) => ({ ...c })),
       attribution: OPENTDB_ATTRIBUTION,
       attributionUrl: OPENTDB_URL,
+      licenseUrl: OPENTDB_LICENSE_URL,
     },
     thisOrThat: {
       promptCount: THIS_OR_THAT_PROMPT_COUNT,

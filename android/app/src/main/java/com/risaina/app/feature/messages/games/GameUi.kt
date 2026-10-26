@@ -17,14 +17,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -103,19 +107,27 @@ fun ProgressDots(marks: List<String>, modifier: Modifier = Modifier) {
 }
 
 /**
- * The credit Open Trivia Database's licence (CC BY-SA 4.0) asks for, linking to the site. Opened
- * with LocalUriHandler: no resolveActivity() check, which returns null on Android 11+ without a
- * <queries> entry even though a browser would open the link fine.
+ * The credit Open Trivia Database's licence (CC BY-SA 4.0) asks for: the source's name links to the
+ * site and "CC BY-SA 4.0" to the licence (see [attributionLinks]). Real text links, so TalkBack
+ * offers each one. Opened with LocalUriHandler, with no resolveActivity() check (it returns null on
+ * Android 11+ without a <queries> entry even though a browser would open the link fine); a phone
+ * with no browser at all just does nothing.
  */
 @Composable
-fun AttributionLine(text: String?, url: String = GameRepository.OPENTDB_URL) {
+fun AttributionLine(text: String?) {
     val uri = LocalUriHandler.current
+    val credit = text ?: GameRepository.OPENTDB_ATTRIBUTION
+    val annotated = remember(credit, uri) {
+        val linkStyle = TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))
+        buildAnnotatedString {
+            append(credit)
+            attributionLinks(credit).forEach { (start, end, url) ->
+                addLink(LinkAnnotation.Url(url, linkStyle) { runCatching { uri.openUri(url) } }, start, end)
+            }
+        }
+    }
     Text(
-        text ?: GameRepository.OPENTDB_ATTRIBUTION,
-        style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted, textAlign = TextAlign.Center,
-        textDecoration = TextDecoration.Underline,
-        modifier = Modifier.clip(MaterialTheme.shapes.small)
-            .clickable(role = Role.Button) { runCatching { uri.openUri(url) } }
-            .padding(4.dp).semantics { contentDescription = "Open Trivia Database website. Questions are licensed CC BY-SA 4.0" },
+        annotated, style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted, textAlign = TextAlign.Center,
+        modifier = Modifier.padding(4.dp),
     )
 }

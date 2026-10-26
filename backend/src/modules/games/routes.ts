@@ -75,7 +75,8 @@ export const gameRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
         tags: [TAG],
         summary: 'The games the picker offers, with their options (trivia categories, decks)',
         description:
-          'Trivia questions come from Open Trivia Database (CC BY-SA 4.0): show `trivia.attribution` with a link.',
+          'Trivia questions come from Open Trivia Database (CC BY-SA 4.0): show `trivia.attribution`, linking ' +
+          '`trivia.attributionUrl` and `trivia.licenseUrl`.',
         security,
         response: { 200: CatalogResponse, 401: ErrorEnvelope, 409: ErrorEnvelope },
       },

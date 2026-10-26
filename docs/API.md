@@ -682,7 +682,7 @@ TicTacToe { board: ('x'|'o'|null)[9] /* index = row*3+col */, xId, turnId: strin
             myMark: 'x'|'o', myTurn: boolean }
 
 Quiz { source: 'opentdb'|'builtin'|'curated',
-       attribution: string|null,      // "Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0" when source is opentdb
+       attribution: string|null,      // "Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened." when source is opentdb
        category: { id, name }|null,   // trivia: where the questions came from
        requestedCategoryId: number|null,  // trivia: what was asked for; null = any (send it back for "Play again")
        difficulty: 'easy'|'medium'|'hard'|null, deck: string|null,
@@ -720,7 +720,7 @@ GameEventView += { prize, ttt: TicTacToe minus myMark/myTurn | null,
 
 | Method | Path | Body | Success | Notes |
 |---|---|---|---|---|
-| GET | `/games/catalog` | | `200 { kinds: {kind,title,emoji,blurb,competitive}[], trivia: {questionCount, difficulties, categories: {id,name}[], attribution, attributionUrl}, thisOrThat: {promptCount, decks: {id,name,emoji}[]} }` | On an older server this path hits `/games/:id` and answers `404`, which the app reads as "rps only" |
+| GET | `/games/catalog` | | `200 { kinds: {kind,title,emoji,blurb,competitive}[], trivia: {questionCount, difficulties, categories: {id,name}[], attribution, attributionUrl, licenseUrl}, thisOrThat: {promptCount, decks: {id,name,emoji}[]} }` | On an older server this path hits `/games/:id` and answers `404`, which the app reads as "rps only" |
 | POST | `/games` | one of `{ kind:'rps', prize?:'none' }`, `{ kind:'tictactoe', prize?:'none' }`, `{ kind:'trivia', prize?:'none', category?: 9\|11\|12\|14\|15\|17\|21\|22\|23\|27, difficulty?: 'easy'\|'medium'\|'hard' }`, `{ kind:'this_or_that', deck?: 'mix'\|'everyday'\|'us'\|'travel_food'\|'dreams' }` | `201 { game }` | Strict per kind. `prize` accepts only `'none'`: the default is expressed by leaving it out, so a "Play again" body is valid on every server version. Trivia waits up to `TRIVIA_TIMEOUT_MS` for questions |
 | POST | `/games/:id/play` | one of `{ kind:'rps', move }`, `{ kind:'tictactoe', cell: 0..8 }`, `{ kind:'trivia', item: 0..4, choice: 0..3 }`, `{ kind:'this_or_that', picks: (0\|1)[] }` | `200 { game }` | `kind` must match the game. Trivia: `item` must be the next unanswered one, so a retried answer gets `409 already_moved`, never the next question. This or That: all picks in one request, one per prompt, in order |
 | POST | `/games/:id/end` | (none) | `200 { game }` (`completed`, no winner) | Either player, status `draw` only; calls the draw off |
