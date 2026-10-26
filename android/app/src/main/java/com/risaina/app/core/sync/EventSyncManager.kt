@@ -169,7 +169,8 @@ class EventSyncManager @Inject constructor(
         result.failure?.let { return it }
         // Open on screen but the event came by push or catch-up sync (not the socket): the
         // notification is suppressed in the foreground, so buzz and reveal it in the app instead.
-        if (androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+        // Risaina's own screens only: the SOS alarm over the lock screen shows no Home to reveal on.
+        if (com.risaina.app.core.common.AppVisibility.isVisible) {
             val freshPing = result.items.filterIsInstance<Incoming.NewPing>().any { java.time.Duration.between(it.ping.createdAt, java.time.Instant.now()).seconds < 60 }
             if (freshPing) haptics.arrival()
             result.items.forEach { _incoming.tryEmit(it) }

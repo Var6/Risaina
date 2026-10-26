@@ -9,8 +9,6 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
 import com.risaina.app.R
 import com.risaina.app.core.common.TimeProvider
 import com.risaina.app.core.database.CoupleDao
@@ -43,8 +41,8 @@ class RisainaNotifier @Inject constructor(
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED &&
             NotificationManagerCompat.from(context).areNotificationsEnabled()
 
-    private fun appInForeground(): Boolean =
-        ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+    /** Risaina's own screens are showing (not just the SOS alarm over the lock screen): AppVisibility. */
+    private fun appInForeground(): Boolean = com.risaina.app.core.common.AppVisibility.isVisible
 
     /**
      * The quick alert ("is thinking of you") checks the database and then posts; the sync applies

@@ -10,8 +10,6 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
 import com.risaina.app.R
 import com.risaina.app.core.common.TimeProvider
 import com.risaina.app.core.datastore.PreferencesStore
@@ -42,7 +40,8 @@ class SafetyNotifier @Inject constructor(
         NotificationManagerCompat.from(context).areNotificationsEnabled() &&
             (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
 
-    private fun appInForeground(): Boolean = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+    /** Risaina's own screens, not the SOS alarm over the lock screen (see AppVisibility). */
+    private fun appInForeground(): Boolean = com.risaina.app.core.common.AppVisibility.isVisible
 
     suspend fun partnerSharingStarted(partnerName: String, session: LiveLocationDto) {
         if (session.reason == "panic" || !canPost() || appInForeground()) return

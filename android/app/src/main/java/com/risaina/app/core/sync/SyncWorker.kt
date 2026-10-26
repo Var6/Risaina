@@ -115,12 +115,20 @@ class SyncWorker @AssistedInject constructor(
             wm.enqueueUniqueWork(UNIQUE_PUSH, policy, req)
         }
 
-        /** App start / resume: catch up silently (the UI will reveal new items itself). */
-        fun enqueueSilent(context: Context) {
+        /**
+         * App start / resume: catch up. With notifications on: they are suppressed while Risaina is
+         * on screen (RisainaNotifier.notifyIncoming; the UI reveals new items itself), so this only
+         * alerts if it runs after the app has gone to the background. It waits for a network, so it
+         * can run much later (opened offline, or ColorOS held the job), and a sync is shared by
+         * everyone who needs one: a "silent" run would apply the partner's pings and messages
+         * without a word, and the push that came for them would then find nothing new to announce.
+         */
+        fun enqueueOnOpen(context: Context) {
             val req = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .setInputData(workDataOf(KEY_NOTIFY to false))
+                .setInputData(workDataOf(KEY_NOTIFY to true))
                 .build()
+            // The unique name predates the notify switch; kept so a request queued by an older build is reused.
             WorkManager.getInstance(context).enqueueUniqueWork("sync-silent", ExistingWorkPolicy.KEEP, req)
         }
 
