@@ -134,6 +134,21 @@ class SosAlarmController @Inject constructor(
         service?.acknowledge()
     }
 
+    /**
+     * "I'm on it" for one SOS from inside the app. If it is ringing, the alarm acknowledges it (and
+     * stops); otherwise it is recorded here and the receipt is sent with retries, so a re-push or a
+     * replay never rings it again and the sender learns it was seen even after an offline tap.
+     */
+    fun acknowledgeById(sosId: String) {
+        if (isRinging(sosId, null)) {
+            acknowledge()
+            return
+        }
+        localState.markAcked(sosId, null)
+        SosReceiptWorker.enqueueAck(context, setOf(sosId), emptySet())
+        sosAlert.clearResponded(alarmRinging = _state.value != null)
+    }
+
     /** Acknowledged on another device or by the in-app screen, or the sender is safe: stop without acknowledging again. */
     fun stopFor(sosId: String?, seq: Long?) {
         if (!isRinging(sosId, seq)) return

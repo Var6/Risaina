@@ -102,11 +102,23 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     lists = { navController.navigate(Lists) },
                     theirWidget = { navController.navigate(TheirWidget) },
+                    safety = { navController.navigate(Safety) },
+                    partnerLocation = { navController.navigate(PartnerLocation) },
                 ),
             )
         }
         composable<Sos>(deepLinks = listOf(navDeepLink<Sos>(basePath = "risaina://app/sos"))) { entry ->
             com.risaina.app.feature.sos.SosScreen(id = entry.toRoute<Sos>().id, onBack = back, onOpenChat = { navController.navigate(Messages()) })
+        }
+        // safety stream
+        composable<Safety>(deepLinks = listOf(navDeepLink<Safety>(basePath = "risaina://app/safety"))) {
+            com.risaina.app.feature.safety.SafetyScreen(onBack = back)
+        }
+        composable<Panic>(deepLinks = listOf(navDeepLink<Panic>(basePath = "risaina://app/panic"))) {
+            com.risaina.app.feature.safety.PanicScreen(onClose = back)
+        }
+        composable<PartnerLocation>(deepLinks = listOf(navDeepLink<PartnerLocation>(basePath = "risaina://app/location"))) {
+            com.risaina.app.feature.safety.PartnerLocationScreen(onBack = back, onOpenChat = { navController.navigate(Messages()) })
         }
         composable<TheirWidget> { com.risaina.app.feature.theirwidget.TheirWidgetScreen(onBack = back) }
         composable<Lists> { com.risaina.app.feature.lists.ListsScreen(onBack = back, onOpen = { navController.navigate(ListDetail(it)) }) }
@@ -136,10 +148,13 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     about = { navController.navigate(About) },
                     pairing = { navController.navigate(Pairing) },
                     verifyEmail = { navController.navigate(VerifyEmail) },
+                    safety = { navController.navigate(Safety) },
                 ),
             )
         }
-        composable<NotificationSettings> { NotificationSettingsScreen(onBack = back, onRequestPermission = { navController.navigate(NotificationPermission) }) }
+        composable<NotificationSettings> {
+            NotificationSettingsScreen(onBack = back, onRequestPermission = { navController.navigate(NotificationPermission) }, onSafety = { navController.navigate(Safety) })
+        }
         composable<PrivacySettings> { PrivacySettingsScreen(onBack = back) }
         composable<Profile> { ProfileScreen(onBack = back) }
         composable<About> { AboutScreen(onBack = back) }

@@ -206,4 +206,15 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
         nm.cancel(DND_RING_ID)
         nm.cancel(RESPOND_ID)
     }
+
+    /**
+     * After "I'm on it" for an SOS that is not ringing: removes the quiet "tap to respond" and the
+     * missed-SOS notices, and the notification-only fallback alarm unless another SOS is ringing
+     * (that one's alarm notification shares [ID]).
+     */
+    fun clearResponded(alarmRinging: Boolean) {
+        nm.cancel(RESPOND_ID)
+        nm.cancel(MISSED_ID)
+        if (!alarmRinging) nm.cancel(ID)
+    }
 }

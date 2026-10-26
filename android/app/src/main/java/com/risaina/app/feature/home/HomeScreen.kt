@@ -94,6 +94,9 @@ data class HomeNav(
     val lists: () -> Unit = {},
     val gifts: () -> Unit = {},
     val theirWidget: () -> Unit = {},
+    // safety stream
+    val safety: () -> Unit = {},
+    val partnerLocation: () -> Unit = {},
 )
 
 @Composable
@@ -114,6 +117,7 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
         HomeBackground(s.background, s.favouriteImage)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
             item { TopRow(greeting = Format.greetingFor(s.myName), onSettings = nav.settings) }
+            item { com.risaina.app.feature.safety.SafetyHomeBanner(onOpenSafety = nav.safety, onOpenLocation = nav.partnerLocation) }
             if (!s.emailVerified) item {
                 RisainaCard(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth(), onClick = nav.verifyEmail, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
                     Text("Confirm your email", style = MaterialTheme.typography.titleSmall)
@@ -134,7 +138,7 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
             }
         }
         IncomingPingReveal(ping = s.incoming, partnerName = s.partner?.displayName, onReply = vm::replyToIncoming, onDismiss = vm::dismissIncoming, modifier = Modifier.align(Alignment.TopCenter))
-        if (showProfile) PartnerProfileSheet(s, onDismiss = { showProfile = false })
+        if (showProfile) PartnerProfileSheet(s, onDismiss = { showProfile = false }, onOpenSafety = { showProfile = false; nav.safety() })
         if (pickStart) com.risaina.app.feature.timeline.DateDialog(null, { pickStart = false }) { vm.setStartDate(it) }
         if (s.showComposer) {
             PingComposerSheet(initialType = s.selectedType, initialTab = s.composerTab, sending = s.button is PingButtonState.Sending, onDismiss = vm::closeComposer, onSend = vm::sendCustom)
@@ -421,7 +425,7 @@ private fun RecentRow(item: ActivityItem) {
  * a separated emergency section. SOS lives here, never on Home, so it can't be hit by accident.
  */
 @Composable
-private fun PartnerProfileSheet(s: HomeUiState, onDismiss: () -> Unit) {
+private fun PartnerProfileSheet(s: HomeUiState, onDismiss: () -> Unit, onOpenSafety: () -> Unit) {
     val p = s.partner ?: return
     androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -462,7 +466,9 @@ private fun PartnerProfileSheet(s: HomeUiState, onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(24.dp))
-            com.risaina.app.feature.sos.SosSection()
+            com.risaina.app.feature.safety.PartnerLiveLocationSection()
+            Spacer(Modifier.height(12.dp))
+            com.risaina.app.feature.sos.SosSection(onOpenSafety = onOpenSafety)
             Spacer(Modifier.height(24.dp))
         }
     }
