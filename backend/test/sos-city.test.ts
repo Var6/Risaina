@@ -69,6 +69,10 @@ describe('SOS', () => {
       message: 'please call me',
       createdAt: expect.any(String),
       acknowledgedAt: null,
+      panic: false,
+      deliveredAt: null,
+      resolvedAt: null,
+      delivery: null,
     });
     const ev = await t.db.events.findOne({ type: 'sos.raised', 'payload.sos.id': sos.id });
     expect(ev!.payload).toEqual({ sos });

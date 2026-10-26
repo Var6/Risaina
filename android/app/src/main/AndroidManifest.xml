@@ -15,6 +15,25 @@
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <!-- Lets an SOS open full-screen on a locked phone where the system allows it. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Safety: the SOS alarm is a foreground service started from the high-priority FCM message.
+         systemExempted is the documented type for an alarm that keeps ringing in the background and
+         needs an exact-alarm permission; specialUse is the fallback when that permission is missing.
+         The exact-alarm permission also lets a refused start retry through AlarmManager.setAlarmClock. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission
+        android:name="android.permission.USE_EXACT_ALARM"
+        tools:ignore="ExactAlarm" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+    <!-- Safety: live location while the user shares it (started from a visible screen only, so no
+         ACCESS_BACKGROUND_LOCATION is needed). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
         android:name=".RisainaApp"
@@ -44,7 +63,38 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="risaina" android:host="app" />
             </intent-filter>
+            <!-- Safety: launcher long-press shortcut "I'm in trouble" (opens the hold-to-send screen). -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Safety: SOS alarm. Rings on the alarm stream until "I'm on it" or 5 minutes. -->
+        <service
+            android:name=".core.sos.SosAlarmService"
+            android:exported="false"
+            android:foregroundServiceType="systemExempted|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Rings an emergency SOS alarm sent by the user's partner until the user acknowledges it" />
+        </service>
+        <!-- Drawn over the lock screen only while an SOS rings, like an alarm clock. It never unlocks
+             the phone and never changes the lock screen or wallpaper. -->
+        <activity
+            android:name=".core.sos.SosAlarmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:taskAffinity="${applicationId}.sos"
+            android:theme="@style/Theme.Risaina"
+            android:turnScreenOn="true"
+            tools:targetApi="27" />
+        <!-- Safety: live location sharing, started only from a visible screen. -->
+        <service
+            android:name=".core.location.LiveLocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <service
             android:name=".core.notifications.RisainaMessagingService"

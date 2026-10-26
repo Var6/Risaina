@@ -35,6 +35,7 @@ import { gameRoutes } from './modules/games/routes.js';
 import { healthRoutes } from './modules/health/routes.js';
 import { invitationRoutes } from './modules/invitations/routes.js';
 import { listRoutes } from './modules/lists/routes.js';
+import { locationRoutes } from './modules/location/routes.js';
 import { meRoutes } from './modules/me/routes.js';
 import { mediaRoutes } from './modules/media/routes.js';
 import { memoryRoutes } from './modules/memories/routes.js';
@@ -209,6 +210,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
         { name: 'SOS' },
         { name: 'Games' },
         { name: 'Events' },
+        { name: 'Location' },
       ],
     },
     transform: jsonSchemaTransform,
@@ -248,6 +250,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
       await api.register(sosRoutes, ctx);
       await api.register(gameRoutes, ctx);
       await api.register(eventRoutes, ctx);
+      await api.register(locationRoutes, ctx);
       await api.register(websocketRoutes, ctx);
       if (opts.storage instanceof LocalStorageDriver) {
         const maxObjectBytes =

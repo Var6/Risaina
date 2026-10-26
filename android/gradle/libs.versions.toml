@@ -30,6 +30,8 @@ mockk = "1.14.11"
 turbine = "1.2.1"
 androidxTestExt = "1.3.0"
 espresso = "3.7.0"
+# safety: live location (FusedLocationProviderClient)
+playServicesLocation = "21.3.0"
 
 [libraries]
 # build classpath
@@ -109,6 +111,10 @@ googleid = { module = "com.google.android.libraries.identity.googleid:googleid",
 
 # motion
 lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }
+
+# safety: live location
+play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "kotlinxCoroutines" }
 
 # test
 junit = { module = "junit:junit", version.ref = "junit" }

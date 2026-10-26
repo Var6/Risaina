@@ -118,7 +118,7 @@ private fun ToggleRow(title: String, subtitle: String?, checked: Boolean, onChan
     }
 }
 
-data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {})
+data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {}, val safety: () -> Unit = {})
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel = hiltViewModel()) {
@@ -144,6 +144,11 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
             }
         }
         Spacer(Modifier.height(20.dp))
+        // safety stream: the one live-location switch, and the way to the panic button and SOS checks
+        SectionHeader("Safety")
+        com.risaina.app.feature.safety.LiveLocationControl()
+        Row(com.risaina.app.feature.safety.ShieldIcon, "Panic button & SOS", "Hold-to-send panic alert, and check that an SOS can reach you", nav.safety)
+        Spacer(Modifier.height(8.dp))
         SectionHeader("Experience")
         Row(NotificationsIcon, "Notifications", if (!s.pushConfigured) "Push isn't configured in this build — pings arrive while the app is open" else if (!s.notificationsPermitted) "Permission not granted" else "Quiet hours, previews, cooldown", nav.notifications)
         Row(LockIcon, "Privacy", "Previews, widget content, data export, deletion", nav.privacy)
@@ -204,7 +209,7 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
 }
 
 @Composable
-fun NotificationSettingsScreen(onBack: () -> Unit, onRequestPermission: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
+fun NotificationSettingsScreen(onBack: () -> Unit, onRequestPermission: () -> Unit, onSafety: () -> Unit = {}, vm: SettingsViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
     val p = s.prefs
     var pickStart by remember { mutableStateOf(false) }
@@ -232,9 +237,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit, onRequestPermission: () -> Un
             Spacer(Modifier.height(4.dp))
             Text("Some phones (Xiaomi, Oppo, Vivo, Realme, OnePlus, Samsung) stop apps in the background. Set Risaina's battery use to “Unrestricted”, and on Xiaomi/Oppo/Vivo also turn on “Autostart”.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
             Spacer(Modifier.height(8.dp))
-            OutlineButton("Let SOS ring through Do Not Disturb", onClick = {
-                runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            })
+            OutlineButton("Can an SOS reach you? Check now", onClick = onSafety)
             Spacer(Modifier.height(6.dp))
             OutlineButton("Open battery settings", onClick = {
                 runCatching {
@@ -243,7 +246,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit, onRequestPermission: () -> Un
             })
         }
         Spacer(Modifier.height(12.dp))
-        ToggleRow("Notifications", "Master switch for pings and messages", p.notificationsEnabled, { v -> vm.update { it.copy(notificationsEnabled = v) } })
+        ToggleRow("Notifications", "Master switch for pings and messages. An SOS always rings, even when this is off", p.notificationsEnabled, { v -> vm.update { it.copy(notificationsEnabled = v) } })
         ToggleRow("Show previews", "Off: notifications say only that something arrived", p.previewInNotifications, { v -> vm.update { it.copy(previewInNotifications = v) } })
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         SectionHeader("Quiet hours")

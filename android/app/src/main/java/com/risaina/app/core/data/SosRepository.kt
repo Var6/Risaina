@@ -1,5 +1,6 @@
 package com.risaina.app.core.data
 
+import com.risaina.app.core.common.AppError
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.common.map
 import com.risaina.app.core.common.onSuccess
@@ -13,7 +14,10 @@ import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** SOS alerts: kept in memory and refreshed from the server (they are rare and short-lived). */
+/**
+ * SOS alerts: kept in memory and refreshed from the server (they are rare and short-lived). What this
+ * phone already did about an SOS (rang, acknowledged) survives process death in SosLocalState.
+ */
 @Singleton
 class SosRepository @Inject constructor(private val api: RisainaApi) {
     private val _items = MutableStateFlow<List<SosDto>>(emptyList())
@@ -21,14 +25,35 @@ class SosRepository @Inject constructor(private val api: RisainaApi) {
 
     suspend fun refresh(): AppResult<Unit> = apiCall { api.sosList() }.onSuccess { _items.value = it.items }.map { }
 
-    suspend fun send(message: String?): AppResult<SosDto> =
-        apiCall { api.createSos(CreateSosRequest(message?.trim()?.takeIf { it.isNotEmpty() })) }
-            .onSuccess { r -> _items.update { listOf(r.sos) + it.filter { s -> s.id != r.sos.id } } }
-            .map { it.sos }
+    /**
+     * `idempotencyKey` makes a retry safe: the server returns the first SOS instead of ringing twice.
+     *
+     * A server without the safety fields (not deployed yet, or rolled back) refuses `panic` and
+     * `idempotencyKey` with a 400, because its body schema is strict. That 400 is not retryable, so
+     * the alert would simply be lost: send it once more as a plain SOS instead. Without the key a
+     * later retry could ring twice, which is far better than not ringing at all. A 400 for a real
+     * reason (the message is too long) fails the plain send too and is returned as it is.
+     */
+    suspend fun send(message: String?, panic: Boolean = false, idempotencyKey: String? = null): AppResult<SosDto> {
+        val text = message?.trim()?.takeIf { it.isNotEmpty() }
+        val full = CreateSosRequest(text, panic.takeIf { it }, idempotencyKey)
+        val first = apiCall { api.createSos(full) }
+        val result = if (first is AppResult.Failure && first.error is AppError.Validation && full != CreateSosRequest(text)) {
+            apiCall { api.createSos(CreateSosRequest(text)) }
+        } else first
+        return result.onSuccess { r -> upsert(r.sos) }.map { it.sos }
+    }
 
     suspend fun acknowledge(id: String): AppResult<Unit> =
         apiCall { api.ackSos(id) }.onSuccess { r -> upsert(r.sos) }.map { }
 
+    /** "I'm safe now": stops the partner's alarm and ends the location shared for this SOS. */
+    suspend fun resolve(id: String): AppResult<SosDto> =
+        apiCall { api.resolveSos(id) }.onSuccess { r -> upsert(r.sos) }.map { it.sos }
+
     fun upsert(s: SosDto) = _items.update { list -> (listOf(s) + list.filter { it.id != s.id }).sortedByDescending { it.createdAt } }
     fun markAcknowledged(id: String, at: String) = _items.update { list -> list.map { if (it.id == id) it.copy(acknowledgedAt = at) else it } }
+    fun markDelivered(id: String, at: String) = _items.update { list -> list.map { if (it.id == id && it.deliveredAt == null) it.copy(deliveredAt = at) else it } }
+    fun markResolved(id: String, at: String) = _items.update { list -> list.map { if (it.id == id) it.copy(resolvedAt = at) else it } }
+    fun clear() { _items.value = emptyList() }
 }

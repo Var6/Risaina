@@ -1,6 +1,7 @@
 import type { Logger } from 'pino';
 import type { WebSocket } from 'ws';
 import type { EventDto } from '../../modules/shared/dto.js';
+import type { LiveLocationDto } from '../../modules/shared/schemas.js';
 
 export interface HubConnection {
   id: string;
@@ -17,7 +18,9 @@ export type ServerMessage =
   | { type: 'event'; event: EventDto }
   | { type: 'synced' }
   | { type: 'revoked' }
-  | { type: 'error'; code: string; message: string };
+  | { type: 'error'; code: string; message: string }
+  // safety: a live location fix for the viewer only. Fire-and-forget: never stored or replayed
+  | { type: 'location'; location: LiveLocationDto };
 
 export const WS_CLOSE = {
   UNAUTHORIZED: 4401,
@@ -70,6 +73,18 @@ export class WsHub {
       }
     }
     for (const conn of targets) this.send(conn, { type: 'event', event });
+  }
+
+  /**
+   * Deliver a frame to one user's sockets bound to `coupleId` (live location goes to the viewer
+   * only, never to the sharer's own devices). Returns how many sockets it was written to.
+   */
+  sendToUser(userId: string, coupleId: string, msg: ServerMessage): number {
+    let n = 0;
+    for (const conn of this.byUser.get(userId) ?? []) {
+      if (conn.coupleId === coupleId && this.send(conn, msg)) n++;
+    }
+    return n;
   }
 
   send(conn: HubConnection, msg: ServerMessage): boolean {

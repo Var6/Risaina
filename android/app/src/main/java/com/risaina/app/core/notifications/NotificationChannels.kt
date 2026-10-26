@@ -22,6 +22,21 @@ object NotificationChannels {
     const val RITUALS = "rituals"
     const val SYSTEM = "system"
 
+    // safety stream: SOS alarm and live location channels
+    /** The ringing SOS (foreground service + full-screen alert). Silent: the service plays the alarm itself. */
+    const val SOS_ALARM = "sos_alarm_v2"
+    /**
+     * Extra ringer used only in a Do Not Disturb mode that blocks alarms (and only with DND access): the
+     * alarm stream itself is muted there, but the ringtone stream is not while a channel bypasses DND.
+     */
+    const val SOS_RING_DND = "sos_ring_dnd"
+    /** Missed SOS, "safe now", an SOS that could not be sent. */
+    const val SOS_UPDATES = "sos_updates"
+    /** "You are sharing your location" (the sharer's own ongoing notification). */
+    const val LOCATION_SHARING = "location_sharing"
+    const val PARTNER_LOCATION = "partner_location"
+    const val PARTNER_LOCATION_QUIET = "partner_location_quiet"
+
     /** Idempotent. Channels are user-controllable after creation, so we only set sensible defaults. */
     fun ensure(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -62,6 +77,65 @@ object NotificationChannels {
         nm.createNotificationChannel(
             NotificationChannel(SYSTEM, "Account", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Pairing and account changes"
+            },
+        )
+        ensureSafety(context)
+    }
+
+    /**
+     * Safety channels, created at app start so they exist before the first SOS (the readiness card can
+     * then check them, and the user can allow "Override Do Not Disturb" on them in advance). Called
+     * again whenever the app comes to the foreground: once Do Not Disturb access is granted, creating
+     * an untouched channel again with setBypassDnd(true) turns the bypass on.
+     */
+    fun ensureSafety(context: Context) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        val dnd = runCatching { nm.isNotificationPolicyAccessGranted }.getOrDefault(false)
+        nm.createNotificationChannel(
+            NotificationChannel(SOS_ALARM, "SOS from your partner", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "The full-screen SOS alarm. The sound comes from the alarm itself, so it rings even on silent."
+                setSound(null, null)
+                enableVibration(false)
+                if (dnd) setBypassDnd(true)
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(SOS_RING_DND, "SOS through Do Not Disturb", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Rings for an SOS when Do Not Disturb blocks alarms"
+                setSound(
+                    android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM),
+                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
+                )
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 800, 300, 800, 300, 800)
+                if (dnd) setBypassDnd(true)
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(SOS_UPDATES, "SOS updates", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "A missed SOS, \"I'm safe now\", or an SOS that could not be sent"
+            },
+        )
+        nm.createNotificationChannel(
+            // DEFAULT (not LOW) with no sound: phones that hide icons for silent notifications still
+            // show that sharing is on.
+            NotificationChannel(LOCATION_SHARING, "Sharing your location", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Shown the whole time you share your live location"
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(PARTNER_LOCATION, "Partner's live location", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "When your partner starts sharing their location with you"
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(PARTNER_LOCATION_QUIET, "Partner's live location (quiet hours)", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "The same, during your quiet hours, shown silently"
+                setSound(null, null); enableVibration(false)
             },
         )
     }

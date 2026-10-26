@@ -61,6 +61,15 @@ export const REDACT_PATHS = [
   '*.sos.message',
   'city',
   '*.city',
+  // live location: coordinates must never reach logs
+  'fix',
+  '*.fix',
+  'location',
+  '*.location',
+  'lat',
+  '*.lat',
+  'lng',
+  '*.lng',
 ];
 
 export function loggerOptions(level: string, pretty: boolean): LoggerOptions {

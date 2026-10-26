@@ -67,7 +67,7 @@ class EventReducer @Inject constructor(
     private val listDao: com.risaina.app.core.database.ListDao,
     private val widgetBoardRepository: com.risaina.app.core.data.WidgetBoardRepository,
     private val sosRepository: com.risaina.app.core.data.SosRepository,
-    private val sosAlert: com.risaina.app.core.notifications.SosAlert,
+    private val safetyEvents: com.risaina.app.core.safety.SafetyEvents,
     private val gameRepository: com.risaina.app.core.data.GameRepository,
 ) {
     /** [replay]: the event is old history being re-applied (ReplayGuard); its receipts are not re-sent. */
@@ -139,20 +139,9 @@ class EventReducer @Inject constructor(
             "memory.created" -> {
                 p.obj("memory")?.let { memoryDao.upsert(json.decodeFromJsonElement(MemoryDto.serializer(), it).toEntity()) }
             }
-            "sos.raised" -> p.obj("sos")?.let {
-                val sos = json.decodeFromJsonElement(com.risaina.app.core.network.SosDto.serializer(), it)
-                sosRepository.upsert(sos)
-                val recent = runCatching { java.time.Duration.between(Instant.parse(sos.createdAt), Instant.now()).toMinutes() < 30 }.getOrDefault(false)
-                if (sos.recipientId == me && sos.acknowledgedAt == null && recent) {
-                    // Ring (or update the ringing alert with the message) whether or not the app is open.
-                    sosAlert.show(coupleDao.partner()?.displayName ?: "your partner", sos.message, sos.id)
-                    out += Incoming.Sos(sos.id)
-                }
-            }
-            "sos.acknowledged" -> {
-                val id = p.str("sosId"); val at = p.str("acknowledgedAt")
-                if (id != null && at != null) sosRepository.markAcknowledged(id, at)
-            }
+            // Safety: SOS ring (replay-safe: 6 h window, local state, server re-check) and live location.
+            "sos.raised", "sos.acknowledged", "sos.delivered", "sos.resolved", "location.started", "location.stopped" ->
+                out += safetyEvents.apply(event, me)
             "game.updated" -> {
                 val g = p.obj("game")
                 val id = (g?.get("id") as? kotlinx.serialization.json.JsonPrimitive)?.content

@@ -144,6 +144,7 @@ export class OutboxWorker {
           // What the server meant: lets the app tell a push FCM downgraded from one sent as normal.
           pr: priority === 'high' ? 'h' : 'n',
           ...pushRefFor(event),
+          ...pushSosFieldsFor(event),
         },
         { priority, collapseKey: policy.collapseKey, ttlMs: policy.ttlMs },
       );
@@ -251,4 +252,22 @@ export function pushRefFor(event: Pick<EventDoc, 'type' | 'payload'>): { ref?: s
   if (!key) return {};
   const item = event.payload[key] as { id?: unknown } | undefined;
   return typeof item?.id === 'string' ? { ref: item.id } : {};
+}
+
+/**
+ * SOS pushes carry the SOS id and, for sos.raised, its creation time (epoch ms): opaque ids and a
+ * timestamp, never the message. The phone uses them before it syncs, to ring an SOS exactly once
+ * (it de-duplicates by id against the re-push worker and the sync), to skip a stale one by age,
+ * and to stop the right alarm on sos.resolved.
+ */
+export function pushSosFieldsFor(event: Pick<EventDoc, 'type' | 'payload'>): { sosId?: string; at?: string } {
+  if (!event.type.startsWith('sos.')) return {};
+  if (event.type === 'sos.raised') {
+    const sos = event.payload.sos as { id?: unknown; createdAt?: unknown } | undefined;
+    const id = typeof sos?.id === 'string' ? sos.id : undefined;
+    const ms = typeof sos?.createdAt === 'string' ? Date.parse(sos.createdAt) : Number.NaN;
+    return { ...(id ? { sosId: id } : {}), ...(Number.isFinite(ms) ? { at: String(ms) } : {}) };
+  }
+  const id = event.payload.sosId;
+  return typeof id === 'string' ? { sosId: id } : {};
 }

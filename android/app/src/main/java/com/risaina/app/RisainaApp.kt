@@ -16,11 +16,13 @@ class RisainaApp : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var syncManager: com.risaina.app.core.sync.EventSyncManager
     @Inject lateinit var widgetSnapshotUpdater: com.risaina.app.core.sync.WidgetSnapshotUpdater
+    @Inject lateinit var safety: com.risaina.app.core.safety.SafetyLifecycle
 
     override fun onCreate() {
         super.onCreate()
         NotificationChannels.ensure(this)
         watchForeground()
+        safety.start() // SOS alarm volume restore, live location re-check, stop on sign-out/unlink
     }
 
     /**

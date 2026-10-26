@@ -7,6 +7,7 @@ import {
   GAME_PRIZES,
   GAME_STATUSES,
   LIST_KINDS,
+  LIVE_LOCATION_REASONS,
   MEDIA_CATEGORIES,
   MESSAGE_TYPES,
   MILESTONE_KINDS,
@@ -382,8 +383,57 @@ export const Sos = z
     message: z.string().nullable(),
     createdAt: IsoDateTime,
     acknowledgedAt: IsoDateTimeNullable,
+    // safety additions
+    panic: z.boolean().meta({ description: 'A panic alert: the sender also shares live location' }),
+    deliveredAt: IsoDateTimeNullable.meta({ description: "The recipient's phone started ringing" }),
+    resolvedAt: IsoDateTimeNullable.meta({ description: 'The sender said they are safe now' }),
+    delivery: z
+      .object({
+        alarmMuted: z.boolean().nullable(),
+        fgsStarted: z.boolean().nullable(),
+        notificationsEnabled: z.boolean().nullable(),
+        interruptionFilter: z.string().nullable(),
+      })
+      .nullable()
+      .meta({ description: "What the recipient's phone reported when it rang (device state only)" }),
   })
   .meta({ id: 'Sos' });
+
+// --- Live location (safety) ----------------------------------------------------------------
+
+export const LiveLocationReason = z.enum(LIVE_LOCATION_REASONS);
+
+export const LocationFix = z
+  .object({
+    lat: z.number(),
+    lng: z.number(),
+    accuracyM: z.number().int(),
+    at: IsoDateTime.meta({ description: 'When the phone took the fix (server clock)' }),
+    batteryPct: z.number().int().nullable(),
+  })
+  .meta({ id: 'LocationFix' });
+
+const liveCommon = {
+  sessionId: IdString,
+  userId: IdString.meta({ description: 'The sharer' }),
+  reason: LiveLocationReason,
+  sosId: IdString.nullable(),
+  startedAt: IsoDateTime,
+  expiresAt: IsoDateTimeNullable.meta({ description: 'null: until the sharer turns it off' }),
+  updatedAt: IsoDateTime,
+};
+
+/** A live session with the latest fix. Only ever sent to the two members (HTTP and WS frames). */
+export const LiveLocation = z
+  .object({
+    ...liveCommon,
+    lastSeenAt: IsoDateTime.meta({ description: "Last check-in from the sharer's phone (liveness)" }),
+    fix: LocationFix.nullable().meta({ description: 'null until the first fix arrives' }),
+  })
+  .meta({ id: 'LiveLocation' });
+
+/** Event payload of location.started: never coordinates. */
+export const LiveLocationSession = z.object(liveCommon).meta({ id: 'LiveLocationSession' });
 
 // --- Games ----------------------------------------------------------------------------------
 
@@ -597,3 +647,5 @@ export type SosDto = z.infer<typeof Sos>;
 export type ChatWallpaperDto = z.infer<typeof ChatWallpaper>;
 export type GameDto = z.infer<typeof Game>;
 export type GameEventViewDto = z.infer<typeof GameEventView>;
+export type LiveLocationDto = z.infer<typeof LiveLocation>;
+export type LiveLocationSessionDto = z.infer<typeof LiveLocationSession>;

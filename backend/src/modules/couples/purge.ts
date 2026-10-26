@@ -83,6 +83,7 @@ export class CouplePurger {
       this.db.games.deleteMany(byCouple),
       this.db.widgetBoards.deleteMany(byCouple),
       this.db.sos.deleteMany(byCouple),
+      this.db.liveLocations.deleteMany(byCouple),
       this.db.invitations.deleteMany(byCouple),
       // keep the final couple.unlinked event for the ex-partner (deleted by the cleanup worker later)
       this.db.events.deleteMany({ coupleId, type: { $ne: 'couple.unlinked' } }),

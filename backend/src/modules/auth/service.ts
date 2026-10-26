@@ -5,6 +5,7 @@ import { hashPassword, randomToken, sha256Hex, verifyPassword } from '../../lib/
 import { errors } from '../../lib/errors.js';
 import { newId } from '../../lib/ids.js';
 import { addDays, addMinutes } from '../../lib/time.js';
+import { LocationService } from '../location/service.js';
 import { toUserDto } from '../shared/dto.js';
 import type { TokensDto, UserDto } from '../shared/schemas.js';
 import { describeMailError, EmailVerificationService } from './email-verification.js';
@@ -258,6 +259,8 @@ export class AuthService {
     const session = await this.repo.findSessionByRefreshHash(sha256Hex(refreshToken));
     if (!session) return; // idempotent; do not reveal whether the token existed
     await this.revokeFamily(session.familyId, 'logout');
+    // Signing out always stops live location sharing: the phone can no longer stop it itself.
+    await new LocationService(this.ctx).endAllForUser(session.userId);
     const targetDeviceId = deviceId ?? session.deviceId;
     if (targetDeviceId) await this.repo.deleteDeviceToken(session.userId, targetDeviceId);
   }
@@ -266,6 +269,12 @@ export class AuthService {
     const ids = await this.repo.familySessionIds(familyId);
     await this.repo.revokeFamily(familyId, reason, this.ctx.now());
     for (const id of ids) this.ctx.hub.revokeSession(id.toHexString());
+    if (reason === 'refresh_reuse') {
+      // The phone is signed out and can no longer stop its own live location (each person has one
+      // phone): end it here, as sign-out does, so the last position is not left on the server.
+      const member = await this.ctx.db.sessions.findOne({ familyId }, { projection: { userId: 1 } });
+      if (member) await new LocationService(this.ctx).endAllForUser(member.userId);
+    }
   }
 
   async revokeAllForUser(userId: ObjectId, reason: string): Promise<void> {
@@ -273,6 +282,7 @@ export class AuthService {
     await this.repo.revokeAllForUser(userId, reason, this.ctx.now());
     for (const id of ids) this.ctx.hub.revokeSession(id.toHexString());
     this.ctx.hub.revokeUser(userId.toHexString());
+    await new LocationService(this.ctx).endAllForUser(userId); // no session left to stop sharing
   }
 
   // --- password reset ---------------------------------------------------------------------------
