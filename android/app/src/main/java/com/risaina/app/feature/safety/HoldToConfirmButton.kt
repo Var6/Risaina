@@ -107,10 +107,15 @@ fun HoldToConfirmButton(
                             }
                         }
                     }
-                    tryAwaitRelease()
-                    val fired = tracker.release()
-                    holding.cancel()
-                    scope.launch { animate(progress, 0f, animationSpec = tween(if (fired) 700 else 250)) { v, _ -> progress = v } }
+                    try {
+                        tryAwaitRelease()
+                    } finally {
+                        // Also when the gesture itself is cancelled (the button was disabled or left
+                        // the screen mid-hold): the timing loop must never outlive the finger.
+                        holding.cancel()
+                        val fired = tracker.release()
+                        scope.launch { animate(progress, 0f, animationSpec = tween(if (fired) 700 else 250)) { v, _ -> progress = v } }
+                    }
                 })
             },
         contentAlignment = Alignment.Center,
