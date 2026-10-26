@@ -7,10 +7,12 @@ import { errors } from '../../lib/errors.js';
 import { canonicalTimeZone } from '../../lib/time.js';
 import { AuthService } from '../auth/service.js';
 import { CoupleService } from '../couples/service.js';
+import { isAlive } from '../location/service.js';
 import {
   toCoupleDto,
   toGameDto,
   toListDto,
+  toLiveLocationDto,
   toMemoryDto,
   toMessageDto,
   toMilestoneDto,
@@ -166,6 +168,10 @@ export class MeService {
           this.repo.games(coupleId, EXPORT_LIMIT),
         ])
       : [[], [], [], [], [], [], [], []];
+    // safety: only my own current session (the server keeps no location history at all)
+    const myLive = coupleId
+      ? await this.ctx.db.liveLocations.findOne({ coupleId, userId: user._id, live: true })
+      : null;
     return {
       exportedAt: this.ctx.now().toISOString(),
       user: toUserDto(user),
@@ -179,6 +185,7 @@ export class MeService {
       sos: sos.map(toSosDto),
       games: games.map((g) => toGameDto(g, userId)),
       widgetBoards: boards.map(toWidgetBoardDto),
+      liveLocation: myLive && isAlive(myLive, this.ctx.now()) ? toLiveLocationDto(myLive) : null,
       truncated: [pings, messages, memories, milestones, lists, sos, games].some(
         (l) => l.length >= EXPORT_LIMIT,
       ),

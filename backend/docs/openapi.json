@@ -5442,6 +5442,17 @@
                       },
                       "description": "Both boards of the couple (authorId tells whose)"
                     },
+                    "liveLocation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/LiveLocation"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "My own live-location session while I share it (never my partner's); no history exists"
+                    },
                     "truncated": {
                       "type": "boolean"
                     }
@@ -5458,6 +5469,7 @@
                     "sos",
                     "games",
                     "widgetBoards",
+                    "liveLocation",
                     "truncated"
                   ],
                   "additionalProperties": false

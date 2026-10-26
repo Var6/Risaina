@@ -405,6 +405,29 @@ describe('live location: validation, limits, indexes, privacy', () => {
       expect(paths, p).toContain(p);
     }
   });
+
+  it('the data export holds only my own current session, and nothing after a stop', async () => {
+    expect((await stop(a)).statusCode).toBe(204);
+    const mine = oid();
+    // a panic start skips the start budget used up by the rate-limit test above
+    const res = await start(a, {
+      sessionId: mine,
+      mode: 'timed',
+      durationMinutes: 120,
+      reason: 'panic',
+      fix: fixAt(),
+    });
+    expect(res.statusCode).toBeLessThan(300);
+    const exportOf = async (s: Session) => {
+      const r = await t.app.inject({ method: 'GET', url: `${API}/me/export`, headers: bearer(s) });
+      expect(r.statusCode).toBe(200);
+      return r.json<{ liveLocation: { sessionId: string } | null }>();
+    };
+    expect((await exportOf(a)).liveLocation?.sessionId).toBe(mine);
+    expect((await exportOf(b)).liveLocation).toBeNull(); // never the partner's position
+    expect((await stop(a)).statusCode).toBe(204);
+    expect((await exportOf(a)).liveLocation).toBeNull();
+  });
 });
 
 describe('live location: sign-out, unlink and account deletion', () => {

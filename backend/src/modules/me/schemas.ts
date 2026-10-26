@@ -7,6 +7,7 @@ import {
   Game,
   IdString,
   List,
+  LiveLocation,
   Memory,
   Message,
   Milestone,
@@ -79,5 +80,8 @@ export const ExportResponse = z.object({
   widgetBoards: z
     .array(WidgetBoard)
     .meta({ description: 'Both boards of the couple (authorId tells whose)' }),
+  liveLocation: LiveLocation.nullable().meta({
+    description: "My own live-location session while I share it (never my partner's); no history exists",
+  }),
   truncated: z.boolean(),
 });
