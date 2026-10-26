@@ -345,3 +345,31 @@ against a local server running this code with push enabled, the app process kill
 
 Not verifiable here: Realme/ColorOS background behaviour on Raina's phone, a real lock screen with a PIN and
 fingerprint, OS lock-screen widgets. **The server changes are not live until main is pushed (Render deploys it).**
+
+
+## Google Play readiness (2026-10-26, branch `play/ready`)
+Goal: the internal testing track on Google Play. A policy audit, an independent check of that audit, a
+release-build check and a review of the changes (each finding verified again) drove this list.
+
+- **Release build (R8):** Glance created the widget ping action by reflection and R8 had removed its
+  constructor; R8 had also merged the 8 widget classes into one, so every widget redrew with the wrong
+  layout. Both kept by `proguard-rules.pro`. A release build now refuses a non-`https://` server address
+  (checked only when an APK or bundle is written).
+- **Permissions Play refuses for this app, removed:** `USE_EXACT_ALARM`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`,
+  the `systemExempted` service type. The SOS alarm starts as `specialUse` only; the alarm-clock retry uses
+  `SCHEDULE_EXACT_ALARM`, which the readiness card now asks for. Battery buttons open Android's list of apps.
+- **Disclosures:** privacy policy and account-deletion pages served by the backend at `/privacy` and
+  `/delete-account`, linked from Settings, Privacy and About; Open-Meteo credited; location disclosure says
+  sharing continues while the app is closed (and says so honestly when notifications are off: panic and SOS
+  setup now ask for them but never block on them). Privacy & account and About open from the pairing
+  screen, so an account that never paired can delete itself.
+- **Upload key:** `docs/private/risaina-upload.jks` (gitignored), read through `android/keystore.properties`.
+- **Review accounts:** two paired accounts on the live server for Play's "App access" form
+  (`docs/private/play-review-accounts.txt`).
+
+Release build `0.2.0+8f18d57` (versionCode 69) tested on the emulator against the live server: sign-in,
+sync, weather, message and ping notifications with the app in the background, SOS ringing in silent mode
+with the `specialUse` service and stopped by "I'm on it" (sender saw delivered and acknowledged), and an
+unpaired account deleting itself from the pairing screen (email erased on the server). Backend 341/341,
+Android 270 unit tests. **Still to do:** the developer name and contact email in
+`backend/src/modules/legal/routes.ts`, push so Render serves the pages, then Play Console.
