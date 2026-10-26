@@ -396,8 +396,8 @@ fun AboutScreen(onBack: () -> Unit) {
         SectionHeader("Privacy")
         Text("No analytics and no ads. Firebase Cloud Messaging delivers notifications. Besides what you send, the server receives a few technical details with no content (phone model, app version, notification and battery status, and the alarm volume when an SOS rings) so a missed alert can be explained.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
         LinkedText(
-            "Read the privacy policy and how to delete your account. To report a problem or abuse, contact us.",
-            listOf("privacy policy" to LegalLinks.privacyPolicy, "how to delete your account" to LegalLinks.deleteAccount, "contact us" to LegalLinks.contact),
+            "Read the terms of use, the privacy policy and how to delete your account. To report a problem or abuse, contact us.",
+            listOf("terms of use" to LegalLinks.terms, "privacy policy" to LegalLinks.privacyPolicy, "how to delete your account" to LegalLinks.deleteAccount, "contact us" to LegalLinks.contact),
             Modifier.padding(top = 8.dp),
         )
     }

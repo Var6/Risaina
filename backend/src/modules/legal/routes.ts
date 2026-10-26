@@ -11,8 +11,12 @@ export const LEGAL_CONTACT = {
   email: 'rk.remo12345@gmail.com',
 } as const;
 
-/** Public pages Google Play links to (store listing, Data safety form, and the app's Settings). */
-const PAGES = { '/privacy': 'privacy.html', '/delete-account': 'delete-account.html' } as const;
+/** Public pages Google Play links to (store listing, Data safety form, sign-up and the app's Settings). */
+const PAGES = {
+  '/privacy': 'privacy.html',
+  '/delete-account': 'delete-account.html',
+  '/terms': 'terms.html',
+} as const;
 
 export function renderLegalPage(file: string): string {
   return readFileSync(new URL(`../../../public/legal/${file}`, import.meta.url), 'utf8')

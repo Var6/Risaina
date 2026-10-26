@@ -82,6 +82,10 @@ fun WelcomeScreen(
             }
             Spacer(Modifier.height(6.dp))
             GhostButton(text = "I already have an account", onClick = onSignIn, modifier = Modifier.alpha(reveal))
+            com.risaina.app.feature.settings.LinkedText(
+                com.risaina.app.feature.settings.AGREE_TO_TERMS, com.risaina.app.feature.settings.agreeToTermsLinks,
+                Modifier.alpha(reveal), color = Palette.MutedOnDark, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
         }
     }
 }

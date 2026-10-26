@@ -14,6 +14,7 @@ describe('public legal pages', () => {
   for (const [url, heading] of [
     ['/privacy', 'Risaina Privacy Policy'],
     ['/delete-account', 'Delete your Risaina account'],
+    ['/terms', 'Risaina Terms of Use'],
   ] as const) {
     it(`GET ${url} is a public HTML page with no template markers left`, async () => {
       const res = await t.app.inject({ method: 'GET', url });
@@ -31,5 +32,12 @@ describe('public legal pages', () => {
     const deletion = await t.app.inject({ method: 'GET', url: '/delete-account' });
     expect(privacy.body).toContain('href="/delete-account"');
     expect(deletion.body).toContain('href="/privacy"');
+  });
+
+  it('the terms link the privacy policy, and the privacy policy links the terms', async () => {
+    const terms = await t.app.inject({ method: 'GET', url: '/terms' });
+    const privacy = await t.app.inject({ method: 'GET', url: '/privacy' });
+    expect(terms.body).toContain('href="/privacy"');
+    expect(privacy.body).toContain('href="/terms"');
   });
 });

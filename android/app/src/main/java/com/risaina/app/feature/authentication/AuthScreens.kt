@@ -1,6 +1,10 @@
 package com.risaina.app.feature.authentication
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.text.style.TextAlign
+import com.risaina.app.feature.settings.AGREE_TO_TERMS
+import com.risaina.app.feature.settings.LinkedText
+import com.risaina.app.feature.settings.agreeToTermsLinks
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -74,6 +78,8 @@ fun SignUpScreen(onBack: () -> Unit, onGoToSignIn: () -> Unit, vm: AuthViewModel
         FormError(s.formError)
         Spacer(Modifier.height(20.dp))
         PrimaryButton("Create account", onClick = vm::signUp, loading = s.loading, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+        LinkedText(AGREE_TO_TERMS, agreeToTermsLinks, Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         Spacer(Modifier.height(4.dp))
         GhostButton("I already have an account", onClick = onGoToSignIn, modifier = Modifier.fillMaxWidth())
     }
@@ -99,6 +105,9 @@ fun SignInScreen(onBack: (() -> Unit)?, onGoToSignUp: () -> Unit, onForgot: () -
             val ctx = androidx.compose.ui.platform.LocalContext.current
             Spacer(Modifier.height(10.dp))
             com.risaina.app.core.designsystem.components.OutlineButton("Continue with Google", onClick = { vm.google(ctx) }, enabled = !s.googleLoading, modifier = Modifier.fillMaxWidth())
+            // Google sign-in creates the account when it is new.
+            Spacer(Modifier.height(8.dp))
+            LinkedText(AGREE_TO_TERMS, agreeToTermsLinks, Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         }
         Spacer(Modifier.height(4.dp))
         GhostButton("Forgot password?", onClick = onForgot, modifier = Modifier.fillMaxWidth())
