@@ -379,3 +379,12 @@ location notification with other Risaina notifications, hiding Stop sharing; it 
 groups of their own (as the SOS alarm already had). Final upload: `0.2.0+86936e9`, versionCode 72. Both
 videos recorded on the emulator from that build (location start → notification → Stop sharing; SOS on a
 sleeping phone in silent mode → full-screen alarm → "I'm on it").
+
+## Terms of use (2026-10-27)
+For Google Play's user-generated content policy: `/terms` served by the backend (what is not allowed, the SOS is
+not an emergency service, Unlink to block, how to report, account closure); "By continuing, you agree to the
+Terms and the Privacy policy" on welcome, sign-up and Google sign-in; **Report a problem or abuse** in Settings
+and on the pairing screen (an email to the developer). The terms review also found a pairing bug: accepting a
+code left the acceptor's own open code alive, so after an unlink the same partner could re-pair the couple with
+it. Accepting now revokes it (test in `invitations.test.ts`). Backend 344/344. Upload build `0.2.0+65b9116`,
+versionCode 75, replaces 72 in the production review.
