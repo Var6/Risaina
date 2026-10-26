@@ -5,6 +5,7 @@ import { errors } from '../../lib/errors.js';
 import { parseId } from '../../lib/ids.js';
 import { ErrorEnvelope, IdParams } from '../shared/schemas.js';
 import {
+  CatalogResponse,
   ChallengeBody,
   ChooseBody,
   CompleteBody,
@@ -13,6 +14,7 @@ import {
   GameListResponse,
   GameResponse,
   MoveBody,
+  PlayBody,
   RejectBody,
   SuggestionsResponse,
 } from './schemas.js';
@@ -63,14 +65,34 @@ export const gameRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
     async () => service.suggestions(),
   );
 
+  // Static segments win over /games/:id in find-my-way, so this never reaches the :id route. On an
+  // older server it does (404 "Game not found"), which the app reads as "only rps is available".
+  r.get(
+    '/games/catalog',
+    {
+      ...read,
+      schema: {
+        tags: [TAG],
+        summary: 'The games the picker offers, with their options (trivia categories, decks)',
+        description:
+          'Trivia questions come from Open Trivia Database (CC BY-SA 4.0): show `trivia.attribution` with a link.',
+        security,
+        response: { 200: CatalogResponse, 401: ErrorEnvelope, 409: ErrorEnvelope },
+      },
+    },
+    async () => service.catalog(),
+  );
+
   r.post(
     '/games',
     {
       ...write,
       schema: {
         tags: [TAG],
-        summary: 'Start a rock–paper–scissors game (one open game per couple)',
-        description: '409 game_in_progress with details.game when an open game exists.',
+        summary: 'Start a game: rps, tictactoe, trivia or this_or_that (one open game per couple)',
+        description:
+          '409 game_in_progress with details.game when an open game exists. Trivia fetches its questions ' +
+          'server-side first (up to a few seconds), falling back to a built-in set.',
         security,
         body: CreateGameBody,
         response: { 201: GameResponse, ...writeErrors },
@@ -117,6 +139,8 @@ export const gameRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
       schema: {
         tags: [TAG],
         summary: 'Play rock, paper, scissors or thread (once per player per round)',
+        description:
+          'rps only (kept for older apps; /play does the same). Other kinds: 400 "update Risaina".',
         security,
         params: IdParams,
         body: MoveBody,
@@ -127,18 +151,53 @@ export const gameRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
   );
 
   r.post(
+    '/games/:id/play',
+    {
+      ...write,
+      schema: {
+        tags: [TAG],
+        summary: 'Make a move in any kind of game (a tic-tac-toe cell, a trivia answer, This or That picks)',
+        description:
+          'The body kind must match the game (400 otherwise). Then 409 invalid_game_state, 409 not_your_turn, ' +
+          '409 invalid_move (taken cell, or a question skipped), 409 already_moved (a retried answer).',
+        security,
+        params: IdParams,
+        body: PlayBody,
+        response: { 200: GameResponse, ...writeErrors },
+      },
+    },
+    async (req) => service.play(req.couple!, req.user!.id, gameId(req.params.id), req.body),
+  );
+
+  r.post(
     '/games/:id/rematch',
     {
       ...write,
       schema: {
         tags: [TAG],
         summary: 'After a draw: start the next round (either player)',
+        description: 'Tic-tac-toe swaps who plays X (and starts); trivia gets five new questions.',
         security,
         params: IdParams,
         response: { 200: GameResponse, ...writeErrors },
       },
     },
     async (req) => service.rematch(req.couple!, req.user!.id, gameId(req.params.id)),
+  );
+
+  r.post(
+    '/games/:id/end',
+    {
+      ...write,
+      schema: {
+        tags: [TAG],
+        summary: 'After a draw: call it a draw (either player; completed with no winner)',
+        security,
+        params: IdParams,
+        response: { 200: GameResponse, ...writeErrors },
+      },
+    },
+    async (req) => service.end(req.couple!, req.user!.id, gameId(req.params.id)),
   );
 
   r.post(

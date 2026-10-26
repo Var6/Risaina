@@ -4,6 +4,7 @@ import {
   CHAT_WALLPAPER_STYLES,
   EVENT_TYPES,
   GAME_KINDS,
+  GAME_PRIZES,
   GAME_STATUSES,
   LIST_KINDS,
   MEDIA_CATEGORIES,
@@ -11,6 +12,7 @@ import {
   MILESTONE_KINDS,
   PING_TYPES,
   RPS_MOVES,
+  TRIVIA_DIFFICULTIES,
 } from '../../db/types.js';
 import { OBJECT_ID_REGEX } from '../../lib/ids.js';
 import { parseHHmm } from '../../lib/quiet-hours.js';
@@ -389,6 +391,9 @@ export const GameKind = z.enum(GAME_KINDS);
 export const RpsMove = z.enum(RPS_MOVES);
 export const GameStatus = z.enum(GAME_STATUSES);
 export const ChallengeKind = z.enum(CHALLENGE_KINDS);
+export const GamePrize = z
+  .enum(GAME_PRIZES)
+  .meta({ description: "What the winner gets: the blind truth or dare, or 'none' (just for fun)" });
 
 /**
  * Viewer-specific challenge. The winner always sees both texts. The loser sees `truth` and `dare`
@@ -439,7 +444,86 @@ const gameCommon = {
   loserId: IdString.nullable(),
   completedAt: IsoDateTimeNullable,
   round: z.number().int().min(1),
+  prize: GamePrize,
 };
+
+// Tic-tac-toe, Trivia duel and This or That (games stream). Nothing in tic-tac-toe is secret, so
+// the event view carries the board. Quiz secrets (questions not reached yet, correct answers,
+// the partner's picks and score) live only in the viewer DTO, which reveals them step by step.
+
+const TttMark = z.enum(['x', 'o']);
+const tttCommon = {
+  board: z.array(TttMark.nullable()).length(9).meta({ description: '9 cells, index = row * 3 + col' }),
+  xId: IdString.meta({ description: 'Plays X this round and moves first (the invitee in round 1)' }),
+  turnId: IdString.nullable().meta({ description: 'Whose turn it is; null once the round is over' }),
+  lastCell: z.number().int().min(0).max(8).nullable(),
+  line: z.array(z.number().int().min(0).max(8)).nullable().meta({ description: 'The winning cells' }),
+  moveCount: z.number().int().min(0).max(9),
+};
+export const TicTacToe = z
+  .object({ ...tttCommon, myMark: TttMark, myTurn: z.boolean() })
+  .meta({ id: 'TicTacToe' });
+export const TicTacToeEvent = z.object(tttCommon).meta({ id: 'TicTacToeEvent' });
+
+const QuizSource = z.enum(['opentdb', 'builtin', 'curated']);
+const QuizCategory = z.object({ id: z.number().int(), name: z.string() });
+
+export const QuizItem = z
+  .object({
+    index: z.number().int().min(0),
+    text: z.string().nullable().meta({ description: 'Trivia question; null for This or That' }),
+    choices: z.array(z.string()),
+    category: z.string().nullable(),
+    difficulty: z.enum(TRIVIA_DIFFICULTIES).nullable(),
+    myChoice: z.number().int().nullable(),
+    correct: z
+      .number()
+      .int()
+      .nullable()
+      .meta({ description: 'Trivia: the right choice, only for items the viewer already answered' }),
+    partnerChoice: z.number().int().nullable().meta({ description: 'Only once both finished' }),
+  })
+  .meta({ id: 'QuizItem' });
+
+export const Quiz = z
+  .object({
+    source: QuizSource,
+    attribution: z
+      .string()
+      .nullable()
+      .meta({ description: 'Credit to show on the card (CC BY-SA 4.0) when source is opentdb' }),
+    category: QuizCategory.nullable(),
+    difficulty: z.enum(TRIVIA_DIFFICULTIES).nullable(),
+    deck: z.string().nullable(),
+    total: z.number().int().min(1),
+    items: z.array(QuizItem).meta({
+      description:
+        'Trivia: the answered items plus the current one (all once both finished). This or That: all prompts.',
+    }),
+    myAnswered: z.number().int().min(0),
+    partnerAnswered: z.number().int().min(0),
+    myFinished: z.boolean(),
+    partnerFinished: z.boolean(),
+    myScore: z.number().int().nullable().meta({ description: 'Trivia only' }),
+    partnerScore: z.number().int().nullable().meta({ description: 'Trivia, once both finished' }),
+    matches: z.number().int().nullable().meta({ description: 'This or That, once both finished' }),
+  })
+  .meta({ id: 'Quiz' });
+
+export const QuizEvent = z
+  .object({
+    source: QuizSource,
+    categoryName: z.string().nullable(),
+    deck: z.string().nullable(),
+    total: z.number().int().min(1),
+    progress: z.array(z.object({ userId: IdString, answered: z.number().int(), finished: z.boolean() })),
+    scores: z
+      .array(z.object({ userId: IdString, score: z.number().int() }))
+      .nullable()
+      .meta({ description: 'Trivia, once both finished' }),
+    matches: z.number().int().nullable().meta({ description: 'This or That, once both finished' }),
+  })
+  .meta({ id: 'QuizEvent' });
 
 /** Viewer-specific game (HTTP responses). The partner's move stays hidden until both moved. */
 export const Game = z
@@ -452,6 +536,8 @@ export const Game = z
     myMove: RpsMove.nullable(),
     partnerMoved: z.boolean(),
     partnerMove: RpsMove.nullable().meta({ description: 'null until both players moved this round' }),
+    ttt: TicTacToe.nullable().meta({ description: 'Tic-tac-toe state; null for other kinds' }),
+    quiz: Quiz.nullable().meta({ description: 'Trivia duel / This or That state; null for other kinds' }),
   })
   .meta({ id: 'Game' });
 
@@ -468,6 +554,8 @@ export const GameEventView = z
       .array(z.object({ userId: IdString, move: RpsMove }))
       .nullable()
       .meta({ description: 'Both moves of this round once both moved; otherwise null' }),
+    ttt: TicTacToeEvent.nullable(),
+    quiz: QuizEvent.nullable().meta({ description: 'Progress only: never questions, answers or picks' }),
   })
   .meta({ id: 'GameEventView' });
 

@@ -12,6 +12,7 @@ import type { EventPublisher } from './services/events/publisher.js';
 import type { Mailer } from './services/mailer/types.js';
 import type { PushService } from './services/push/types.js';
 import type { StorageService } from './services/storage/types.js';
+import type { TriviaSource } from './services/trivia/types.js';
 
 /**
  * Explicit dependency bag handed to every module's route plugin. No global singletons: tests
@@ -32,6 +33,8 @@ export interface AppContext {
   inviteLimiter: AttemptLimiter;
   /** Work that must not block a response (e.g. storage deletes after unlink); drained on close. */
   background: BackgroundTasks;
+  /** Trivia duel questions (Open Trivia DB with a built-in fallback; tests inject a fake). */
+  trivia: TriviaSource;
   now: Clock;
   logger: Logger;
   version: string;

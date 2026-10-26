@@ -477,6 +477,30 @@ export const VALIDATORS: Record<string, Document> = {
         completedAt: nullableDate,
         cancelledAt: nullableDate,
         cancelledBy: nullableObjectId,
+        // Games stream: OPTIONAL on purpose and never in `required`. The live DB user cannot collMod,
+        // so production keeps the older validator, which accepts these because it sets no
+        // additionalProperties. They only tighten fresh databases (tests, local).
+        prize: nullableString,
+        ttt: {
+          bsonType: ['object', 'null'],
+          properties: {
+            board: { bsonType: 'array', minItems: 9, maxItems: 9, items: { bsonType: ['string', 'null'] } },
+            xId: objectId,
+            turnId: nullableObjectId,
+            moveCount: { bsonType: ['int', 'long', 'double'], minimum: 0, maximum: 9 },
+            lastCell: nullableInt,
+            line: { bsonType: ['array', 'null'], maxItems: 3 },
+          },
+        },
+        quiz: {
+          bsonType: ['object', 'null'],
+          properties: {
+            source: string,
+            items: { bsonType: 'array', minItems: 1, maxItems: 10 },
+            players: { bsonType: 'array', minItems: 2, maxItems: 2 },
+            matches: nullableInt,
+          },
+        },
       },
     },
   },

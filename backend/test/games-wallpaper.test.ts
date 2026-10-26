@@ -82,6 +82,9 @@ describe('rock–paper–scissors with truth or dare', () => {
       answer: null,
       completedAt: null,
       round: 1,
+      prize: 'truth_or_dare',
+      ttt: null,
+      quiz: null,
     });
     const ev = await lastGameEvent();
     expect(ev!.actorId.toHexString()).toBe(a.user.id);
@@ -102,6 +105,9 @@ describe('rock–paper–scissors with truth or dare', () => {
         challenge: null,
         completedAt: null,
         round: 1,
+        prize: 'truth_or_dare',
+        ttt: null,
+        quiz: null,
       },
     });
     expect(ev!.payload.game).not.toHaveProperty('answer');

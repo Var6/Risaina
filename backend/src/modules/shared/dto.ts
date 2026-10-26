@@ -9,11 +9,15 @@ import type {
   MilestoneDoc,
   PingDoc,
   Preferences,
+  QuizState,
   SosDoc,
+  TttState,
   UserDoc,
   WidgetBoardDoc,
 } from '../../db/types.js';
 import { iso, isoOrNull } from '../../lib/time.js';
+import { OPENTDB_ATTRIBUTION } from '../games/catalog.js';
+import { bothFinished } from '../games/rules/quiz.js';
 import type {
   CoupleDto,
   EventDto,
@@ -263,6 +267,7 @@ function gameCommon(g: GameDoc) {
     loserId: g.loserId ? g.loserId.toHexString() : null,
     completedAt: isoOrNull(g.completedAt),
     round: g.round,
+    prize: g.prize ?? 'truth_or_dare', // games from before the prize option always had the truth or dare
   };
 }
 
@@ -311,6 +316,92 @@ export function toGameDto(g: GameDoc, viewerId: string): GameDto {
     myMove: mine?.move ?? null,
     partnerMoved: theirs !== undefined,
     partnerMove: gameRevealed(g) && theirs ? theirs.move : null,
+    ttt: g.ttt ? toTttView(g.ttt, viewerId) : null,
+    quiz: g.quiz ? toQuizView(g, g.quiz, viewerId) : null,
+  };
+}
+
+function tttCommon(t: TttState) {
+  return {
+    board: [...t.board],
+    xId: t.xId.toHexString(),
+    turnId: t.turnId ? t.turnId.toHexString() : null,
+    lastCell: t.lastCell,
+    line: t.line ? [...t.line] : null,
+    moveCount: t.moveCount,
+  };
+}
+
+function toTttView(t: TttState, viewerId: string): NonNullable<GameDto['ttt']> {
+  return {
+    ...tttCommon(t),
+    myMark: t.xId.toHexString() === viewerId ? 'x' : 'o',
+    myTurn: t.turnId !== null && t.turnId.toHexString() === viewerId,
+  };
+}
+
+/**
+ * Viewer-specific quiz (Trivia duel, This or That). What stays secret, and until when:
+ * - trivia questions: only the ones the viewer answered plus the current one, so nobody can read
+ *   ahead (This or That prompts are not secret: all are sent so the app can collect picks locally);
+ * - `correct`: only for questions the viewer already answered;
+ * - the partner's picks, score and the match count: only once BOTH finished. A game cancelled
+ *   midway never reveals them, so cancelling cannot be used to peek.
+ */
+function toQuizView(g: GameDoc, q: QuizState, viewerId: string): NonNullable<GameDto['quiz']> {
+  const me = q.players.find((p) => p.userId.toHexString() === viewerId);
+  const them = q.players.find((p) => p.userId.toHexString() !== viewerId);
+  const myPicks = me?.picks ?? [];
+  const done = bothFinished(q);
+  const trivia = g.kind === 'trivia';
+  const total = q.items.length;
+  const visible =
+    done || !trivia ? total : g.status === 'waiting' ? Math.min(myPicks.length + 1, total) : myPicks.length;
+  return {
+    source: q.source,
+    attribution: q.source === 'opentdb' ? OPENTDB_ATTRIBUTION : null,
+    category: q.category ? { id: q.category.id, name: q.category.name } : null,
+    difficulty: q.difficulty,
+    deck: q.deck,
+    total,
+    items: q.items.slice(0, visible).map((it, i) => ({
+      index: i,
+      text: it.text,
+      choices: [...it.choices],
+      category: it.category,
+      difficulty: it.difficulty,
+      myChoice: myPicks[i] ?? null,
+      correct: i < myPicks.length ? it.correct : null,
+      partnerChoice: done ? (them?.picks[i] ?? null) : null,
+    })),
+    myAnswered: myPicks.length,
+    partnerAnswered: them?.picks.length ?? 0,
+    myFinished: (me?.finishedAt ?? null) !== null,
+    partnerFinished: (them?.finishedAt ?? null) !== null,
+    myScore: trivia ? (me?.score ?? 0) : null,
+    partnerScore: trivia && done ? (them?.score ?? 0) : null,
+    matches: done ? q.matches : null,
+  };
+}
+
+/** Viewer-neutral quiz progress for events: never questions, choices, correct answers or picks. */
+function toQuizEventView(g: GameDoc, q: QuizState): NonNullable<GameEventViewDto['quiz']> {
+  const done = bothFinished(q);
+  return {
+    source: q.source,
+    categoryName: q.category?.name ?? null,
+    deck: q.deck,
+    total: q.items.length,
+    progress: q.players.map((p) => ({
+      userId: p.userId.toHexString(),
+      answered: p.picks.length,
+      finished: p.finishedAt !== null,
+    })),
+    scores:
+      done && g.kind === 'trivia'
+        ? q.players.map((p) => ({ userId: p.userId.toHexString(), score: p.score }))
+        : null,
+    matches: done ? q.matches : null,
   };
 }
 
@@ -333,5 +424,7 @@ export function toGameEventView(g: GameDoc): GameEventViewDto {
       : null,
     movedBy: g.moves.map((m) => m.userId.toHexString()),
     moves: gameRevealed(g) ? g.moves.map((m) => ({ userId: m.userId.toHexString(), move: m.move })) : null,
+    ttt: g.ttt ? tttCommon(g.ttt) : null,
+    quiz: g.quiz ? toQuizEventView(g, g.quiz) : null,
   };
 }
