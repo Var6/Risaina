@@ -149,11 +149,11 @@ fun PairingScreen(vm: PairingViewModel = hiltViewModel()) {
             SectionHeader(overline = "Join", title = "Enter their code")
             Spacer(Modifier.height(12.dp))
             RisainaTextField(
-                s.codeInput, vm::onCode, "Code", placeholder = "ABCDE FGHIJ",
+                vm.codeInput, vm::onCode, "Code", placeholder = "ABCDE FGHIJ",
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
             )
             Spacer(Modifier.height(12.dp))
-            PrimaryButton("Join", onClick = vm::join, loading = s.joining, enabled = s.codeInput.length == 10, modifier = Modifier.fillMaxWidth())
+            PrimaryButton("Join", onClick = vm::join, loading = s.joining, enabled = vm.codeInput.length == 10, modifier = Modifier.fillMaxWidth())
         }
 
         if (s.error != null) {

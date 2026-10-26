@@ -1,5 +1,7 @@
 package com.risaina.app.feature.pairing
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.risaina.app.core.common.AppError
@@ -24,7 +26,6 @@ data class PairingUiState(
     val myName: String = "",
     /** Shown once; kept in memory for this screen only. */
     val freshCode: InvitationCreated? = null,
-    val codeInput: String = "",
     val creating: Boolean = false,
     val joining: Boolean = false,
     val revoking: Boolean = false,
@@ -66,10 +67,17 @@ class PairingViewModel @Inject constructor(
         }
     }
 
-    fun onCode(v: String) = local.update { it.copy(codeInput = PairingCode.extract(v), error = null) }
+    /** The typed code, in snapshot state read directly by the field (see MessagesViewModel.composer for why). */
+    var codeInput by androidx.compose.runtime.mutableStateOf("")
+        private set
+
+    fun onCode(v: String) {
+        codeInput = PairingCode.extract(v)
+        local.update { it.copy(error = null) }
+    }
 
     fun join() {
-        val code = state.value.codeInput
+        val code = codeInput
         if (code.length < 10) { local.update { it.copy(error = "Codes are 10 characters") }; return }
         viewModelScope.launch {
             local.update { it.copy(joining = true, error = null) }

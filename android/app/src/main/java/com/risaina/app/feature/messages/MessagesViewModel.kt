@@ -1,6 +1,8 @@
 package com.risaina.app.feature.messages
 
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.risaina.app.core.common.AppResult
@@ -41,7 +43,6 @@ data class MessagesUiState(
     val messages: List<Message> = emptyList(),
     val myId: String? = null,
     val partner: Partner? = null,
-    val composer: String = "",
     val sendingMedia: Float? = null,                 // upload progress 0..1 while a photo/voice is uploading
     val canLoadMore: Boolean = true,
     val loadingMore: Boolean = false,
@@ -69,7 +70,6 @@ data class GameUiState(
 )
 
 private data class Local(
-    val composer: String = "",
     val sendingMedia: Float? = null,
     val canLoadMore: Boolean = true,
     val loadingMore: Boolean = false,
@@ -112,7 +112,7 @@ class MessagesViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST") val (games, wpBusy, gameUi) = arr[6] as Triple<List<com.risaina.app.core.network.GameDto>, Boolean, GameUiState>
         MessagesUiState(
             messages = messages, myId = session?.userId, partner = partner,
-            composer = l.composer, sendingMedia = l.sendingMedia, canLoadMore = l.canLoadMore, loadingMore = l.loadingMore,
+            sendingMedia = l.sendingMedia, canLoadMore = l.canLoadMore, loadingMore = l.loadingMore,
             showRecorder = l.showRecorder, recorder = rec, playback = play, socket = socket,
             wallpaper = couple?.chatWallpaperStyle ?: "DEFAULT", wallpaperMediaId = couple?.chatWallpaperMediaId,
             games = games, wallpaperBusy = wpBusy, gameUi = gameUi,
@@ -121,7 +121,16 @@ class MessagesViewModel @Inject constructor(
 
     init { viewModelScope.launch { messageRepository.refresh() }; viewModelScope.launch { gameRepository.refresh() } }
 
-    fun onComposer(v: String) = local.update { it.copy(composer = v) }
+    /**
+     * What the person is typing. Kept in Compose snapshot state and read by the text field directly.
+     * It used to live in the combined [state] flow, which is rebuilt from about ten sources and lags a
+     * frame or more behind each keystroke, so an older value could land after a newer one and put old
+     * text back into the box while typing (and the sent message back after sending).
+     */
+    var composer by androidx.compose.runtime.mutableStateOf("")
+        private set
+
+    fun onComposer(v: String) { composer = v }
 
     /** Shared with the partner: both chats change. */
     fun setWallpaper(style: String) {
@@ -243,9 +252,9 @@ class MessagesViewModel @Inject constructor(
     suspend fun gameSuggestions() = gameRepository.suggestions()
 
     fun send() {
-        val text = local.value.composer.trim()
+        val text = composer.trim()
         if (text.isEmpty()) return
-        local.update { it.copy(composer = "") }
+        composer = ""
         viewModelScope.launch {
             val type = if (isOnlyEmoji(text)) MessageType.EMOJI else MessageType.TEXT
             when (val r = messageRepository.sendText(text, type)) {

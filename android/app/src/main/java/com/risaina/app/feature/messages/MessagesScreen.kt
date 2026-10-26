@@ -159,7 +159,7 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
         },
         bottomBar = {
             Composer(
-                text = s.composer, onText = vm::onComposer, onSend = vm::send,
+                text = vm.composer, onText = vm::onComposer, onSend = vm::send,
                 onPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji, onGame = vm::openGamePicker,
             )
