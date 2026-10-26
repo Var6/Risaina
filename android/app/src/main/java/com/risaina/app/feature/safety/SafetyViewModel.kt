@@ -3,6 +3,9 @@ package com.risaina.app.feature.safety
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
@@ -231,7 +234,19 @@ class SafetyViewModel @Inject constructor(
 
     fun setShareWithSos(on: Boolean) = settings.update { it.copy(shareLocationWithSos = on) }
 
-    fun setPartnerPhone(phone: String) = settings.update { it.copy(partnerPhone = phone.filter { c -> c.isDigit() || c in "+ -()" }.take(24)) }
+    /**
+     * The partner's number as typed, in Compose snapshot state read directly by the field. The field
+     * used to be keyed on the saved number coming back through the combined [state] flow, which lags
+     * behind keystrokes, so an older number could be put back mid-typing and a digit lost. Seeded
+     * from the saved value synchronously: [state] starts empty, which would erase the saved number.
+     */
+    var partnerPhoneInput by mutableStateOf(settings.current.partnerPhone)
+        private set
+
+    fun setPartnerPhone(phone: String) {
+        partnerPhoneInput = phone.filter { c -> c.isDigit() || c in "+ -()" }.take(24)
+        settings.update { it.copy(partnerPhone = partnerPhoneInput) }
+    }
 
     fun testOnThisPhone() {
         alarm.ringTest()

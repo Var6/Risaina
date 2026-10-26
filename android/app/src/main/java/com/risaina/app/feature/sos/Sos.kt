@@ -25,7 +25,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,7 +55,6 @@ import com.risaina.app.feature.safety.SosStatusPanel
 import com.risaina.app.feature.safety.dial
 import com.risaina.app.feature.safety.rememberLocationAccessFlow
 import com.risaina.app.feature.safety.shareText
-import kotlinx.coroutines.launch
 import java.time.Instant
 
 private val SosRed = Color(0xFFC62828)
@@ -65,9 +63,12 @@ private val SosRed = Color(0xFFC62828)
  * Emergency section at the bottom of the partner's profile. Deliberately out of the way: one tap
  * opens a confirmation that explains it will ring even on silent, with an optional message and
  * "also share my live location". The sender then sees whether it reached the partner's phone.
+ *
+ * [note] is the latest message from [vm] ("I'm safe now" sent or failed). The screen hosting the
+ * section collects them (only one collector may), and a snackbar would sit behind the sheet.
  */
 @Composable
-fun SosSection(onOpenSafety: (() -> Unit)? = null, vm: SafetyViewModel = hiltViewModel()) {
+fun SosSection(onOpenSafety: (() -> Unit)? = null, note: String? = null, vm: SafetyViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var confirm by remember { mutableStateOf(false) }
@@ -75,6 +76,10 @@ fun SosSection(onOpenSafety: (() -> Unit)? = null, vm: SafetyViewModel = hiltVie
         vm.refreshDevice()
         onPauseOrDispose { }
     }
+    // A sent alert shows here as my active SOS. Clear the app-wide attempt, so it never stands in
+    // for the hold button the next time the panic screen opens.
+    LaunchedEffect(s.attempt) { if (s.attempt is SosSender.Attempt.Sent) vm.resetAttempt() }
+    val sending = s.attempt is SosSender.Attempt.Sending
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(SosRed.copy(alpha = 0.06f))
             .border(1.dp, SosRed.copy(alpha = 0.25f), MaterialTheme.shapes.large).padding(16.dp),
@@ -91,6 +96,15 @@ fun SosSection(onOpenSafety: (() -> Unit)? = null, vm: SafetyViewModel = hiltVie
             SosStatusPanel(active, s, vm)
         }
         when (val a = s.attempt) {
+            // The confirmation closes at once and a send can take up to a minute while the server
+            // wakes up: say so, instead of leaving the section looking as if nothing happened.
+            is SosSender.Attempt.Sending -> {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Sending your SOS to ${s.partnerName}… This can take up to a minute on a slow connection.",
+                    style = MaterialTheme.typography.bodySmall, color = SosRed,
+                )
+            }
             is SosSender.Attempt.NotSent -> {
                 Spacer(Modifier.height(10.dp))
                 Text(a.reason, style = MaterialTheme.typography.bodySmall, color = SosRed)
@@ -102,13 +116,24 @@ fun SosSection(onOpenSafety: (() -> Unit)? = null, vm: SafetyViewModel = hiltVie
             }
             else -> Unit
         }
+        if (note != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                note, style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(12.dp),
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = { confirm = true },
-            colors = ButtonDefaults.buttonColors(containerColor = SosRed, contentColor = Color.White),
+            enabled = !sending,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = SosRed, contentColor = Color.White,
+                disabledContainerColor = SosRed.copy(alpha = 0.55f), disabledContentColor = Color.White,
+            ),
             shape = PillShape,
             modifier = Modifier.fillMaxWidth().height(48.dp),
-        ) { Text("Send SOS", fontWeight = FontWeight.SemiBold) }
+        ) { Text(if (sending) "Sending…" else "Send SOS", fontWeight = FontWeight.SemiBold) }
         if (onOpenSafety != null) {
             GhostButton("Panic button and SOS checks", onClick = onOpenSafety, modifier = Modifier.align(Alignment.CenterHorizontally))
         }
@@ -128,11 +153,11 @@ fun SosSection(onOpenSafety: (() -> Unit)? = null, vm: SafetyViewModel = hiltVie
 private fun SosConfirmDialog(s: SafetyUi, onSend: (String, Boolean) -> Unit, onShareChange: (Boolean) -> Unit, onRefresh: () -> Unit, onCancel: () -> Unit) {
     var msg by remember { mutableStateOf("") }
     val sending = s.attempt is SosSender.Attempt.Sending
-    val snackbar = LocalSnackbar.current
-    val scope = rememberCoroutineScope()
+    // Shown in the dialog: a snackbar would sit behind it and behind the profile sheet.
+    var blocked by remember { mutableStateOf<String?>(null) }
     val allowLocation = rememberLocationAccessFlow(
-        s.partnerName, requireNotifications = false, onReady = onRefresh,
-        onBlocked = { m -> scope.launch { snackbar.showSnackbar(m) } },
+        s.partnerName, requireNotifications = false, onReady = { blocked = null; onRefresh() },
+        onBlocked = { m -> blocked = m },
     )
     val share = s.prefs.shareLocationWithSos && s.access.permitted
     AlertDialog(
@@ -151,6 +176,9 @@ private fun SosConfirmDialog(s: SafetyUi, onSend: (String, Boolean) -> Unit, onS
                     Text("Also share my live location for 2 hours", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     if (s.access.permitted) Switch(checked = s.prefs.shareLocationWithSos, onCheckedChange = onShareChange)
                     else TextButton(onClick = allowLocation) { Text("Allow location") }
+                }
+                blocked?.takeIf { !s.access.permitted }?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
             }
         },

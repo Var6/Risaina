@@ -31,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -137,9 +136,10 @@ fun SafetyScreen(onBack: () -> Unit, vm: SafetyViewModel = hiltViewModel()) {
         HorizontalDivider(Modifier.padding(vertical = 16.dp))
         SectionHeader("If an SOS isn't getting through")
         Spacer(Modifier.height(8.dp))
-        var phone by remember(s.prefs.partnerPhone) { mutableStateOf(s.prefs.partnerPhone) }
+        // Bound to the view model's snapshot state, never to the saved value coming back through the
+        // combined state flow: that arrives late and used to put an older number back while typing.
         RisainaTextField(
-            phone, { phone = it; vm.setPartnerPhone(it) }, "${s.partnerName}'s phone number",
+            vm.partnerPhoneInput, vm::setPartnerPhone, "${s.partnerName}'s phone number",
             supporting = "Kept only on this phone. Used for Call and Text when an SOS isn't reaching them.",
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         )
@@ -178,7 +178,10 @@ fun PanicScreen(onClose: () -> Unit, vm: SafetyViewModel = hiltViewModel()) {
         Spacer(Modifier.height(16.dp))
         PanicPanel(s, vm)
         Spacer(Modifier.height(8.dp))
-        GhostButton(if (s.attempt is SosSender.Attempt.Idle) "Cancel" else "Close", onClick = onClose)
+        val untouched = PanicPanelMode.of(s.attempt, s.sos, Instant.now()) == PanicPanelMode.Form(sending = false)
+        // Closing is reading the result: clear it, so it never stands in for the hold button the next
+        // time this screen opens (an alert still being sent is left alone by resetAttempt).
+        GhostButton(if (untouched) "Cancel" else "Close", onClick = { vm.resetAttempt(); onClose() })
     }
 }
 
@@ -193,16 +196,16 @@ internal fun PanicPanel(s: SafetyUi, vm: SafetyViewModel) {
         onReady = { vm.refreshDevice() },
         onBlocked = { m -> scope.launch { snackbar.showSnackbar(m) } },
     )
+    val now = rememberNow(15_000)
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        when (val a = s.attempt) {
-            is SosSender.Attempt.Sent -> {
-                val sos = s.sos.firstOrNull { it.id == a.sosId }
-                if (sos != null) SosStatusPanel(sos, s, vm) else Text("Alert sent", style = MaterialTheme.typography.titleMedium)
+        when (val mode = PanicPanelMode.of(s.attempt, s.sos, now)) {
+            is PanicPanelMode.Sent -> {
+                SosStatusPanel(mode.sos, s, vm)
                 GhostButton("Done", onClick = vm::resetAttempt)
             }
-            is SosSender.Attempt.NotSent -> NotSentPanel(a, s, onBack = vm::resetAttempt, context = context)
-            else -> {
-                val sending = a is SosSender.Attempt.Sending
+            is PanicPanelMode.NotSent -> NotSentPanel(mode.attempt, s, onBack = vm::resetAttempt, context = context)
+            is PanicPanelMode.Form -> {
+                val sending = mode.sending
                 s.myActive?.takeIf { it.resolvedAt == null }?.let { active ->
                     SosStatusPanel(active, s, vm)
                     Spacer(Modifier.height(16.dp))

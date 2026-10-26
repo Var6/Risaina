@@ -79,6 +79,7 @@ import com.risaina.app.feature.ping.PingButtonState
 import com.risaina.app.feature.ping.PingComposerSheet
 import com.risaina.app.feature.ping.TouchPingButton
 import com.risaina.app.feature.ping.pill
+import kotlinx.coroutines.launch
 
 data class HomeNav(
     val settings: () -> Unit,
@@ -113,6 +114,19 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
 
     var pickStart by remember { mutableStateOf(false) }
     var showProfile by remember { mutableStateOf(false) }
+
+    // The safety banner, the partner's live location and the SOS section all share this screen's
+    // SafetyViewModel, and nothing here collected its messages, so "I'm safe now" failing offline (or
+    // Resume failing) showed nothing at all. One collector only: its channel hands each message to a
+    // single collector, so several would race. While the profile sheet is open the message shows in
+    // the sheet, because a snackbar would sit behind it.
+    val safetyVm: com.risaina.app.feature.safety.SafetyViewModel = hiltViewModel()
+    var sheetNote by remember { mutableStateOf<String?>(null) }
+    val profileOpen by androidx.compose.runtime.rememberUpdatedState(showProfile)
+    LaunchedEffect(safetyVm) {
+        safetyVm.messages.collect { m -> if (profileOpen) sheetNote = m else launch { snackbar.showSnackbar(m) } }
+    }
+    val closeProfile = { showProfile = false; sheetNote = null }
     Box(Modifier.fillMaxSize()) {
         HomeBackground(s.background, s.favouriteImage)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
@@ -138,7 +152,7 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
             }
         }
         IncomingPingReveal(ping = s.incoming, partnerName = s.partner?.displayName, onReply = vm::replyToIncoming, onDismiss = vm::dismissIncoming, modifier = Modifier.align(Alignment.TopCenter))
-        if (showProfile) PartnerProfileSheet(s, onDismiss = { showProfile = false }, onOpenSafety = { showProfile = false; nav.safety() })
+        if (showProfile) PartnerProfileSheet(s, note = sheetNote, onDismiss = closeProfile, onOpenSafety = { closeProfile(); nav.safety() })
         if (pickStart) com.risaina.app.feature.timeline.DateDialog(null, { pickStart = false }) { vm.setStartDate(it) }
         if (s.showComposer) {
             PingComposerSheet(initialType = s.selectedType, initialTab = s.composerTab, sending = s.button is PingButtonState.Sending, onDismiss = vm::closeComposer, onSend = vm::sendCustom)
@@ -425,7 +439,7 @@ private fun RecentRow(item: ActivityItem) {
  * a separated emergency section. SOS lives here, never on Home, so it can't be hit by accident.
  */
 @Composable
-private fun PartnerProfileSheet(s: HomeUiState, onDismiss: () -> Unit, onOpenSafety: () -> Unit) {
+private fun PartnerProfileSheet(s: HomeUiState, note: String?, onDismiss: () -> Unit, onOpenSafety: () -> Unit) {
     val p = s.partner ?: return
     androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -468,7 +482,7 @@ private fun PartnerProfileSheet(s: HomeUiState, onDismiss: () -> Unit, onOpenSaf
             Spacer(Modifier.height(24.dp))
             com.risaina.app.feature.safety.PartnerLiveLocationSection()
             Spacer(Modifier.height(12.dp))
-            com.risaina.app.feature.sos.SosSection(onOpenSafety = onOpenSafety)
+            com.risaina.app.feature.sos.SosSection(onOpenSafety = onOpenSafety, note = note)
             Spacer(Modifier.height(24.dp))
         }
     }
