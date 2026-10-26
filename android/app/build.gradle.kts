@@ -130,6 +130,25 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
+// A release build is what goes to Google Play. Release builds allow HTTPS only (the cleartext
+// network config is debug-only), so a release pointing at the emulator default
+// http://10.0.2.2:8080 or a LAN server would install fine and then never reach the server.
+// Stop such a build instead of producing it.
+val checkReleaseApiBaseUrl by tasks.registering {
+    val url = Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }.getProperty("risaina.apiBaseUrl") ?: "(not set: http://10.0.2.2:8080)"
+    doLast {
+        if (!url.startsWith("https://")) {
+            throw GradleException(
+                "Release builds need risaina.apiBaseUrl=https://… in android/local.properties (now $url).",
+            )
+        }
+    }
+}
+tasks.named { it == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseApiBaseUrl) }
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
