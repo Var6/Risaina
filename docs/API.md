@@ -752,8 +752,11 @@ So an older app tapping on a newer kind of game, even a finished one, is always 
 **Events.** Still `game.updated`. New actions: `answered` (one trivia answer that didn't finish the player's
 set), `finished` (this player is done, the partner isn't), `matched` (This or That, both done) and `ended` (a
 draw called off). Whether an action is pushed is decided by the outbox push policy (delivery stream), not by
-the games module: `answered`, `cancelled` and `ended` are stored and sent live over the WebSocket but never
-pushed; the others are pushed to the partner.
+the games module. Under that policy `answered`, `cancelled` and `ended` are stored and sent live over the
+WebSocket but not pushed; the others are pushed to the partner. Until the policy is merged, every
+`game.updated` is pushed at high priority, these three included, and they show no notification. FCM may
+deprioritize an app whose high-priority pushes don't lead to a visible notification, so the games backend must
+not reach production before the delivery policy.
 
 **Rollout.** Deploy the tolerant-reader commit first, then the games backend, then the APK on both phones.
 Before any rollback of the games backend, cancel open games of the new kinds: an older build's

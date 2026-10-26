@@ -84,7 +84,9 @@ describe('catalog and create validation', () => {
       'this_or_that',
     ]);
     expect(c.trivia.categories).toHaveLength(10);
-    expect(c.trivia.attribution).toBe('Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened.');
+    expect(c.trivia.attribution).toBe(
+      'Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened.',
+    );
     expect(c.trivia.attributionUrl).toBe('https://opentdb.com');
     expect(c.trivia.licenseUrl).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
     expect(c.thisOrThat.promptCount).toBe(7);
@@ -332,7 +334,8 @@ describe('trivia duel', () => {
     expect(trivia.calls.at(-1)).toMatchObject({ count: 5, category: 23, difficulty: 'easy' });
     expect(g.quiz).toMatchObject({
       source: 'opentdb',
-      attribution: 'Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened.',
+      attribution:
+        'Questions from Open Trivia Database (opentdb.com), CC BY-SA 4.0. Category names shortened.',
       category: { id: 23, name: 'History' },
       requestedCategoryId: 23,
       difficulty: 'easy',
@@ -608,6 +611,63 @@ describe('this or that', () => {
     const now = (await raw(res.json().game.id))!.quiz!.items.map((i) => i.id);
     expect(now.some((x) => before.has(x))).toBe(false);
     await cancelOpen();
+  });
+});
+
+describe('one open game per couple under races', () => {
+  it('concurrent creates of different kinds by both players: exactly one 201', async () => {
+    await cancelOpen();
+    const tries: [Session, Record<string, unknown>][] = [
+      [a, { kind: 'tictactoe' }],
+      [b, { kind: 'trivia' }],
+      [a, { kind: 'this_or_that' }],
+      [b, { kind: 'rps' }],
+    ];
+    const res = await Promise.all(tries.map(([s, body]) => post(s, '/games', body)));
+    const created = res.filter((r) => r.statusCode === 201);
+    expect(created).toHaveLength(1);
+    const winner = created[0]!.json().game;
+    for (const r of res.filter((x) => x.statusCode !== 201)) {
+      expect(r.statusCode).toBe(409);
+      expect(r.json().error.code).toBe('game_in_progress');
+    }
+    expect(await t.db.games.countDocuments({ coupleId, open: true })).toBe(1);
+    expect((await t.db.games.findOne({ coupleId, open: true }))!._id.toHexString()).toBe(winner.id);
+    await cancelOpen();
+  });
+
+  it('/play and /end draw on the same per-user write budget as creating a game', async () => {
+    const t2 = await createTestApp({ envOverrides: { RATE_LIMIT_GAME_WRITES_PER_MIN: '2' } });
+    try {
+      const x = await register(t2.app, 'Xo');
+      const y = await register(t2.app, 'Yo');
+      await pair(t2.app, x, y);
+      const p = (s: Session, url: string, payload?: Record<string, unknown>) =>
+        t2.app.inject({
+          method: 'POST',
+          url: `${API}${url}`,
+          headers: bearer(s),
+          ...(payload ? { payload } : {}),
+        });
+      const g = await p(x, '/games', { kind: 'tictactoe' }); // x: 1 of 2
+      expect(g.statusCode).toBe(201);
+      const id = g.json().game.id;
+      // y plays X and moves first, so x's move is refused, but it still counts: x: 2 of 2.
+      expect((await p(x, `/games/${id}/play`, { kind: 'tictactoe', cell: 0 })).json().error.code).toBe(
+        'not_your_turn',
+      );
+      const xEnd = await p(x, `/games/${id}/end`);
+      expect(xEnd.statusCode).toBe(429);
+      expect(xEnd.json().error.code).toBe('rate_limited');
+      // y has their own budget: /play and /end use it up the same way.
+      expect((await p(y, `/games/${id}/play`, { kind: 'tictactoe', cell: 4 })).statusCode).toBe(200);
+      expect((await p(y, `/games/${id}/end`)).json().error.code).toBe('invalid_game_state');
+      const yPlay = await p(y, `/games/${id}/play`, { kind: 'tictactoe', cell: 0 });
+      expect(yPlay.statusCode).toBe(429);
+      expect(yPlay.headers['retry-after']).toBeDefined();
+    } finally {
+      await t2.close();
+    }
   });
 });
 
