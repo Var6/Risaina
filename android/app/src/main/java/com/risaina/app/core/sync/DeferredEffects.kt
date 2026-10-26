@@ -1,6 +1,7 @@
 package com.risaina.app.core.sync
 
 import android.content.Context
+import androidx.core.content.edit
 import com.risaina.app.core.common.AppError
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.data.CoupleRepository
@@ -32,10 +33,10 @@ class DeferredEffects @Inject constructor(
 
     private val queue = DeferredQueue(object : DeferredQueue.Storage {
         override fun items(): Set<String> = prefs.getStringSet(K_QUEUE, emptySet()).orEmpty().toSet()
-        override fun saveItems(items: Set<String>) { prefs.edit().putStringSet(K_QUEUE, items).apply() }
+        override fun saveItems(items: Set<String>) = prefs.edit { putStringSet(K_QUEUE, items) }
         override fun failures(item: String): Int = prefs.getInt(K_FAILS + item, 0)
-        override fun saveFailures(item: String, count: Int) {
-            prefs.edit().apply { if (count <= 0) remove(K_FAILS + item) else putInt(K_FAILS + item, count) }.apply()
+        override fun saveFailures(item: String, count: Int) = prefs.edit {
+            if (count <= 0) remove(K_FAILS + item) else putInt(K_FAILS + item, count)
         }
     })
 
