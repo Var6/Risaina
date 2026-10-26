@@ -275,6 +275,9 @@ class LiveLocationService : Service() {
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            // Its own group: without one, Android 15+ bundles it with Risaina's other notifications and
+            // the bundle hides the Stop sharing button until the person expands it.
+            .setGroup(LOCATION_GROUP)
             .setContentIntent(open)
             .setDeleteIntent(action(ACTION_REPOST))
             .setColor(ContextCompat.getColor(this, R.color.rosewood))
@@ -299,6 +302,7 @@ class LiveLocationService : Service() {
 
     companion object {
         const val NOTIFICATION_ID = 9200
+        const val LOCATION_GROUP = "risaina_live_location"
         /** After a 401 in a panic share: wait this long before trying again (each try also refreshes the token). */
         private const val SIGN_IN_RETRY_MS = 60_000L
         private const val ACTION_START = "com.risaina.app.location.START"

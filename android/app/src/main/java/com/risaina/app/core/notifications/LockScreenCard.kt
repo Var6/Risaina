@@ -89,6 +89,7 @@ class LockScreenCard @Inject constructor(
         const val CHANNEL = "lock_card_v2"
         private const val OLD_CHANNEL = "lock_card"
         private const val ID = 7171
+        private const val GROUP = "risaina_lock_card"
         internal const val PREFS = "lock_card"
         private const val K_POSTED = "posted_key"
         internal const val K_DISMISSED = "dismissed_key"
@@ -160,6 +161,8 @@ class LockScreenCard @Inject constructor(
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            // Its own group, so Android 15+ never bundles the card with Risaina's other notifications.
+            .setGroup(GROUP)
             .setContentIntent(open)
             .setDeleteIntent(onDismiss)
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
