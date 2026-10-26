@@ -134,3 +134,37 @@ the app process killed for every "closed app" check. Backend 177/177 tests; Andr
 - ✅ Home shows gifts as "A gift" with their line, not "A ping"/"Custom". New game cards scroll into view; read receipts no longer mark the wrong messages when game cards are in the chat.
 - ⚠️ Atlas: the DB user cannot change an existing collection's validator (`collMod`). Production had no `games` collection, so it is created with the new rules on deploy. Grant `dbAdmin` to avoid this class of problem.
 - ❌ Not verified on real phones: OS lock-screen widgets (this emulator's launcher has them disabled; the opt-in lock-screen card works everywhere); vibration on Realme/ColorOS, which may need "Allow background activity" (the Widgets screen links to App info).
+
+## Games stream: tic-tac-toe, trivia duel, This or That (2026-10-26)
+Built on the existing server-authoritative games engine (no library fits: Google Play Games turn-based
+multiplayer was shut down in 2020, and boardgame.io and Colyseus each need their own server, transport and
+storage). Backend 225/225 tests; Android 75 unit tests, lint 0 errors. Not yet run on the emulator or on phones.
+
+- ✅ **Game picker**: the 🎲 composer button opens a sheet with four games (from `GET /games/catalog`; an older
+  server answers 404 and only Stone Paper Scissors Thread is offered). Trivia: category and difficulty chips;
+  This or That: a deck; competitive games: "Loser does a truth or dare 😈" switch (off = just for fun). With a
+  game open it says so ("Go to it" / "End it"), and starting another asks "End the current game?" first.
+- ✅ **Tic-tac-toe**: the invited partner plays X and moves first; X swaps on each rematch. A draw offers
+  "Play again" or "Call it a draw". Two quick taps can never both land.
+- ✅ **Trivia duel**: 5 questions fetched by the server from Open Trivia Database (curated categories only, "any"
+  picks one at random each round), with an in-house fallback set when it is slow, down or rate-limited. Questions
+  arrive one at a time, the right answer only after you answer, your partner's answers and score only once you
+  have both finished (never after a cancel). The CC BY-SA 4.0 credit links to opentdb.com on the card and in
+  Settings → About.
+- ✅ **This or That**: 7 curated PG prompts, picked blind and sent in one go (one event and one push per
+  player), then "In sync: n of 7".
+- ✅ Winners of tic-tac-toe and trivia get the existing blind truth or dare; GameCard.kt split into
+  `feature/messages/games/` (one section per kind plus a shared prize section).
+- ✅ Notifications: per-game texts ("Bea challenged you to tic-tac-toe ❌⭕ You go first"); a cancelled or
+  called-off game removes a stale "Your turn"; tic-tac-toe moves update the notification without ringing again;
+  old game events are not re-announced after a sign-in or re-pair; a partner's single trivia answer updates the
+  card from the event without a network call, so the "finished" push is handled quickly.
+- ✅ Compatibility: older apps keep working with `{ kind: 'rps' }` and `/move`; on a new kind of game they get
+  "Update Risaina to play this game". Only new optional fields are stored, every required field is still
+  written, and a test checks every new document against a frozen copy of the deployed `games` validator.
+- ⚠️ **Rollout**: deploy the tolerant-reader commit ("Games: tolerant reader for unknown game kinds") on its own
+  first, then the rest of the backend, then install the APK on both phones. Before any rollback of the games
+  backend, cancel open tic-tac-toe, trivia or This or That games (an older build would let them block new games).
+- ⚠️ Push per action is the delivery stream's policy: `answered`, `cancelled` and `ended` must not be pushed.
+- ❌ Not verified: anything on a device (picker, cards, notifications with the app closed); live Open Trivia DB
+  from Render; `GameCardsTest` (instrumented) compiles but was not run.
