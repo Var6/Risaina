@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -53,12 +55,12 @@ class EventSyncManager @Inject constructor(
 
     /** Shared syncs run here, not in a caller that may give up (see [SingleFlight]). */
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val flights = SingleFlight<SyncOptions, AppResult<List<Incoming>>>(syncScope) { a, b ->
-        SyncOptions(notify = a.notify || b.notify, fetchMedia = a.fetchMedia || b.fetchMedia)
+    private val flights = SingleFlight<SyncOptions, AppResult<List<Incoming>>>(syncScope, stallAfterMs = FLIGHT_STALL_MS) { a, b ->
+        SyncOptions(notify = a.notify || b.notify)
     }
 
-    /** [notify]: post notifications for new items. [fetchMedia]: download a new widget photo too. */
-    data class SyncOptions(val notify: Boolean, val fetchMedia: Boolean)
+    /** [notify]: post notifications for new items. */
+    data class SyncOptions(val notify: Boolean)
 
     val socketState: StateFlow<SocketState> = socket.state
 
@@ -69,24 +71,42 @@ class EventSyncManager @Inject constructor(
     fun start(scope: CoroutineScope) {
         if (socketJob?.isActive == true) return
         socketJob = scope.launch {
+            val socketScope = this
+            // True once the replay after (re)connecting is done: from then on events are live.
+            var live = false
+            // Network follow-ups and the photo run beside the socket, never inside the collector:
+            // each one is a network call, and new messages must keep appearing meanwhile. A drain
+            // already under way (the SyncWorker's) is not waited for; it picks up what was queued.
+            fun launchFollowUps() = socketScope.launch {
+                try {
+                    widgetSnapshotUpdater.completeMedia()
+                    deferred.drain(wait = false)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                }
+            }
             socket.connect(sinceProvider = { sessionStore.lastEventSeq.first() }).collect { msg ->
                 when (msg) {
                     // Sent before the replay starts: when the cursor is 0, everything up to latestSeq
                     // is history (ReplayGuard).
-                    is SocketMessage.Ready -> sessionStore.setBootstrapUntilSeqIfFresh(msg.latestSeq)
+                    is SocketMessage.Ready -> { live = false; sessionStore.setBootstrapUntilSeqIfFresh(msg.latestSeq) }
                     is SocketMessage.Event -> {
-                        val mark = sessionStore.bootstrapUntilSeq.first()
-                        val results = applyMutex.withLock { reducer.apply(msg.event, ReplayGuard.isReplay(msg.event.seq, mark)) }
-                        if (results.isNotEmpty()) {
-                            // A replayed old gift must not buzz or pop the reveal as if it just arrived.
-                            val fresh = ReplayGuard.announceable(results, msg.event.seq, mark)
-                            if (fresh.any { it is Incoming.NewPing }) haptics.arrival()
-                            fresh.forEach { _incoming.tryEmit(it) }
-                            widgetSnapshotUpdater.recompute()
-                        }
-                        deferred.drain()
+                        val changed = applySocketEvent(
+                            msg.event, sessionStore.bootstrapUntilSeq.first(),
+                            apply = { e, replay -> applyMutex.withLock { reducer.apply(e, replay) } },
+                            reveal = { _incoming.tryEmit(it) },
+                            buzz = haptics::arrival,
+                        )
+                        if (changed) widgetSnapshotUpdater.recompute(fetchMedia = false)
+                        // During the replay, follow-ups wait for Synced: once, not once per event.
+                        if (live) launchFollowUps()
                     }
-                    SocketMessage.Synced -> widgetSnapshotUpdater.recompute()
+                    SocketMessage.Synced -> {
+                        live = true
+                        widgetSnapshotUpdater.recompute(fetchMedia = false)
+                        launchFollowUps()
+                    }
                     SocketMessage.Revoked -> coupleRepository.refreshMe()
                 }
             }
@@ -104,8 +124,9 @@ class EventSyncManager @Inject constructor(
      * for one that fetched before its event existed (see [SingleFlight]).
      * With [notify], each new item's notification is posted as soon as its event is applied, before
      * the widgets are recomputed (see [runPagedSync]), so a caller's deadline or a later error never
-     * loses one. [fetchMedia] = false leaves a new photo's download to a later sync (the worker), so
-     * text, pings and gifts reach the widgets first.
+     * loses one. With [fetchMedia], a new widget photo is downloaded after the sync, by this caller
+     * and outside the shared run, so a slow photo never holds up the syncs of later pushes; the push
+     * handler passes false and fetches it in [finishAfterPush] with what is left of its budget.
      */
     suspend fun syncOnce(
         notify: Boolean = false,
@@ -113,7 +134,16 @@ class EventSyncManager @Inject constructor(
         notBefore: Long = System.currentTimeMillis(),
     ): AppResult<List<Incoming>> {
         if (sessionStore.current() == null) return AppResult.Success(emptyList())
-        return flights.run(SyncOptions(notify, fetchMedia), notBefore) { flight -> runSync(flight) }
+        val result = flights.run(SyncOptions(notify), notBefore) { flight -> runSync(flight) }
+        if (fetchMedia) {
+            try {
+                widgetSnapshotUpdater.completeMedia()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+            }
+        }
+        return result
     }
 
     private suspend fun runSync(flight: SingleFlight.Flight<SyncOptions>): AppResult<List<Incoming>> {
@@ -124,13 +154,14 @@ class EventSyncManager @Inject constructor(
             currentMark = { sessionStore.bootstrapUntilSeq.first() },
             apply = { e, replay -> applyMutex.withLock { reducer.apply(e, replay) } },
             announce = { item -> if (flight.options.notify) notifier.notifyIncoming(item) },
+            timeoutMs = FLIGHT_TIMEOUT_MS,
         )
         // Recompute even when nothing new arrived, or a page failed after others were applied: the
         // countdown's "days left" moves at midnight, and what was applied must reach the widgets.
-        // Its own try: a widget, DataStore or download error must not fail a sync whose events (and
-        // notifications) are already done.
+        // Its own try: a widget or DataStore error must not fail a sync whose events (and
+        // notifications) are already done. Local only; the photo is fetched outside the run.
         try {
-            widgetSnapshotUpdater.recompute(fetchMedia = flight.options.fetchMedia)
+            widgetSnapshotUpdater.recompute(fetchMedia = false)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {
@@ -150,12 +181,40 @@ class EventSyncManager @Inject constructor(
     suspend fun runDeferred() = deferred.drain()
 
     /**
+     * What the push handler does with the rest of its budget after the sync: download a new widget
+     * photo (and redraw), then send the queued receipts and refreshes. Both run in the sync scope, so
+     * the handler stops waiting on time even inside a non-cancellable token refresh; whatever is not
+     * done carries on in the process, and the SyncWorker covers it if the process is frozen. A drain
+     * the worker already runs is not waited for.
+     */
+    suspend fun finishAfterPush(budgetMs: Long) {
+        if (budgetMs <= 0) return
+        val work = syncScope.async {
+            try {
+                widgetSnapshotUpdater.completeMedia()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+            }
+            deferred.drain(wait = false)
+        }
+        try {
+            withTimeoutOrNull(budgetMs) { work.await() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+        }
+    }
+
+    /**
      * Right after a Doze wake the network can lag for a moment: the first page is retried once after
-     * a second instead of giving up on the whole sync. The first page also carries "this phone
-     * received a push" for delivery health (no separate request inside the push handler's window).
+     * a second instead of giving up on the whole sync. A page carries "this phone received a push"
+     * for delivery health whenever one is waiting (no separate request inside the push handler's
+     * window). Not only the first page: a sync that started a moment before the push was recorded
+     * still delivers it on its next page.
      */
     private suspend fun fetchPage(since: Long, first: Boolean): AppResult<EventsResponse> {
-        val ack = if (first) diagnostics.pendingAck() else null
+        val ack = diagnostics.pendingAck()
         val headers = ack?.let { ackHeaders(it) }.orEmpty()
         suspend fun once() = apiCall { if (headers.isEmpty()) api.events(since = since, limit = 200) else api.eventsWithAck(since, 200, headers) }
         var r = once()
@@ -175,5 +234,12 @@ class EventSyncManager @Inject constructor(
             "X-Risaina-Push" to "${ack.first}/${ack.second}",
             "X-Risaina-Health" to flags.joinToString(","),
         )
+    }
+
+    private companion object {
+        /** A whole shared sync: ten pages normally take a few seconds; past this it is stuck. */
+        const val FLIGHT_TIMEOUT_MS = 15_000L
+        /** A sync running this long is taken as stuck: a new push starts its own (see SingleFlight). */
+        const val FLIGHT_STALL_MS = 8_000L
     }
 }

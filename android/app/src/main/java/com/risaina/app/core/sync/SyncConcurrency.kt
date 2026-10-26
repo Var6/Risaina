@@ -14,6 +14,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Runs one [block] at a time and lets callers share a run instead of each starting their own. The
@@ -34,6 +35,13 @@ import kotlinx.coroutines.withContext
 class SingleFlight<O, T>(
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * A run that has gone on longer than this is taken as stuck (a dead connection waiting for its
+     * read timeout): a new caller then starts its own run at once instead of queueing behind it, so
+     * one hung sync cannot hold up every later push. The stuck run still ends at its own deadline.
+     * Two runs side by side are safe (the reducer skips events already applied), only wasteful.
+     */
+    private val stallAfterMs: Long = Long.MAX_VALUE,
     private val merge: (O, O) -> O,
 ) {
     /** One run. [options] may change until it starts, as callers join. */
@@ -62,7 +70,8 @@ class SingleFlight<O, T>(
                 last.job
             } else {
                 val flight = Flight(options)
-                val previous = last?.job
+                val stuck = started != null && clock() - started > stallAfterMs
+                val previous = last?.job?.takeUnless { stuck }
                 scope.async {
                     // join() never throws, so a failed earlier run does not fail this one.
                     previous?.join()
@@ -99,6 +108,10 @@ data class PagedSync(val items: List<Incoming>, val failure: AppResult.Failure?)
  * loop as a failure instead of an exception, so the caller still redraws the widgets for what was
  * applied; that event is retried by the next sync (the cursor did not move past it).
  *
+ * The whole loop has a deadline ([timeoutMs]): a sync is shared by every push that arrives while it
+ * runs (SingleFlight), so one that hangs on a dead connection must end, as a Timeout failure that
+ * keeps what was applied, instead of holding up the syncs queued behind it.
+ *
  * @param fetch page after `since`; `first` is true for the first page of this sync
  * @param bootstrapMark called with the first page when the sync started from cursor 0; returns the
  *   replay high-water mark to use (ReplayGuard)
@@ -111,15 +124,35 @@ suspend fun runPagedSync(
     apply: suspend (event: EventDto, replay: Boolean) -> List<Incoming>,
     announce: suspend (Incoming) -> Unit,
     maxPages: Int = 10,
+    timeoutMs: Long = Long.MAX_VALUE,
 ): PagedSync {
     val collected = mutableListOf<Incoming>()
+    var failure: AppResult.Failure? = null
+    val finished = withTimeoutOrNull(timeoutMs) {
+        failure = pagedLoop(since0, fetch, bootstrapMark, currentMark, apply, announce, maxPages, collected)
+        true
+    }
+    return PagedSync(collected, if (finished == null) AppResult.Failure(AppError.Timeout()) else failure)
+}
+
+/** The page loop of [runPagedSync]; returns the failure that stopped it, if any. */
+private suspend fun pagedLoop(
+    since0: Long,
+    fetch: suspend (since: Long, first: Boolean) -> AppResult<EventsResponse>,
+    bootstrapMark: suspend (latestSeq: Long) -> Long,
+    currentMark: suspend () -> Long,
+    apply: suspend (event: EventDto, replay: Boolean) -> List<Incoming>,
+    announce: suspend (Incoming) -> Unit,
+    maxPages: Int,
+    collected: MutableList<Incoming>,
+): AppResult.Failure? {
     var since = since0
     // At most [maxPages] pages per sync. (This used `repeat` with `return@repeat`, which only skips
     // to the next pass, so every sync made 10 requests even when it had already caught up.)
     for (pageNo in 0 until maxPages) {
         val page = when (val r = fetch(since, pageNo == 0)) {
             is AppResult.Success -> r.value
-            is AppResult.Failure -> return PagedSync(collected, r)
+            is AppResult.Failure -> return r
         }
         // Cursor 0 = a full replay (fresh sign-in or a new pairing): mark where history ends.
         val mark = if (since == 0L) bootstrapMark(page.latestSeq) else currentMark()
@@ -143,10 +176,31 @@ suspend fun runPagedSync(
                 }
                 null
             }
-            if (failure != null) return PagedSync(collected, failure)
+            if (failure != null) return failure
         }
         since = page.items.maxOf { it.seq }
         if (since >= page.latestSeq) break
     }
-    return PagedSync(collected, null)
+    return null
+}
+
+/**
+ * One event from the foreground socket. Replayed history (seq at or below the bootstrap mark, see
+ * ReplayGuard) is applied quietly: no buzz, no in-app reveal, so an old gift never pops up as new
+ * after a sign-in or re-pairing. Returns whether the event produced anything (the caller then
+ * redraws the widgets). Kept apart from the socket so it is unit-tested (SyncConcurrencyTest).
+ */
+suspend fun applySocketEvent(
+    event: EventDto,
+    mark: Long,
+    apply: suspend (event: EventDto, replay: Boolean) -> List<Incoming>,
+    reveal: (Incoming) -> Unit,
+    buzz: () -> Unit,
+): Boolean {
+    val results = apply(event, ReplayGuard.isReplay(event.seq, mark))
+    if (results.isEmpty()) return false
+    val fresh = ReplayGuard.announceable(results, event.seq, mark)
+    if (fresh.any { it is Incoming.NewPing }) buzz()
+    fresh.forEach(reveal)
+    return true
 }

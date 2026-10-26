@@ -13,6 +13,7 @@ import com.risaina.app.core.datastore.WidgetSnapshotStore
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.model.PingType
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDate
 import javax.inject.Inject
@@ -46,6 +47,8 @@ class WidgetSnapshotUpdater @Inject constructor(
     /** One recompute at a time, in call order (see the class comment). */
     private val serial = SerialRunner()
 
+    private val mediaMutex = kotlinx.coroutines.sync.Mutex()
+
     /** A new partner photo the widgets want but this phone has not downloaded yet. */
     @Volatile private var pendingPhotoMediaId: String? = null
 
@@ -73,8 +76,9 @@ class WidgetSnapshotUpdater @Inject constructor(
      * Two steps, so a note, ping or gift reaches the widgets at once even while a new photo is
      * downloading: first everything local is written and drawn (a photo that is not cached yet shows
      * as "Sent you a photo"), then, with [fetchMedia], the photo is downloaded (bounded) and the
-     * widgets are drawn again. The push handler passes false and calls [completeMedia] itself with
-     * what is left of its time budget.
+     * widgets are drawn again. Syncs pass false and fetch the photo after the shared sync
+     * (EventSyncManager.syncOnce, and the push handler's finishAfterPush with what is left of its
+     * time budget), so a slow download never holds up another push's sync.
      */
     suspend fun recompute(fetchMedia: Boolean = true) {
         serial.run { recomputeLocked() }
@@ -83,11 +87,17 @@ class WidgetSnapshotUpdater @Inject constructor(
 
     /**
      * Download the partner photo the last recompute could not show, then redraw. Returns false when
-     * there was nothing to fetch or it did not arrive in time (the next sync tries again).
+     * there was nothing to fetch or it did not arrive in time (the next sync tries again). One
+     * download at a time: the push handler, the worker and the socket can all ask for the same photo,
+     * and two writers of the same cache file would corrupt it; a later caller finds it cached.
      */
     suspend fun completeMedia(timeoutMs: Long = PHOTO_TIMEOUT_MS): Boolean {
-        val mediaId = pendingPhotoMediaId ?: return false
-        val fetched = withTimeoutOrNull(timeoutMs) { mediaRepository.ensureCached(mediaId, "image/jpeg") }
+        val fetched = withTimeoutOrNull(timeoutMs) {
+            mediaMutex.withLock {
+                val mediaId = pendingPhotoMediaId ?: return@withLock null
+                mediaRepository.ensureCached(mediaId, "image/jpeg")
+            }
+        }
         if (fetched !is AppResult.Success) return false
         serial.run { recomputeLocked() }
         return true

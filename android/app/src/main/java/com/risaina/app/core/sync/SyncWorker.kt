@@ -48,8 +48,8 @@ class SyncWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         diagnostics.recordWorkerRun()
         val notify = inputData.getBoolean(KEY_NOTIFY, true)
-        // Joins the push handler's sync if it is still running (one sync at a time), and also fetches
-        // a new widget photo, which the push handler leaves to this worker.
+        // Joins the push handler's sync if it is still running (one sync at a time), then fetches a
+        // new widget photo, which the push handler may not have had the time for.
         val result = syncManager.syncOnce(notify = notify, fetchMedia = true)
         // Receipts and game refreshes: network follow-ups kept out of the push handler's few seconds.
         runCatching { syncManager.runDeferred() }
@@ -93,23 +93,26 @@ class SyncWorker @AssistedInject constructor(
 
         /**
          * Called from the FCM service, first thing: must finish quickly, so it is expedited, and it is
-         * queued inside FCM's brief exemption for expedited work. A sync that is still waiting to run
-         * will fetch everything anyway, so a burst of pushes does not grow the chain.
+         * queued inside FCM's brief exemption for expedited work. See [pushEnqueue] for when a push
+         * adds nothing, appends, or replaces a sync that is waiting out a retry.
          */
         fun enqueueFromPush(context: Context) {
             val wm = WorkManager.getInstance(context)
-            val waiting = runCatching {
-                wm.getWorkInfosForUniqueWork(UNIQUE_PUSH).get(500, TimeUnit.MILLISECONDS)
-                    .any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }
-            }.getOrDefault(false)
-            if (waiting) return
+            val decision = runCatching {
+                pushEnqueue(wm.getWorkInfosForUniqueWork(UNIQUE_PUSH).get(500, TimeUnit.MILLISECONDS).map { it.state to it.runAttemptCount })
+            }.getOrDefault(PushEnqueue.APPEND)
+            val policy = when (decision) {
+                PushEnqueue.SKIP -> return
+                PushEnqueue.APPEND -> ExistingWorkPolicy.APPEND_OR_REPLACE
+                PushEnqueue.REPLACE -> ExistingWorkPolicy.REPLACE
+            }
             val req = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, Duration.ofSeconds(20))
                 .setInputData(workDataOf(KEY_NOTIFY to true))
                 .build()
-            wm.enqueueUniqueWork(UNIQUE_PUSH, ExistingWorkPolicy.APPEND_OR_REPLACE, req)
+            wm.enqueueUniqueWork(UNIQUE_PUSH, policy, req)
         }
 
         /** App start / resume: catch up silently (the UI will reveal new items itself). */
@@ -133,5 +136,34 @@ class SyncWorker @AssistedInject constructor(
             WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_PERIODIC)
             WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_PUSH)
         }
+    }
+}
+
+/** What a push does about the push-sync chain. */
+enum class PushEnqueue { SKIP, APPEND, REPLACE }
+
+/**
+ * Decides from the chain's work ([work]: state and runAttemptCount of each request). Pure
+ * (SyncWorkerEnqueueTest).
+ *
+ * - A request that has not started yet (ENQUEUED on its first attempt, or BLOCKED behind a running
+ *   one) will fetch everything when it runs, so a burst of pushes adds nothing: SKIP.
+ * - One is running and none waits: APPEND a fresh one behind it, because the running sync may have
+ *   fetched before this push's event existed.
+ * - Nothing runs and one waits out a retry backoff (ENQUEUED after an attempt): REPLACE it. WorkManager
+ *   reschedules a backed-off request as an ordinary delayed job, not expedited, and ColorOS or Doze can
+ *   hold that for hours; meanwhile only the worker sends delivered receipts and fetches widget photos.
+ *   A fresh request runs now, inside this push's exemption for expedited work.
+ * - Otherwise (nothing, or only finished work): APPEND, which starts a new chain.
+ */
+fun pushEnqueue(work: List<Pair<WorkInfo.State, Int>>): PushEnqueue {
+    val running = work.any { it.first == WorkInfo.State.RUNNING }
+    val notStarted = work.any { (state, attempts) -> state == WorkInfo.State.BLOCKED || (state == WorkInfo.State.ENQUEUED && attempts == 0) }
+    val backingOff = work.any { (state, attempts) -> state == WorkInfo.State.ENQUEUED && attempts > 0 }
+    return when {
+        running -> if (notStarted) PushEnqueue.SKIP else PushEnqueue.APPEND
+        backingOff -> PushEnqueue.REPLACE
+        notStarted -> PushEnqueue.SKIP
+        else -> PushEnqueue.APPEND
     }
 }

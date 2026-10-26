@@ -18,13 +18,16 @@ import javax.inject.Inject
  * Firebase gives this handler only a few seconds ("long enough to render a notification"), and
  * realme/ColorOS freezes or kills the app soon after it returns. So, in this order:
  *  1. an SOS rings (unchanged, first);
- *  2. the safety-net SyncWorker is queued, inside FCM's short exemption for expedited work, so it
+ *  2. "this phone received a push" is recorded (a cheap local write), before the worker below can
+ *     start a sync whose first request should carry it to the server;
+ *  3. the safety-net SyncWorker is queued, inside FCM's short exemption for expedited work, so it
  *     survives even if the process dies below;
- *  3. notification first: network-free alerts for a ping or a message;
- *  4. a sync bounded by a short budget; each event's notification is posted as it is applied, and
+ *  4. notification first: network-free alerts for a ping or a message;
+ *  5. a sync bounded by a short budget; each event's notification is posted as it is applied, and
  *     the widgets are drawn directly at the end (not queued). The sync is shared with the worker
- *     and keeps running if this handler stops waiting; the photo download, receipts and game
- *     refreshes are left to the worker.
+ *     and keeps running if this handler stops waiting;
+ *  6. with whatever is left of the budget: a new widget photo, then the queued receipts and game
+ *     refreshes. The worker finishes anything that does not fit.
  * The reducer de-duplicates by seq, so the worker and this handler never notify twice.
  */
 @AndroidEntryPoint
@@ -48,9 +51,12 @@ class RisainaMessagingService : FirebaseMessagingService() {
         val receivedAt = System.currentTimeMillis()
         val type = message.data["type"]
         val isTest = type == DeliveryDiagnostics.TEST_PUSH_TYPE
+        // Also queues "this phone received a push", which rides on the next sync request. Before the
+        // worker is queued: WorkManager starts it in this process at once, and its first request
+        // must not leave without the ack (the handler would then share that sync and the ack would
+        // wait for the next one, maybe the hourly sync).
+        runCatching { diagnostics.recordPush(type, message.priority, message.originalPriority, message.sentTime) }
         if (!isTest) runCatching { SyncWorker.enqueueFromPush(applicationContext) }
-        // Also queues "this phone received a push", which rides on the sync's first request.
-        diagnostics.recordPush(type, message.priority, message.originalPriority, message.sentTime)
         runCatching { runBlocking { handle(type, message.data["ref"]?.takeIf { it.isNotBlank() }, isTest, receivedAt) } }
     }
 
@@ -62,25 +68,32 @@ class RisainaMessagingService : FirebaseMessagingService() {
             type == "message.created" && ref != null -> runCatching { notifier.notifyMessageArrivedFast(ref) }
         }
         val start = SystemClock.elapsedRealtime()
-        val result = withTimeoutOrNull(SYNC_BUDGET_MS) {
+        val result = withTimeoutOrNull(BUDGET_MS) {
             syncManager.syncOnce(notify = true, fetchMedia = false, notBefore = receivedAt)
         }
+        val took = SystemClock.elapsedRealtime() - start
         diagnostics.recordSync(
             when (result) {
                 null -> "timeout"
                 is AppResult.Success -> "ok"
                 is AppResult.Failure -> "error: ${result.error::class.simpleName}"
             },
-            SystemClock.elapsedRealtime() - start,
+            took,
         )
+        // Only after a sync that worked (a failed one means no network for these either), and not
+        // with a sliver of time left: the worker does it anyway.
+        val left = BUDGET_MS - took
+        if (result is AppResult.Success && left >= MIN_LEFTOVER_MS) syncManager.finishAfterPush(left)
     }
 
     private companion object {
         /**
-         * How long this handler waits for the shared sync (fetch, apply, notify, draw). With cold start
-         * that keeps the handler near 4-5 s; the sync itself carries on in the process if it needs
-         * longer, and the worker finishes what remains.
+         * How long this handler spends after the quick alert: the shared sync (fetch, apply, notify,
+         * draw), then the photo and receipts if time is left. With cold start that keeps the handler
+         * near 4-5 s; the work itself carries on in the process if it needs longer, and the worker
+         * finishes what remains.
          */
-        const val SYNC_BUDGET_MS = 4_000L
+        const val BUDGET_MS = 4_000L
+        const val MIN_LEFTOVER_MS = 500L
     }
 }

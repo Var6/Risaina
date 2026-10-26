@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,8 +41,9 @@ class SyncConcurrencyTest {
         var failApplyAt: Long? = null
         var applyDelayMs = 0L
 
-        suspend fun run(since0: Long = 5, mark: Long = 0) = runPagedSync(
+        suspend fun run(since0: Long = 5, mark: Long = 0, timeoutMs: Long = Long.MAX_VALUE) = runPagedSync(
             since0 = since0,
+            timeoutMs = timeoutMs,
             fetch = { _, _ -> pages[fetches++].invoke() },
             bootstrapMark = { mark },
             currentMark = { mark },
@@ -96,6 +98,17 @@ class SyncConcurrencyTest {
         assertEquals(listOf(item(3)), r.items)
     }
 
+    @Test fun aSyncThatHangsEndsAtItsOwnDeadlineKeepingWhatItApplied() = runTest {
+        // The second request hangs on a dead connection; the shared sync must not hold up the
+        // syncs of later pushes until the 30 s read timeout.
+        val h = Harness(listOf({ page(6, 7, latest = 9) }, { delay(60_000); page(8, 9, latest = 9) }))
+        val r = h.run(timeoutMs = 15_000)
+        assertEquals(15_000L, testScheduler.currentTime)
+        assertEquals(listOf(item(6), item(7)), r.items)
+        assertEquals(listOf(item(6), item(7)), h.announced)
+        assertTrue(r.failure?.error is AppError.Timeout)
+    }
+
     @Test fun stopsAfterOneRequestOnceCaughtUp() = runTest {
         val h = Harness(listOf({ page(6, latest = 6) }, { error("must not fetch again") }))
         assertNull(h.run().failure)
@@ -105,9 +118,10 @@ class SyncConcurrencyTest {
     // --- (2) concurrent syncs share one request ----------------------------------------------------
 
     /** Like EventSyncManager's: a supervisor scope (a failed run stays in its Deferred), on test time. */
-    private fun TestScope.flights() = SingleFlight<Set<String>, Int>(
+    private fun TestScope.flights(stallAfterMs: Long = Long.MAX_VALUE) = SingleFlight<Set<String>, Int>(
         CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
         clock = { testScheduler.currentTime },
+        stallAfterMs = stallAfterMs,
     ) { a, b -> a + b }
 
     @Test fun callersThatArriveTogetherShareOneRun() = runTest {
@@ -174,6 +188,33 @@ class SyncConcurrencyTest {
         assertTrue("the sync goes on for the worker and the widgets", finished)
     }
 
+    @Test fun aStuckRunDoesNotHoldUpALaterPush() = runTest {
+        val flights = flights(stallAfterMs = 8_000)
+        // A sync started at t=0 waits on a dead connection.
+        val stuck = async { flights.run(emptySet(), notBefore = 0) { delay(30_000); 1 } }
+        runCurrent()
+        // At t=10 s a push arrives: its handler has 4 s, so it starts its own sync at once.
+        delay(10_000)
+        val push = async { flights.run(setOf("notify"), notBefore = 10_000) { 2 } }
+        runCurrent()
+        assertTrue("the push's sync ran without waiting for the stuck one", push.isCompleted)
+        assertEquals(2, push.await())
+        assertEquals(1, stuck.await())
+    }
+
+    @Test fun aSlowButNotStuckRunStillQueuesTheNextOne() = runTest {
+        val flights = flights(stallAfterMs = 8_000)
+        var running = 0
+        var overlapped = false
+        val block: suspend (SingleFlight.Flight<Set<String>>) -> Int = { running++; if (running > 1) overlapped = true; delay(6_000); running--; 1 }
+        val first = async { flights.run(emptySet(), notBefore = 0, block = block) }
+        runCurrent()
+        delay(3_000)
+        val second = async { flights.run(emptySet(), notBefore = 3_000, block = block) }
+        first.await(); second.await()
+        assertFalse(overlapped)
+    }
+
     @Test fun aFailedRunDoesNotFailTheOneQueuedBehindIt() = runTest {
         val flights = flights()
         val gate = CompletableDeferred<Unit>()
@@ -185,6 +226,54 @@ class SyncConcurrencyTest {
         gate.complete(Unit)
         assertTrue(first.await().isFailure)
         assertEquals(7, second.await())
+    }
+
+    // --- the foreground socket and the replay mark --------------------------------------------------
+
+    private val oldGift = Incoming.NewPing(
+        com.risaina.app.core.model.Ping(
+            id = "p1", localKey = "k1", coupleId = "c1", senderId = "her", recipientId = "me",
+            type = com.risaina.app.core.model.PingType.HUG, emoji = "🌹", message = "gift:rose",
+            status = com.risaina.app.core.model.PingStatus.ACCEPTED, createdAt = java.time.Instant.parse("2026-10-01T08:00:00Z"),
+            deliveredAt = null, seenAt = null,
+        ),
+    )
+
+    @Test fun theSocketAppliesReplayedHistoryWithoutRevealOrBuzz() = runTest {
+        // After a sign-in the socket replays the couple's history: an old gift (seq 40, mark 120).
+        val revealed = mutableListOf<Incoming>()
+        var buzzes = 0
+        var appliedAsReplay: Boolean? = null
+        val changed = applySocketEvent(
+            event(40), mark = 120,
+            apply = { _, replay -> appliedAsReplay = replay; listOf(oldGift) },
+            reveal = { revealed += it }, buzz = { buzzes++ },
+        )
+        assertTrue("still applied, so the widgets redraw", changed)
+        assertEquals("the reducer is told: no delivered receipt for history", true, appliedAsReplay)
+        assertTrue(revealed.isEmpty())
+        assertEquals(0, buzzes)
+    }
+
+    @Test fun theSocketRevealsAndBuzzesForANewPing() = runTest {
+        val revealed = mutableListOf<Incoming>()
+        var buzzes = 0
+        var appliedAsReplay: Boolean? = null
+        val changed = applySocketEvent(
+            event(121), mark = 120,
+            apply = { _, replay -> appliedAsReplay = replay; listOf(oldGift) },
+            reveal = { revealed += it }, buzz = { buzzes++ },
+        )
+        assertTrue(changed)
+        assertEquals(false, appliedAsReplay)
+        assertEquals(listOf<Incoming>(oldGift), revealed)
+        assertEquals(1, buzzes)
+    }
+
+    @Test fun aSocketEventWithNothingToShowChangesNothing() = runTest {
+        var buzzes = 0
+        assertFalse(applySocketEvent(event(5), mark = 0, apply = { _, _ -> emptyList() }, reveal = {}, buzz = { buzzes++ }))
+        assertEquals(0, buzzes)
     }
 
     // --- (3) a slow recompute never overwrites a newer one -----------------------------------------
