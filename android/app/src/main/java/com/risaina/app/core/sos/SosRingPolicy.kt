@@ -79,6 +79,26 @@ object SosRingPolicy {
         return base.take(140 - note.length - 1).trimEnd() + " " + note
     }
 
+    /**
+     * One SOS of a ring was acknowledged on another device, or its sender said they are safe. Several
+     * SOS can ring together (a second one joins the first), so only that one leaves the ring: returns
+     * the ring without it, or null when nothing still open is left and the ring should stop.
+     * [sosId] and [seq] name the handled SOS (with its other key when known); [isOpen] says whether a
+     * remaining id or seq is still neither acknowledged nor resolved.
+     */
+    fun withoutHandled(
+        state: RingState,
+        sosId: String?,
+        seq: Long?,
+        isOpen: (sosId: String?, seq: Long?) -> Boolean,
+    ): RingState? {
+        val ids = state.sosIds - setOfNotNull(sosId)
+        val seqs = state.seqs - setOfNotNull(seq)
+        if (state.test) return null
+        val open = ids.any { isOpen(it, null) } || seqs.any { isOpen(null, it) }
+        return if (open) state.copy(sosIds = ids, seqs = seqs) else null
+    }
+
     private fun parse(iso: String?): Instant? = iso?.let { runCatching { Instant.parse(it) }.getOrNull() }
 }
 

@@ -89,18 +89,12 @@ class SosLocalState @Inject constructor(@ApplicationContext context: Context) {
         get() = prefs.getInt(K_RAISED_VOLUME, -1)
         set(v) = prefs.edit { putInt(K_RAISED_VOLUME, v) }
 
-    /** Wall-clock end of the current ring (0 when silent). In the past on start = the ring died with the process. */
-    var ringingUntil: Long
-        get() = prefs.getLong(K_RINGING_UNTIL, 0L)
-        set(v) = prefs.edit { putLong(K_RINGING_UNTIL, v) }
-
     fun clear() = synchronized(lock) { prefs.edit { remove(K_ENTRIES) } }
 
     private companion object {
         const val K_ENTRIES = "entries"
         const val K_SAVED_VOLUME = "saved_alarm_volume"
         const val K_RAISED_VOLUME = "raised_alarm_volume"
-        const val K_RINGING_UNTIL = "ringing_until"
         const val MAX_ENTRIES = 60
     }
 }

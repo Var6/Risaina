@@ -27,6 +27,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +52,13 @@ import javax.inject.Inject
 class SosAlarmActivity : ComponentActivity() {
     @Inject lateinit var controller: SosAlarmController
 
+    /**
+     * "I'm on it · see where they are" on a locked phone: the alarm stops at once (its state turns
+     * null), but this activity must stay until the unlock request answers. Finishing under the
+     * bouncer would drop the callback, or leave it to start the app from a finished activity.
+     */
+    private var pendingOpen by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 27) {
@@ -63,14 +72,21 @@ class SosAlarmActivity : ComponentActivity() {
         setContent {
             RisainaTheme(darkTheme = true) {
                 val state by controller.state.collectAsStateWithLifecycle()
-                LaunchedEffect(state == null) { if (state == null) finish() }
-                state?.let { s ->
+                LaunchedEffect(state == null, pendingOpen) { if (state == null && !pendingOpen) finish() }
+                val ringing = state
+                if (ringing != null) {
                     AlarmScreen(
-                        state = s,
+                        state = ringing,
                         locked = isLocked(),
                         onAck = { controller.acknowledge(); finish() },
-                        onAckAndOpen = { route -> controller.acknowledge(); openApp(route) },
+                        onAckAndOpen = { route ->
+                            pendingOpen = true // before the ack, which turns the state null
+                            controller.acknowledge()
+                            openApp(route)
+                        },
                     )
+                } else if (pendingOpen) {
+                    UnlockToOpen()
                 }
             }
         }
@@ -88,6 +104,9 @@ class SosAlarmActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 26 && km != null && km.isKeyguardLocked) {
             km.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
                 override fun onDismissSucceeded() = open()
+                // Not unlocked: the alarm is already acknowledged, so there is nothing left to show.
+                override fun onDismissCancelled() = finish()
+                override fun onDismissError() = finish()
             })
         } else {
             open()
@@ -101,6 +120,18 @@ class SosAlarmActivity : ComponentActivity() {
 }
 
 private val AlarmRed = Color(0xFFB71C1C)
+
+/** Shown behind the unlock prompt after "I'm on it · …" (the alarm has already stopped). */
+@Composable
+private fun UnlockToOpen() {
+    Column(
+        Modifier.fillMaxSize().background(AlarmRed).safeDrawingPadding().padding(28.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("Unlock your phone to open Risaina", style = MaterialTheme.typography.titleLarge, color = Color.White, textAlign = TextAlign.Center)
+    }
+}
 
 @Composable
 private fun AlarmScreen(state: RingState, locked: Boolean, onAck: () -> Unit, onAckAndOpen: (String) -> Unit) {

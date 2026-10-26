@@ -200,7 +200,10 @@ import kotlinx.serialization.json.JsonObject
     val panic: Boolean = false, val deliveredAt: String? = null, val resolvedAt: String? = null,
     val delivery: SosDeliveryDto? = null,
 )
-/** null fields are omitted (explicitNulls = false), so an ordinary SOS still works on an older server. */
+/**
+ * null fields are omitted (explicitNulls = false). A server without the safety fields refuses
+ * `panic` and `idempotencyKey` (strict body, 400): SosRepository.send then sends a plain SOS.
+ */
 @Serializable data class CreateSosRequest(val message: String? = null, val panic: Boolean? = null, val idempotencyKey: String? = null)
 @Serializable data class SosResponse(val sos: SosDto)
 @Serializable data class SosList(val items: List<SosDto>)

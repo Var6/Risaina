@@ -168,7 +168,6 @@ class SosAlarmService : Service() {
         var state = initial
         ringing = state
         controller.publish(state)
-        localState.ringingUntil = state.untilMs + 30_000
         if (!req.test) localState.markRang(req.sosId, req.seq)
         // Recorded before the volume is raised: the user's real setting is what explains a quiet SOS.
         val diagnostics = SosDiagnostics.capture(
@@ -227,7 +226,6 @@ class SosAlarmService : Service() {
         if (next.untilMs != current.untilMs) {
             timeout?.cancel()
             timeout = scope.launch { delay(next.untilMs - System.currentTimeMillis()); stopRinging(StopReason.TIMEOUT) }
-            localState.ringingUntil = next.untilMs + 30_000
         }
         // The id became known (push first, sync second): its own receipt, de-duplicated by the server.
         if (!req.test && req.sosId != null && req.sosId !in current.sosIds) {
@@ -246,6 +244,20 @@ class SosAlarmService : Service() {
                 // notifications denied: the alarm keeps ringing without a visible notification
             }
         }
+    }
+
+    /**
+     * One SOS of the ring was handled elsewhere (acknowledged on another device, or its sender is
+     * safe): only that one leaves the ring; a newer one that is still open keeps ringing.
+     */
+    internal fun dropHandled(sosId: String?, seq: Long?) {
+        val current = ringing ?: return
+        if (!current.matches(sosId, seq)) return
+        // Both keys of the handled SOS (the push knows only the seq, the sync also the id).
+        val id = sosId ?: seq?.let { localState.sosIdForSeq(it) }
+        val s = seq ?: sosId?.let { localState.entry(it, null)?.seq }
+        val next = SosRingPolicy.withoutHandled(current, id, s) { openId, openSeq -> !localState.isClosed(openId, openSeq) }
+        if (next == null) stopRinging(StopReason.HANDLED) else update(next)
     }
 
     internal fun acknowledge() {
@@ -271,7 +283,6 @@ class SosAlarmService : Service() {
         releaseAlarm()
         ringing = null
         controller.publish(null)
-        localState.ringingUntil = 0L
         if (reason == StopReason.TIMEOUT && state != null && !state.test) sosAlert.postMissed(state.partnerName, state.panic)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         foreground = false
@@ -372,7 +383,6 @@ class SosAlarmService : Service() {
             releaseAlarm()
             ringing = null
             controller.publish(null)
-            localState.ringingUntil = 0L
         }
         controller.detach(this)
         scope.cancel()

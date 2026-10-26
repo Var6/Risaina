@@ -35,6 +35,7 @@ class SosRetryWorker @AssistedInject constructor(
     private val liveLocation: LiveLocationController,
     private val sosAlert: SosAlert,
     private val coupleDao: CoupleDao,
+    private val sender: com.risaina.app.core.safety.SosSender,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -50,6 +51,7 @@ class SosRetryWorker @AssistedInject constructor(
         return when (val r = sosRepository.send(message, panic, key)) {
             is AppResult.Success -> {
                 if (panic) liveLocation.linkSos(r.value.id)
+                sender.onRetrySent(key, r.value)
                 Result.success()
             }
             is AppResult.Failure -> if (r.error.isRetryable) Result.retry() else {

@@ -45,7 +45,11 @@ class SosSender @Inject constructor(
         data object Idle : Attempt
         data class Sending(val panic: Boolean) : Attempt
         data class Sent(val sosId: String, val panic: Boolean, val sharing: Boolean) : Attempt
-        data class NotSent(val reason: String, val shareText: String, val retrying: Boolean, val sharing: Boolean, val panic: Boolean) : Attempt
+        data class NotSent(
+            val reason: String, val shareText: String, val retrying: Boolean, val sharing: Boolean, val panic: Boolean,
+            /** The idempotency key the background retry uses, so its success can update this screen. */
+            val key: String? = null,
+        ) : Attempt
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -85,11 +89,21 @@ class SosSender @Inject constructor(
                     _attempt.value = Attempt.NotSent(
                         reason = reasonFor(result.error, retry),
                         shareText = LiveLocationRules.troubleText(text, last?.latitude, last?.longitude),
-                        retrying = retry, sharing = shares, panic = panic,
+                        retrying = retry, sharing = shares, panic = panic, key = key,
                     )
                 }
             }
         }
+    }
+
+    /**
+     * SosRetryWorker got the alert through later. If the screen still says "Not sent yet" for it,
+     * show what happened to it instead: otherwise the sender would hold the button again and ring
+     * the partner a second time.
+     */
+    fun onRetrySent(key: String, sos: SosDto) {
+        val a = _attempt.value
+        if (a is Attempt.NotSent && a.key == key) _attempt.value = Attempt.Sent(sos.id, a.panic, a.sharing)
     }
 
     /** Back to the form (after the result was read). */

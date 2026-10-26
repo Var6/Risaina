@@ -1,5 +1,6 @@
 package com.risaina.app.core.data
 
+import com.risaina.app.core.common.AppError
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.common.map
 import com.risaina.app.core.common.onSuccess
@@ -26,12 +27,22 @@ class SosRepository @Inject constructor(private val api: RisainaApi) {
 
     /**
      * `idempotencyKey` makes a retry safe: the server returns the first SOS instead of ringing twice.
-     * `panic` is sent only when true, so an ordinary SOS still works on an older server.
+     *
+     * A server without the safety fields (not deployed yet, or rolled back) refuses `panic` and
+     * `idempotencyKey` with a 400, because its body schema is strict. That 400 is not retryable, so
+     * the alert would simply be lost: send it once more as a plain SOS instead. Without the key a
+     * later retry could ring twice, which is far better than not ringing at all. A 400 for a real
+     * reason (the message is too long) fails the plain send too and is returned as it is.
      */
-    suspend fun send(message: String?, panic: Boolean = false, idempotencyKey: String? = null): AppResult<SosDto> =
-        apiCall { api.createSos(CreateSosRequest(message?.trim()?.takeIf { it.isNotEmpty() }, panic.takeIf { it }, idempotencyKey)) }
-            .onSuccess { r -> upsert(r.sos) }
-            .map { it.sos }
+    suspend fun send(message: String?, panic: Boolean = false, idempotencyKey: String? = null): AppResult<SosDto> {
+        val text = message?.trim()?.takeIf { it.isNotEmpty() }
+        val full = CreateSosRequest(text, panic.takeIf { it }, idempotencyKey)
+        val first = apiCall { api.createSos(full) }
+        val result = if (first is AppResult.Failure && first.error is AppError.Validation && full != CreateSosRequest(text)) {
+            apiCall { api.createSos(CreateSosRequest(text)) }
+        } else first
+        return result.onSuccess { r -> upsert(r.sos) }.map { it.sos }
+    }
 
     suspend fun acknowledge(id: String): AppResult<Unit> =
         apiCall { api.ackSos(id) }.onSuccess { r -> upsert(r.sos) }.map { }

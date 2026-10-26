@@ -4,6 +4,8 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.risaina.app.core.notifications.SosAlert
@@ -75,20 +77,36 @@ class SosAlarmController @Inject constructor(
 
     fun isRinging(sosId: String?, seq: Long?): Boolean = _state.value?.matches(sosId, seq) == true
 
+    private val main by lazy { Handler(Looper.getMainLooper()) }
+
+    /**
+     * The service's ringing state, its MediaPlayer and its timeout live on the main thread; the push
+     * handler and the sync call in from worker threads. Every change to a running alarm goes there.
+     */
+    private fun onMain(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) block() else main.post(block)
+    }
+
     fun ring(req: RingRequest): Outcome {
-        val running = service
-        if (running != null && _state.value != null) {
-            running.merge(req)
+        if (service != null && _state.value != null) {
+            // Checked again on the main thread: the alarm may have timed out in between, and then
+            // this SOS needs its own start (or the fallback), not a merge into a stopping service.
+            onMain {
+                val running = service
+                if (running != null && _state.value != null) running.merge(req) else start(req)
+            }
             return Outcome.UPDATED
         }
-        return try {
-            ContextCompat.startForegroundService(context, SosAlarmService.ringIntent(context, req))
-            Outcome.STARTED
-        } catch (e: Exception) {
-            // ForegroundServiceStartNotAllowedException (API 31+), IllegalStateException, SecurityException
-            Log.w(TAG, "SOS alarm service start refused: ${e.javaClass.simpleName}")
-            fallback(req)
-        }
+        return start(req)
+    }
+
+    private fun start(req: RingRequest): Outcome = try {
+        ContextCompat.startForegroundService(context, SosAlarmService.ringIntent(context, req))
+        Outcome.STARTED
+    } catch (e: Exception) {
+        // ForegroundServiceStartNotAllowedException (API 31+), IllegalStateException, SecurityException
+        Log.w(TAG, "SOS alarm service start refused: ${e.javaClass.simpleName}")
+        fallback(req)
     }
 
     /** A 5-second test of the whole ring path on this phone (no receipts, nothing sent). */
@@ -97,12 +115,15 @@ class SosAlarmController @Inject constructor(
     /** The service could not go to the foreground itself: retry through an alarm clock, else notify. */
     internal fun fallback(req: RingRequest): Outcome {
         if (req.source != RingSource.ALARM_CLOCK && scheduleAlarmClock(req)) return Outcome.ALARM_CLOCK
-        sosAlert.showFallback(req.partnerName ?: "your partner", req.message, req.panic, previews = false)
-        if (!req.test) {
+        val shown = sosAlert.showFallback(req.partnerName ?: "your partner", req.message, req.panic, previews = false)
+        // Only what was really shown counts as rung: with notifications off nothing was, and then the
+        // sender must not read "ringing", the server must keep re-pushing, and a later high-priority
+        // re-push (which may start the alarm service) must not be skipped as already handled.
+        if (!req.test && shown) {
             localState.markRang(req.sosId, req.seq)
             SosReceiptWorker.enqueueDelivered(context, req, SosDiagnostics.capture(context, fgsStarted = false))
         }
-        return Outcome.NOTIFICATION
+        return if (shown) Outcome.NOTIFICATION else Outcome.SKIPPED
     }
 
     /**
@@ -130,9 +151,7 @@ class SosAlarmController @Inject constructor(
     }
 
     /** "I'm on it" from the alarm screen or the in-app SOS screen. */
-    fun acknowledge() {
-        service?.acknowledge()
-    }
+    fun acknowledge() = onMain { service?.acknowledge() }
 
     /**
      * "I'm on it" for one SOS from inside the app. If it is ringing, the alarm acknowledges it (and
@@ -149,14 +168,17 @@ class SosAlarmController @Inject constructor(
         sosAlert.clearResponded(alarmRinging = _state.value != null)
     }
 
-    /** Acknowledged on another device or by the in-app screen, or the sender is safe: stop without acknowledging again. */
-    fun stopFor(sosId: String?, seq: Long?) {
-        if (!isRinging(sosId, seq)) return
-        service?.stopRinging(SosAlarmService.StopReason.HANDLED)
+    /**
+     * Acknowledged on another device or by the in-app screen, or the sender is safe: that SOS stops
+     * ringing without being acknowledged again. Another SOS ringing with it that is still open keeps
+     * ringing.
+     */
+    fun stopFor(sosId: String?, seq: Long?) = onMain {
+        if (isRinging(sosId, seq)) service?.dropHandled(sosId, seq)
     }
 
     /** Sign-out or unlink: nothing may keep ringing for a partner who is no longer there. */
-    fun stopAll() {
+    fun stopAll() = onMain {
         service?.stopRinging(SosAlarmService.StopReason.HANDLED)
         sosAlert.clear()
     }

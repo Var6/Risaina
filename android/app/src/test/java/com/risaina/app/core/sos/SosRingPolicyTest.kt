@@ -3,6 +3,7 @@ package com.risaina.app.core.sos
 import com.risaina.app.core.sos.SosRingPolicy.EventDecision
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Duration
@@ -86,5 +87,33 @@ class SosRingPolicyTest {
         assertTrue(s.matches(null, 7L))
         assertFalse(s.matches("b", 8L))
         assertFalse(s.matches(null, null))
+    }
+
+    // --- one SOS of a merged ring is handled elsewhere --------------------------------------------
+
+    private fun ring(ids: Set<String>, seqs: Set<Long>, test: Boolean = false) =
+        RingState(ids, seqs, "Raina", null, panic = true, test = test, startedAtMs = 0, untilMs = 1, previews = false)
+
+    @Test fun `the sender is safe from an older SOS, and a newer open one keeps ringing`() {
+        // A (seq 10) is resolved; B (seq 11) is still open.
+        val next = SosRingPolicy.withoutHandled(ring(setOf("A", "B"), setOf(10L, 11L)), "A", 10L) { id, seq ->
+            id != "A" && seq != 10L
+        }
+        assertEquals(setOf("B"), next?.sosIds)
+        assertEquals(setOf(11L), next?.seqs)
+    }
+
+    @Test fun `the last open SOS leaving the ring stops it`() {
+        assertNull(SosRingPolicy.withoutHandled(ring(setOf("A"), setOf(10L)), "A", 10L) { _, _ -> true })
+        // The other one is already closed too (acknowledged here meanwhile).
+        assertNull(SosRingPolicy.withoutHandled(ring(setOf("A", "B"), emptySet()), "A", null) { _, _ -> false })
+        assertNull(SosRingPolicy.withoutHandled(ring(emptySet(), emptySet(), test = true), null, null) { _, _ -> true })
+    }
+
+    @Test fun `a push known only by its seq still leaves when its id is resolved`() {
+        // The ring knows seq 10 (from the push) and id B; A is seq 10's id, linked by the sync.
+        val next = SosRingPolicy.withoutHandled(ring(setOf("B"), setOf(10L)), "A", 10L) { id, _ -> id == "B" }
+        assertEquals(setOf("B"), next?.sosIds)
+        assertTrue(next!!.seqs.isEmpty())
     }
 }

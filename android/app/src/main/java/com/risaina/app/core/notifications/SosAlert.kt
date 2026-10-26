@@ -146,8 +146,12 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    private fun notify(id: Int, n: Notification) {
-        try { nm.notify(id, n) } catch (_: SecurityException) {}
+    /** Returns false when Android refused it (notification permission revoked meanwhile). */
+    private fun notify(id: Int, n: Notification): Boolean = try {
+        nm.notify(id, n)
+        true
+    } catch (_: SecurityException) {
+        false
     }
 
     // --- fallback: notification-only alarm ---------------------------------------------------
@@ -170,13 +174,13 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
 
     /**
      * Notification-only alarm: insistent, alarm stream, full-screen intent. Needs Risaina's
-     * notifications to be on; when they are off this can do nothing, and says so in the log instead
-     * of failing silently.
+     * notifications to be on; when they are off this can do nothing, says so in the log instead of
+     * failing silently, and returns false (so nothing is reported to the sender as ringing).
      */
-    fun showFallback(partnerName: String, message: String?, panic: Boolean, previews: Boolean) {
+    fun showFallback(partnerName: String, message: String?, panic: Boolean, previews: Boolean): Boolean {
         if (!canPost()) {
             Log.w(TAG, "SOS fallback not shown: Risaina's notifications are off and the alarm service could not start")
-            return
+            return false
         }
         val screen = alarmScreen()
         val title = SosCopy.title(partnerName, panic, false)
@@ -198,7 +202,7 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
             .build()
         n.flags = n.flags or Notification.FLAG_INSISTENT
-        notify(ID, n)
+        return notify(ID, n)
     }
 
     fun clear() {

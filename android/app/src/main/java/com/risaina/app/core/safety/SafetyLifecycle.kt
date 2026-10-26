@@ -50,10 +50,10 @@ class SafetyLifecycle @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     fun start() {
-        if (alarm.state.value == null && localState.ringingUntil < System.currentTimeMillis()) {
-            SosAlarmService.restoreAlarmVolume(context, localState)
-            localState.ringingUntil = 0L
-        }
+        // Application.onCreate runs before any service of this process, so nothing can be ringing
+        // here: a saved volume means the previous process died mid-ring. Put it back now; a ring that
+        // starts later in this process saves the user's volume again before raising it.
+        if (alarm.state.value == null) SosAlarmService.restoreAlarmVolume(context, localState)
         val owner = ProcessLifecycleOwner.get()
         owner.lifecycleScope.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
