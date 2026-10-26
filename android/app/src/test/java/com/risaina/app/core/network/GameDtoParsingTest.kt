@@ -71,7 +71,7 @@ class GameDtoParsingTest {
         assertFalse(g.kind in GameKinds.KNOWN)
     }
 
-    @Test fun `the catalog parses; legacyServer is never set by the server`() {
+    @Test fun `the catalog parses and legacyServer is never set by the server`() {
         val c = json.decodeFromString(
             GameCatalogDto.serializer(),
             """{"kinds":[{"kind":"trivia","title":"Trivia duel","emoji":"🧠","blurb":"b","competitive":true}],

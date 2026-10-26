@@ -56,7 +56,7 @@ class GameNotificationTextTest {
         }
     }
 
-    @Test fun `stale: a closed game drops 'your turn' texts but keeps final news`() {
+    @Test fun `stale - a closed game drops 'your turn' texts but keeps final news`() {
         assertTrue(GameNotificationText.isStale("moved", "cancelled"))
         assertTrue(GameNotificationText.isStale("created", "cancelled"))
         assertFalse(GameNotificationText.isStale("cancelled", "cancelled"))

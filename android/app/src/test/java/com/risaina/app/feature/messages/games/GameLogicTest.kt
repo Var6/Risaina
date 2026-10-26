@@ -45,7 +45,7 @@ class GameLogicTest {
     private fun quiz(myAnswered: Int, myFinished: Boolean = false, partnerFinished: Boolean = false) =
         QuizDto(total = 5, myAnswered = myAnswered, myFinished = myFinished, partnerFinished = partnerFinished, items = (0..minOf(myAnswered, 4)).map { QuizItemDto(index = it) })
 
-    @Test fun `trivia stages: answer, review, wait, results`() {
+    @Test fun `trivia stages - answer, review, wait, results`() {
         assertEquals(TriviaStage.Answering(0), triviaStage(quiz(0), "waiting", reviewing = null))
         // Tapped an answer, request still in flight: keep answering that question.
         assertEquals(TriviaStage.Answering(0), triviaStage(quiz(0), "waiting", reviewing = 0))
