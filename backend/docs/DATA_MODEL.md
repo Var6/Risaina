@@ -228,3 +228,41 @@ dies between the two writes the domain change exists without an event; clients s
 the next full fetch, and this window is accepted for a two-user app (see COUNCIL_DECISIONS D-04).
 Idempotency keys and conditional `findOneAndUpdate` filters make every multi-step flow
 (invitation accept, refresh rotation, ping delivery) safe under retries and races.
+
+## Safety stream: `liveLocations` and later SOS fields
+
+### `liveLocations` (new collection, created with its validator at boot)
+One document per live sharing session holding **only the latest fix**: never a history. `_id` is the
+session id (made by the sharer's phone).
+
+`coupleId, userId (sharer), viewerId (partner), reason ('manual'|'panic', plain string in the validator;
+Zod is the allow-list), sosId|null, live (bool), startedAt, expiresAt|null (null = until I turn it off),
+purgeAt, fix|null, lastSeenAt, stoppedAt|null, updatedAt`; every field is required and always written.
+`fix = { lat, lng (5 decimals), accuracyM (int, ≤ 50 000), at, batteryPct|null }`.
+
+- `purgeAt` (TTL, `expireAfterSeconds: 0`) = the timed expiry, or 12 h after the last check-in, whichever
+  is first, so a forgotten "until off" session on a dead phone disappears. Reads also check `expiresAt`
+  and `purgeAt` because the TTL monitor can lag a minute or more.
+- Stopping turns the document into a **tombstone**: `live: false`, `fix: null`, `stoppedAt`, `purgeAt` =
+  now + 10 min. The coordinates are gone at once; the tombstone only refuses a late start with the same
+  id. Sign-out, account deletion and unlink delete the documents outright.
+
+Indexes: `{coupleId:1, userId:1}` unique partial `{live: true}` (one live session per sharer;
+tombstones do not count); `{userId:1}` (stop without a couple, sign-out, deletion); `{coupleId:1}` (GET,
+unlink purge); `{purgeAt:1}` TTL.
+
+### Later optional SOS fields (never `required`; the live `sos` validator has no additionalProperties)
+
+| Field | Missing reads as | Meaning |
+|---|---|---|
+| `panic: bool` | `false` | stored only when true |
+| `deliveredAt: date\|null` | `null` | the recipient's phone started ringing |
+| `delivery: object\|null` | `null` | device state reported with that receipt (no content) |
+| `resolvedAt: date\|null` | `null` | the sender said "I'm safe now" |
+| `idempotencyKey: string` | absent | client retry key |
+| `raisedEventId: ObjectId`, `raisedSeq: int` | absent (no re-push) | the `sos.raised` event, written right after emit |
+| `pushCount: int`, `lastPushAt: date` | `0`, never | re-push bookkeeping |
+
+Extra `sos` indexes: `{createdAt:-1}` (re-push scan); `{senderId:1, idempotencyKey:1}` unique partial
+`{idempotencyKey: {$type: 'string'}}`. `{deliveredAt: null}` and `{resolvedAt: null}` filters also match
+documents written before the fields existed.

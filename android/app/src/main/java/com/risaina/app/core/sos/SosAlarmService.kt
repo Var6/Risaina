@@ -239,8 +239,12 @@ class SosAlarmService : Service() {
     private fun update(state: RingState) {
         ringing = state
         controller.publish(state)
-        if (foreground) runCatching {
-            androidx.core.app.NotificationManagerCompat.from(this).notify(SosAlert.ID, sosAlert.alarmNotification(state))
+        if (foreground) {
+            try {
+                androidx.core.app.NotificationManagerCompat.from(this).notify(SosAlert.ID, sosAlert.alarmNotification(state))
+            } catch (_: SecurityException) {
+                // notifications denied: the alarm keeps ringing without a visible notification
+            }
         }
     }
 

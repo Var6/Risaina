@@ -233,7 +233,11 @@ class LiveLocationService : Service() {
     )
 
     private fun post(p: SessionPlan) {
-        runCatching { NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification(p)) }
+        try {
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification(p))
+        } catch (_: SecurityException) {
+            // notifications denied: the foreground notification from startForeground still stands
+        }
     }
 
     private fun notification(p: SessionPlan): Notification {

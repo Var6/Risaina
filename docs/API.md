@@ -708,3 +708,80 @@ everything it created**. The response is still `204`; nothing can be recovered a
   from 1).
 - Idempotent: a second unlink is `409 not_paired`; the server re-runs the purge for 7 days to remove
   anything written concurrently with the unlink.
+
+## Safety: SOS receipts, "I'm safe now", test alarm and live location
+
+Bearer + active couple unless noted. The SOS message and every coordinate are private content: they
+are never logged (`REDACT_PATHS` covers `fix`, `location`, `lat`, `lng`), and coordinates never appear
+in events or pushes.
+
+### SOS additions
+
+| Method | Path | Body | Success |
+|---|---|---|---|
+| POST | `/sos` | `{ message?, panic?: boolean, idempotencyKey?: string (1–64) }` (strict) | `201 { sos }`. A repeat with the same `idempotencyKey` returns the first SOS, emits nothing and does not count against the limit |
+| POST | `/sos/:id/delivered` | optional device state (below) | `200 { sos }`, recipient only, idempotent: sets `deliveredAt` once, emits `sos.delivered` and stops re-pushes |
+| POST | `/sos/:id/resolve` | | `200 { sos }`, sender only ("I'm safe now"), idempotent: sets `resolvedAt`, emits `sos.resolved` once and ends live sharing linked to that SOS (`location.stopped`, reason `resolved`) |
+| POST | `/sos/test` | `{ delaySeconds?: 0–60 }` (default 15) | `202 { queued, devices }`: a high-priority `{ type: 'sos.test' }` push to **my own** phones after the delay. No database write, no event. 3 per user per 10 minutes. Bearer only (no couple needed) |
+
+`Sos` gains `panic: boolean` (absent in old documents ⇒ `false`), `deliveredAt`, `resolvedAt` and
+`delivery` (what the recipient's phone reported, or null). The delivered body carries device state
+only, never content, so a quiet alarm can be explained afterwards on a phone without adb:
+`{ priority, originalPriority, latencyMs, alarmMuted, alarmVolume (0–100), ringerMode, interruptionFilter,
+notificationsEnabled, canUseFullScreenIntent, fgsStarted }`, every field optional and nullable. Unknown
+keys are dropped, not refused.
+
+Errors: `403 forbidden` (delivered by the sender, resolve by the recipient), `404 not_found` (unknown or
+another couple's SOS), `429 rate_limited` (tests).
+
+**Re-push (SosRepushWorker, every 30 s):** an SOS that is not delivered, acknowledged or resolved is
+pushed again at most once a minute, for its first 10 minutes, up to 6 times, as a high-priority
+`{ type: 'sos.raised', eventId, coupleId, seq, sosId, at }` (`at` = creation time in epoch ms) sent
+through PushService directly. Each SOS is claimed with a conditional `findOneAndUpdate`, so two server
+instances never double-send. The phone de-duplicates by SOS id and event seq, and never rings an SOS it
+already rang, acknowledged or saw resolved, or one older than 6 hours.
+
+### Live location
+
+| Method | Path | Guards | Input | Success | Errors |
+|---|---|---|---|---|---|
+| GET | `/location/sharing` | couple | | `200 { mine: LiveLocation\|null, partner: LiveLocation\|null }` (expired sessions are null) | 401, 409 `not_paired` |
+| POST | `/location/sharing` | couple; 20 manual starts per user per hour (panic exempt) | `{ sessionId, mode: 'timed'\|'until_off', durationMinutes? (15–1440, required iff timed), reason?: 'manual'\|'panic', sosId? (panic only), fix? }` | `201 { sharing }` new, `200` extended | 400; 404 (`sosId` not my SOS); 409 `location_not_sharing` (that `sessionId` was stopped), `not_paired`; 429 |
+| PUT | `/location/sharing/fix` | couple; 12 per user per minute | `{ sessionId, fix }` | `200 { accepted }` | 400; 409 `location_not_sharing`, `not_paired`; 429 |
+| DELETE | `/location/sharing` | bearer only (stopping always works) | query `sessionId?`, `reason?: 'stopped'\|'expired'` | `204` always | 401 |
+
+- `fix` input: `{ lat (-90..90), lng (-180..180), accuracyM (0..1 000 000, clamped to 50 000), ageMs
+  (0..600 000, how long ago the phone took it), batteryPct? (0..100) }`. `ageMs` comes from the phone's
+  monotonic clock, so a phone with a wrong wall clock is still placed correctly; the server stores
+  `at = now - ageMs`. Coordinates are rounded to 5 decimals. Battery is kept in both modes.
+- The **phone makes `sessionId`** (an ObjectId hex) so a stop sent right after a start can name it. A stop
+  that arrives before its own start leaves a 10-minute tombstone, and that start then answers `409
+  location_not_sharing`. A stale stop never ends a newer session.
+- Extending: a second POST for my live session updates it. A manual start never turns a panic session
+  back into manual, and panic never shortens a session (a manual change can). `location.started` is
+  emitted again only when the reason, the expiry (by more than a minute) or the SOS link changed.
+- `PUT …/fix` always refreshes `lastSeenAt` and the idle purge, even when the fix is not newer than the
+  stored one (`accepted: false`), so a phone that is sitting still still looks live. It writes no event
+  and sends no push.
+- `LiveLocation`: `{ sessionId, userId (sharer), reason, sosId|null, startedAt, expiresAt|null (until off),
+  updatedAt, lastSeenAt, fix: { lat, lng, accuracyM, at, batteryPct|null } | null }`.
+- **WebSocket frame** to the viewer only (never the sharer's own sockets), on every start, extend and
+  check-in (so liveness updates even when the position did not change): `{ "type": "location",
+  "location": LiveLocation }`. A check-in that loses a race with a stop sends no frame. Fire-and-forget: never stored,
+  never replayed; a lost frame is replaced by the next one or by the GET the app makes on reconnect.
+  Older apps ignore the unknown frame type.
+- Sign-out, revoking all sessions and account deletion delete the user's sessions (partner gets
+  `location.stopped`, reason `signed_out`); unlink purges both members' sessions.
+- `GET /me/export` gains `liveLocation`: my own current session or null (never my partner's).
+
+### Safety event types
+
+| Event type | `payload` | Push |
+|---|---|---|
+| `sos.delivered` | `{ sosId, deliveredAt }` | normal (silent) |
+| `sos.resolved` | `{ sosId, resolvedAt }` | high, skips mute settings (it stops a ringing alarm) |
+| `location.started` | `{ sharing: LiveLocationSession }` (the `LiveLocation` fields without `lastSeenAt` and `fix`) | high (the partner is told sharing started) |
+| `location.stopped` | `{ sessionId, userId, stoppedAt, reason: 'stopped'\|'expired'\|'resolved'\|'signed_out' }` | normal |
+
+Push priorities are decided by the outbox's policy (delivery stream). The phone treats a push of
+`{ type: 'sos.test' }` as a 5-second test alarm.

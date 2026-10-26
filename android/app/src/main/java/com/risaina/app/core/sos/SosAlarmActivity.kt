@@ -38,9 +38,6 @@ import com.risaina.app.MainActivity
 import com.risaina.app.core.designsystem.theme.RisainaTheme
 import dagger.hilt.android.AndroidEntryPoint
 import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import javax.inject.Inject
 
 /**
@@ -136,7 +133,7 @@ private fun AlarmScreen(state: RingState, locked: Boolean, onAck: () -> Unit, on
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(state.startedAtMs)),
+            com.risaina.app.feature.common.Format.time(Instant.ofEpochMilli(state.startedAtMs)),
             style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f),
         )
         Spacer(Modifier.height(40.dp))
