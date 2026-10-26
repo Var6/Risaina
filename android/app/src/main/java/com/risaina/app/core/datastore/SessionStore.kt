@@ -45,6 +45,8 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         val hasPassword = stringPreferencesKey("has_password")
         val sharedTimeZone = stringPreferencesKey("shared_time_zone")
         val cityJson = stringPreferencesKey("city")
+        /** Events up to this seq were history when this phone started from cursor 0 (see ReplayGuard). */
+        val bootstrapUntilSeq = longPreferencesKey("bootstrap_until_seq")
     }
 
     val session: Flow<Session?> = context.sessionDataStore.data.map { p ->
@@ -62,6 +64,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     }
 
     val lastEventSeq: Flow<Long> = context.sessionDataStore.data.map { it[Keys.lastEventSeq] ?: 0L }
+    val bootstrapUntilSeq: Flow<Long> = context.sessionDataStore.data.map { it[Keys.bootstrapUntilSeq] ?: 0L }
     val activeCoupleId: Flow<String?> = context.sessionDataStore.data.map { it[Keys.activeCoupleId] }
     val lastPingSentAt: Flow<Instant?> = context.sessionDataStore.data.map { p -> p[Keys.lastPingSentAt]?.let(Instant::ofEpochMilli) }
 
@@ -130,6 +133,17 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         }
     }
 
+    /**
+     * Starting from cursor 0 (fresh sign-in or a new pairing), everything up to [latestSeq] is
+     * history: it is applied, but must not notify, reveal or buzz as if it were new. Written only
+     * while the cursor is still 0, in the same edit, so a later sync never moves the mark.
+     */
+    suspend fun setBootstrapUntilSeqIfFresh(latestSeq: Long) {
+        context.sessionDataStore.edit { p ->
+            if ((p[Keys.lastEventSeq] ?: 0L) == 0L) p[Keys.bootstrapUntilSeq] = latestSeq
+        }
+    }
+
     suspend fun setLastEventSeq(seq: Long) {
         context.sessionDataStore.edit { p ->
             val current = p[Keys.lastEventSeq] ?: 0L
@@ -145,7 +159,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     suspend fun setActiveCoupleId(id: String?) {
         context.sessionDataStore.edit { p ->
             if (id == null) { p.remove(Keys.activeCoupleId); return@edit }
-            if (p[Keys.activeCoupleId] != id) p[Keys.lastEventSeq] = 0L
+            if (p[Keys.activeCoupleId] != id) { p[Keys.lastEventSeq] = 0L; p.remove(Keys.bootstrapUntilSeq) }
             p[Keys.activeCoupleId] = id
         }
     }

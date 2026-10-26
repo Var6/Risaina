@@ -10,8 +10,12 @@ import com.risaina.app.core.database.PingDao
 import com.risaina.app.core.datastore.PreferencesStore
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.datastore.WidgetSnapshotStore
+import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.model.PingType
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,6 +23,10 @@ import javax.inject.Singleton
 /**
  * Recomputes what widgets may display. Privacy settings are applied here, once, so the widgets
  * themselves stay dumb. Photo download is best-effort and never blocks the sync.
+ *
+ * Recomputes are serialised: the app's start/stop, the socket, a push and the SyncWorker can all
+ * recompute at once, and a run that read older data must not write the store (and redraw the
+ * widgets and the lock-screen card) after a newer one.
  */
 @Singleton
 class WidgetSnapshotUpdater @Inject constructor(
@@ -37,15 +45,24 @@ class WidgetSnapshotUpdater @Inject constructor(
     private val pingRepository: com.risaina.app.core.data.PingRepository,
     private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
 ) {
+    private val mutex = Mutex()
+
+    /** A new partner photo the widgets want but this phone has not downloaded yet. */
+    @Volatile private var pendingPhotoMediaId: String? = null
+
     /**
      * The person has Risaina in front of them, or replied from a widget: whatever the partner sent
      * until now counts as seen, so the widgets stop glowing. With [ackServer], the newest unseen
      * ping is also marked seen on the server, which shows "Seen" on the partner's phone.
+     *
+     * [clearAlerts] only when Risaina comes to the foreground: the ping/gift and game notifications
+     * leave the shade. Not when it goes to the background (a ping posted a moment later would be
+     * cancelled) and not for a widget reply (unread chat notifications must stay).
      */
-    suspend fun markSeenAndRecompute(ackServer: Boolean) {
+    suspend fun markSeenAndRecompute(ackServer: Boolean, clearAlerts: Boolean = false) {
         if (sessionStore.current() == null) return
         store.markSeen(System.currentTimeMillis())
-        notifier.clearPartnerAlerts()
+        if (clearAlerts) notifier.clearPartnerAlerts()
         if (ackServer) {
             val me = sessionStore.current()?.userId
             pingDao.recent(50).first().firstOrNull { it.senderId != me }?.takeIf { it.seenAt == null }?.let { pingRepository.markSeen(it.id) }
@@ -53,7 +70,31 @@ class WidgetSnapshotUpdater @Inject constructor(
         recompute()
     }
 
-    suspend fun recompute() {
+    /**
+     * Two steps, so a note, ping or gift reaches the widgets at once even while a new photo is
+     * downloading: first everything local is written and drawn (a photo that is not cached yet shows
+     * as "Sent you a photo"), then, with [fetchMedia], the photo is downloaded (bounded) and the
+     * widgets are drawn again. The push handler passes false and calls [completeMedia] itself with
+     * what is left of its time budget.
+     */
+    suspend fun recompute(fetchMedia: Boolean = true) {
+        mutex.withLock { recomputeLocked() }
+        if (fetchMedia) completeMedia()
+    }
+
+    /**
+     * Download the partner photo the last recompute could not show, then redraw. Returns false when
+     * there was nothing to fetch or it did not arrive in time (the next sync tries again).
+     */
+    suspend fun completeMedia(timeoutMs: Long = PHOTO_TIMEOUT_MS): Boolean {
+        val mediaId = pendingPhotoMediaId ?: return false
+        val fetched = withTimeoutOrNull(timeoutMs) { mediaRepository.ensureCached(mediaId, "image/jpeg") }
+        if (fetched !is AppResult.Success) return false
+        mutex.withLock { recomputeLocked() }
+        return true
+    }
+
+    private suspend fun recomputeLocked() {
         val me = sessionStore.current()?.userId
         val prefs = preferencesStore.current()
         val partner = coupleDao.partner()
@@ -84,14 +125,14 @@ class WidgetSnapshotUpdater @Inject constructor(
         val emoji = if (useBoardEmoji) boardEmoji else latestPing?.emoji
         val emojiAt = if (useBoardEmoji) boardAt.takeIf { it > 0 } else latestPing?.createdAt
         val emojiLabel = if (useBoardEmoji) board?.mood ?: "Their mood" else latestPing?.let { pingLine(it, prefs.widgetPrivacy.showNoteText) }
+        val emojiFromGift = !useBoardEmoji && latestPing != null && com.risaina.app.feature.ping.Expressions.isGift(latestPing.message)
 
         val boardPhoto = board?.photoMediaId
         val useBoardPhoto = boardPhoto != null && (partnerPhoto == null || boardAt >= partnerPhoto.createdAt)
         val photoMediaId = if (useBoardPhoto) boardPhoto else partnerPhoto?.mediaId ?: favourite?.mediaId
-        val photoPath = if (prefs.widgetPrivacy.showPhoto && photoMediaId != null) {
-            mediaRepository.localFile(photoMediaId)?.absolutePath
-                ?: mediaRepository.ensureCached(photoMediaId, "image/jpeg").getOrNull()?.absolutePath
-        } else null
+        // Local only: a download here would hold up every widget for the length of the photo.
+        val photoPath = if (prefs.widgetPrivacy.showPhoto && photoMediaId != null) mediaRepository.localFile(photoMediaId)?.absolutePath else null
+        pendingPhotoMediaId = photoMediaId.takeIf { prefs.widgetPrivacy.showPhoto && it != null && photoPath == null }
         val photoCaption = when {
             useBoardPhoto -> board?.note ?: board?.mood
             partnerPhoto != null -> null
@@ -158,10 +199,16 @@ class WidgetSnapshotUpdater @Inject constructor(
                 latestKind = newest?.first,
                 latestAtMillis = newest?.second,
                 latestUnseen = latestUnseen,
+                latestEmojiFromGift = emojiFromGift,
             )
         }
         runCatching { refresher.refreshAll() }
         runCatching { lockScreenCard.update(store.current()) }
+    }
+
+    private companion object {
+        /** A widget photo is worth a short wait, not the push handler's whole budget. */
+        const val PHOTO_TIMEOUT_MS = 4_000L
     }
 
     /** Short words for a ping: its kind ("Miss you"), a gift's line, or a custom note when allowed. */

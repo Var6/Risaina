@@ -228,3 +228,14 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class GameCompleteRequest(val answer: String? = null)
 @Serializable data class HealthResponse(val status: String, val version: String? = null, val checks: JsonObject? = null)
 @Serializable data class ExportResponse(@SerialName("user") val user: UserDto, val couple: CoupleDto? = null)
+
+// ---- delivery health (stream: delivery) ----
+@Serializable data class TestPushRequest(val deviceId: String? = null, val delaySeconds: Int = 0)
+@Serializable data class TestPushResponse(val scheduled: Boolean, val devices: Int = 0, val reason: String? = null)
+@Serializable data class PushAckRequest(val priority: String, val originalPriority: String, val healthFlags: List<String>? = null)
+@Serializable data class DeviceHealthDto(
+    val deviceId: String? = null, val model: String? = null, val appVersion: String = "", val updatedAt: String? = null,
+    val lastPushSentAt: String? = null, val lastPushAckAt: String? = null, val lastPushPriority: String? = null,
+    val lastPushDowngraded: Boolean = false, val healthFlags: List<String> = emptyList(),
+)
+@Serializable data class DeviceHealthResponse(val mine: List<DeviceHealthDto> = emptyList(), val partner: List<DeviceHealthDto> = emptyList())

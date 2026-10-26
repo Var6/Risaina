@@ -247,12 +247,12 @@ fun NotificationSettingsScreen(onBack: () -> Unit, onRequestPermission: () -> Un
         ToggleRow("Show previews", "Off: notifications say only that something arrived", p.previewInNotifications, { v -> vm.update { it.copy(previewInNotifications = v) } })
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         SectionHeader("Quiet hours")
-        ToggleRow("Quiet hours", "Arrivals are silent and the server holds push during this window", p.quietHours.enabled, { v -> vm.update { it.copy(quietHours = it.quietHours.copy(enabled = v)) } })
+        ToggleRow("Quiet hours", "Arrivals are silent during this window. Widgets still update.", p.quietHours.enabled, { v -> vm.update { it.copy(quietHours = it.quietHours.copy(enabled = v)) } })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlineButton("From ${Format.timeOfDay(p.quietHours.start)}", onClick = { pickStart = true }, modifier = Modifier.weight(1f), enabled = p.quietHours.enabled)
             OutlineButton("To ${Format.timeOfDay(p.quietHours.end)}", onClick = { pickEnd = true }, modifier = Modifier.weight(1f), enabled = p.quietHours.enabled)
         }
-        ToggleRow("Still push during quiet hours", "Deliver silently instead of holding until morning", p.allowPushInQuietHours, { v -> vm.update { it.copy(allowPushInQuietHours = v) } }, enabled = p.quietHours.enabled)
+        ToggleRow("Still push during quiet hours", "Sound and buzz as usual instead of arriving silently", p.allowPushInQuietHours, { v -> vm.update { it.copy(allowPushInQuietHours = v) } }, enabled = p.quietHours.enabled)
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         SectionHeader("Touch Ping")
         Text("Cooldown between pings: ${p.pingCooldownSeconds}s", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 10.dp))

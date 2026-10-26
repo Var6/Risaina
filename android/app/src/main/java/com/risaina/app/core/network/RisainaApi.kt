@@ -61,6 +61,10 @@ class RisainaApi @Inject constructor(
     // ---- devices ----
     suspend fun registerDevice(req: DeviceRequest) { client.put("devices") { json(req) } }
     suspend fun removeDevice(deviceId: String) { client.delete("devices/$deviceId") }
+    // delivery health (stream: delivery)
+    suspend fun testPush(req: TestPushRequest): TestPushResponse = client.post("devices/test-push") { json(req) }.body()
+    suspend fun pushAck(deviceId: String, req: PushAckRequest) { client.post("devices/$deviceId/push-ack") { json(req) } }
+    suspend fun deviceHealth(): DeviceHealthResponse = client.get("devices/health").body()
 
     // ---- pings ----
     suspend fun createPing(req: CreatePingRequest): PingResponse = client.post("pings") { json(req) }.body()

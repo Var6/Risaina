@@ -36,7 +36,7 @@ class RisainaApp : Application(), Configuration.Provider {
                 syncManager.start(this)
                 com.risaina.app.core.sync.SyncWorker.enqueueSilent(applicationContext)
                 // Opening Risaina is seeing what the partner sent: the widgets stop glowing.
-                launch { runCatching { widgetSnapshotUpdater.markSeenAndRecompute(ackServer = true) } }
+                launch { runCatching { widgetSnapshotUpdater.markSeenAndRecompute(ackServer = true, clearAlerts = true) } }
                 try { kotlinx.coroutines.awaitCancellation() } finally {
                     syncManager.stop()
                     // Anything that arrived while the app was open was shown in-app, so leave the

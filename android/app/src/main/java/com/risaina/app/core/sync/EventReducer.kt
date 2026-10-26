@@ -55,6 +55,8 @@ class EventReducer @Inject constructor(
     private val milestoneDao: MilestoneDao,
     private val coupleDao: CoupleDao,
     private val pingRepository: PingRepository,
+    /** Network follow-ups run after notifications and widgets, never inside apply() (stream: delivery). */
+    private val deferred: DeferredEffects,
     private val mediaRepository: MediaRepository,
     private val coupleRepository: CoupleRepository,
     private val listDao: com.risaina.app.core.database.ListDao,
@@ -63,7 +65,8 @@ class EventReducer @Inject constructor(
     private val sosAlert: com.risaina.app.core.notifications.SosAlert,
     private val gameRepository: com.risaina.app.core.data.GameRepository,
 ) {
-    suspend fun apply(event: EventDto): List<Incoming> {
+    /** [replay]: the event is old history being re-applied (ReplayGuard); its receipts are not re-sent. */
+    suspend fun apply(event: EventDto, replay: Boolean = false): List<Incoming> {
         val me = sessionStore.current()?.userId ?: return emptyList()
         val cursor = sessionStore.lastEventSeq.first()
         if (event.seq <= cursor) return emptyList()
@@ -76,7 +79,8 @@ class EventReducer @Inject constructor(
                 pingDao.upsert(ping.toEntity().let { e -> if (existing != null && rank(existing.status) > rank(e.status)) existing else e })
                 if (ping.recipientId == me) {
                     // Evidence of delivery: this device has the ping. Best effort; the server timestamps it.
-                    pingRepository.acknowledgeDelivered(ping.id)
+                    // Queued, not sent here: the network call must not delay the notification or widgets.
+                    if (!replay) deferred.ackDelivered(ping.id)
                     if (existing == null) out += Incoming.NewPing(pingDao.byId(ping.id)!!.toDomain())
                 }
             }
@@ -106,7 +110,7 @@ class EventReducer @Inject constructor(
                 val couple = json.decodeFromJsonElement(CoupleDto.serializer(), it)
                 val partner = coupleDao.partner()
                 coupleDao.replace(couple.toEntity(), partner)
-                if (couple.status.equals("active", true) && partner == null) coupleRepository.refreshMe()
+                if (couple.status.equals("active", true) && partner == null) deferred.refreshMe()
             }
             "partner.updated" -> p.obj("partner")?.let {
                 val partner = json.decodeFromJsonElement(PartnerDto.serializer(), it)
@@ -142,7 +146,7 @@ class EventReducer @Inject constructor(
                 val g = p.obj("game")
                 val id = (g?.get("id") as? kotlinx.serialization.json.JsonPrimitive)?.content
                 if (id != null) {
-                    gameRepository.refreshOne(id)
+                    deferred.refreshGame(id)
                     val action = p.str("action")
                     if (event.actorId != me && action != null) out += Incoming.Game(id, action)
                 }

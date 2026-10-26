@@ -19,8 +19,14 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** What the lock-screen card says. Pure, so it is unit-tested (LockCardContentTest). */
-data class LockCardContent(val title: String, val line: String, val eventAtMillis: Long?) {
+/**
+ * What the lock-screen card says. Pure, so it is unit-tested (LockCardContentTest).
+ *
+ * [eventAtMillis] is the time shown on the card (only for an unseen gift or ping). [whenMillis] is
+ * the notification's sort time: always a real item time when there is one, never "now", because
+ * Android ranks by it and a fresh time on every re-post would lift an old card to the top.
+ */
+data class LockCardContent(val title: String, val line: String, val eventAtMillis: Long?, val whenMillis: Long? = eventAtMillis) {
     /** Identity of the content: the card is re-posted only when this changes. */
     val key: String get() = "$title|$line|${eventAtMillis ?: ""}"
 
@@ -36,8 +42,32 @@ data class LockCardContent(val title: String, val line: String, val eventAtMilli
             return when {
                 s.giftUnseen -> LockCardContent("${s.latestGiftEmoji ?: "🎁"}  A gift from $name", s.latestGiftLine ?: "Open Risaina to see it", s.latestGiftAtMillis)
                 s.pingUnseen -> LockCardContent("${s.latestPingEmoji ?: "💗"}  $name reached out", "${s.latestPingLine ?: "Thinking of you"} · tap to send one back", s.latestPingAtMillis)
-                else -> LockCardContent(listOfNotNull(name, s.latestEmoji).joinToString("  "), s.latestNoteText ?: s.latestEmojiLabel ?: "Always a little closer", null)
+                else -> {
+                    // When the partner's newest ping is a gift, the snapshot's emoji and its label are
+                    // that gift ("🌹" / "A rose for you"). The calm card must not bring it back.
+                    val emoji = s.latestEmoji.takeUnless { s.latestEmojiFromGift }
+                    val label = s.latestEmojiLabel.takeUnless { s.latestEmojiFromGift }
+                    LockCardContent(
+                        listOfNotNull(name, emoji).joinToString("  "),
+                        s.latestNoteText ?: label ?: "Always a little closer",
+                        eventAtMillis = null,
+                        whenMillis = s.latestAtMillis,
+                    )
+                }
             }
+        }
+
+        /**
+         * Post only when the content changed, or when the card vanished without the person swiping
+         * it away. A swipe sends the deleteIntent (stored as [dismissedKey]); a reboot, app update or
+         * force-stop (ColorOS does one when the app is swiped out of Recents) removes the card with
+         * no deleteIntent, and then it must come back. A swiped card stays away until there is
+         * something new to say.
+         */
+        fun shouldPost(key: String, postedKey: String?, dismissedKey: String?, showing: Boolean): Boolean = when {
+            key != postedKey -> true
+            showing -> false
+            else -> dismissedKey != key
         }
     }
 }
@@ -59,17 +89,19 @@ class LockScreenCard @Inject constructor(
         const val CHANNEL = "lock_card_v2"
         private const val OLD_CHANNEL = "lock_card"
         private const val ID = 7171
-        private const val PREFS = "lock_card"
+        internal const val PREFS = "lock_card"
         private const val K_POSTED = "posted_key"
-        private const val K_DISMISSED = "dismissed_key"
+        internal const val K_DISMISSED = "dismissed_key"
+        /** Sort time for a calm card when nothing was ever received: the first post, kept stable. */
+        private const val K_FIRST_POSTED_AT = "first_posted_at"
         const val ACTION_DISMISSED = "com.risaina.app.LOCK_CARD_DISMISSED"
         const val EXTRA_KEY = "key"
     }
 
     private val prefs get() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val nm get() = context.getSystemService(NotificationManager::class.java)
 
     private fun ensureChannel() {
-        val nm = context.getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(CHANNEL) != null) return
         runCatching { nm.deleteNotificationChannel(OLD_CHANNEL) }
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Lock-screen card", NotificationManager.IMPORTANCE_DEFAULT).apply {
@@ -79,26 +111,33 @@ class LockScreenCard @Inject constructor(
         })
     }
 
+    private fun showing(): Boolean = runCatching { nm.activeNotifications.any { it.id == ID } }.getOrDefault(false)
+
     /** Remove the card (sign-out, unlink, or the setting turned off) and forget what it said. */
     fun cancel() {
         NotificationManagerCompat.from(context).cancel(ID)
-        prefs.edit().clear().apply()
+        // Guarded: update() calls this on every recompute while the card is off (the default), and
+        // an unconditional clear() would be a disk write per sync.
+        if (prefs.all.isNotEmpty()) prefs.edit().clear().apply()
     }
 
     suspend fun update(s: WidgetSnapshot) {
-        if (!preferencesStore.current().lockScreenCard || !s.paired) { cancel(); return }
+        if (!preferencesStore.current().lockScreenCard || !s.paired) {
+            // A card from an older version has no stored key, so also check what is showing.
+            if (prefs.all.isNotEmpty() || showing()) cancel()
+            return
+        }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         ensureChannel()
+        // The person blocked this channel in system settings: posting would do nothing.
+        if (nm.getNotificationChannel(CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE) return
         val content = LockCardContent.from(s)
-        val showing = runCatching { context.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == ID } }.getOrDefault(false)
-        // Post only when the content changed, or when the card vanished without the person swiping
-        // it away (e.g. after the app was force-stopped). A swiped card stays away until there is
-        // something new to say.
-        val posted = prefs.getString(K_POSTED, null)
-        val dismissed = prefs.getString(K_DISMISSED, null)
-        val changed = content.key != posted
-        if (!changed && (showing || dismissed == content.key)) return
+        if (!LockCardContent.shouldPost(content.key, prefs.getString(K_POSTED, null), prefs.getString(K_DISMISSED, null), showing())) return
 
+        val sortAt = content.whenMillis
+            ?: prefs.getLong(K_FIRST_POSTED_AT, 0L).takeIf { it > 0 }
+            ?: System.currentTimeMillis().also { prefs.edit().putLong(K_FIRST_POSTED_AT, it).apply() }
         val open = PendingIntent.getActivity(
             context, ID,
             Intent(Intent.ACTION_VIEW, Uri.parse("risaina://app/home")).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -115,8 +154,9 @@ class LockScreenCard @Inject constructor(
             .setContentText(content.line)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content.line))
             .setOngoing(true).setOnlyAlertOnce(true).setSound(null).setVibrate(null)
-            // The real time of the gift or ping, or no time at all for the status line.
-            .setShowWhen(content.eventAtMillis != null).apply { content.eventAtMillis?.let { setWhen(it) } }
+            // The real time of the gift or ping is shown; the calm status line shows no time. Either
+            // way `when` is a stable item time (the builder would otherwise stamp "now").
+            .setShowWhen(content.eventAtMillis != null).setWhen(sortAt)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -134,7 +174,7 @@ class LockScreenCard @Inject constructor(
 class LockCardDismissedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != LockScreenCard.ACTION_DISMISSED) return
-        context.getSharedPreferences("lock_card", Context.MODE_PRIVATE).edit()
-            .putString("dismissed_key", intent.getStringExtra(LockScreenCard.EXTRA_KEY)).apply()
+        context.getSharedPreferences(LockScreenCard.PREFS, Context.MODE_PRIVATE).edit()
+            .putString(LockScreenCard.K_DISMISSED, intent.getStringExtra(LockScreenCard.EXTRA_KEY)).apply()
     }
 }
