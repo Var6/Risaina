@@ -21,6 +21,7 @@ describe('public legal pages', () => {
       expect(res.headers['content-type']).toContain('text/html');
       expect(res.body).toContain(heading);
       expect(res.body).not.toContain('{{');
+      expect(res.body).not.toMatch(/\[(DEVELOPER NAME|CONTACT EMAIL)\]/);
       expect(res.body).toContain('mailto:');
     });
   }

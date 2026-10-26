@@ -7,8 +7,8 @@ import { escapeHtml } from '../../services/mailer/templates.js';
  * account-deletion page to name the developer and give a contact.
  */
 export const LEGAL_CONTACT = {
-  developerName: '[DEVELOPER NAME]',
-  email: '[CONTACT EMAIL]',
+  developerName: 'Rishabh_Stark',
+  email: 'rk.remo12345@gmail.com',
 } as const;
 
 /** Public pages Google Play links to (store listing, Data safety form, and the app's Settings). */
