@@ -54,6 +54,18 @@ data class MessagesUiState(
     val wallpaperMediaId: String? = null,
     val games: List<com.risaina.app.core.network.GameDto> = emptyList(),
     val wallpaperBusy: Boolean = false,
+    val gameUi: GameUiState = GameUiState(),
+)
+
+/** Games stream: the picker and in-flight game requests (cards ignore taps while their request runs). */
+data class GameUiState(
+    val showPicker: Boolean = false,
+    val catalog: com.risaina.app.core.network.GameCatalogDto? = null,
+    /** The kind being started, for the spinner ("Getting questions…" for trivia). */
+    val startingKind: String? = null,
+    val busyIds: Set<String> = emptySet(),
+    /** This or That picks made but not sent yet, per game. */
+    val drafts: Map<String, List<Int>> = emptyMap(),
 )
 
 private data class Local(
@@ -80,6 +92,7 @@ class MessagesViewModel @Inject constructor(
 ) : ViewModel() {
     private val wallpaperBusy = MutableStateFlow(false)
     private val gameRepository = gameRepo
+    private val gameLocal = MutableStateFlow(GameUiState())
 
     private val local = MutableStateFlow(Local())
     private val effects = Channel<String>(Channel.BUFFERED)
@@ -88,7 +101,7 @@ class MessagesViewModel @Inject constructor(
     val state: StateFlow<MessagesUiState> = combine(
         messageRepository.recent(300), sessionStore.session, coupleRepository.partner, local,
         combine(recorder.state, player.state, syncManager.socketState) { r, p, s -> Triple(r, p, s) },
-        coupleRepository.couple, combine(gameRepo.games, wallpaperBusy) { g, b -> g to b },
+        coupleRepository.couple, combine(gameRepo.games, wallpaperBusy, gameLocal, gameRepo.drafts) { g, b, ui, d -> Triple(g, b, ui.copy(drafts = d)) },
     ) { arr ->
         @Suppress("UNCHECKED_CAST") val messages = arr[0] as List<Message>
         val session = arr[1] as com.risaina.app.core.model.Session?
@@ -96,13 +109,13 @@ class MessagesViewModel @Inject constructor(
         val l = arr[3] as Local
         @Suppress("UNCHECKED_CAST") val (rec, play, socket) = arr[4] as Triple<VoiceRecorder.State, PlaybackState, SocketState>
         val couple = arr[5] as com.risaina.app.core.model.Couple?
-        @Suppress("UNCHECKED_CAST") val (games, wpBusy) = arr[6] as Pair<List<com.risaina.app.core.network.GameDto>, Boolean>
+        @Suppress("UNCHECKED_CAST") val (games, wpBusy, gameUi) = arr[6] as Triple<List<com.risaina.app.core.network.GameDto>, Boolean, GameUiState>
         MessagesUiState(
             messages = messages, myId = session?.userId, partner = partner,
             composer = l.composer, sendingMedia = l.sendingMedia, canLoadMore = l.canLoadMore, loadingMore = l.loadingMore,
             showRecorder = l.showRecorder, recorder = rec, playback = play, socket = socket,
             wallpaper = couple?.chatWallpaperStyle ?: "DEFAULT", wallpaperMediaId = couple?.chatWallpaperMediaId,
-            games = games, wallpaperBusy = wpBusy,
+            games = games, wallpaperBusy = wpBusy, gameUi = gameUi,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MessagesUiState())
 
@@ -138,25 +151,95 @@ class MessagesViewModel @Inject constructor(
         }
     }
 
-    // ---- rock–paper–scissors ----
-    fun startGame() {
+    // ---- games: stone–paper–scissors–thread, tic-tac-toe, trivia duel, This or That ----
+    private fun partnerFirst() = state.value.partner?.displayName?.substringBefore(" ")?.ifBlank { null } ?: "your partner"
+
+    private fun gameError(error: com.risaina.app.core.common.AppError, gameId: String?, fallback: String) {
+        val kind = gameId?.let { id -> gameRepository.games.value.firstOrNull { it.id == id }?.kind }
+        com.risaina.app.feature.messages.games.gameErrorMessage(error, kind, partnerFirst(), fallback)?.let { effects.trySend(it) }
+    }
+
+    /** One request at a time per game: the card ignores taps while [id] is busy. */
+    private fun gameWrite(id: String, fallback: String, block: suspend () -> AppResult<Unit>) {
         viewModelScope.launch {
-            when (val r = gameRepository.start()) {
-                is AppResult.Success -> Unit
-                is AppResult.Failure -> effects.trySend(
-                    if ((r.error as? com.risaina.app.core.common.AppError.Conflict)?.code == "game_in_progress") "Finish the current game first ✊✋✌️" else r.error.message ?: "Couldn't start a game",
-                )
+            gameLocal.update { it.copy(busyIds = it.busyIds + id) }
+            try {
+                block().onFailure { gameError(it, id, fallback) }
+            } finally {
+                gameLocal.update { it.copy(busyIds = it.busyIds - id) }
             }
         }
     }
-    fun gameMove(id: String, move: String) { viewModelScope.launch { gameRepository.move(id, move).onFailure { effects.trySend(it.message ?: "Couldn't play") } } }
-    fun gameRematch(id: String) { viewModelScope.launch { gameRepository.rematch(id).onFailure { effects.trySend(it.message ?: "Couldn't start a rematch") } } }
-    fun gameChallenge(id: String, truth: String, dare: String) { viewModelScope.launch { gameRepository.challenge(id, truth, dare).onFailure { effects.trySend(it.message ?: "Couldn't send") } } }
-    fun gameChoose(id: String, kind: String) { viewModelScope.launch { gameRepository.choose(id, kind).onFailure { effects.trySend(it.message ?: "Couldn't choose") } } }
-    fun gameConfirm(id: String) { viewModelScope.launch { gameRepository.confirm(id).onFailure { effects.trySend(it.message ?: "Couldn't confirm") } } }
-    fun gameReject(id: String, note: String?) { viewModelScope.launch { gameRepository.reject(id, note).onFailure { effects.trySend(it.message ?: "Couldn't send") } } }
-    fun gameComplete(id: String, answer: String?) { viewModelScope.launch { gameRepository.complete(id, answer).onFailure { effects.trySend(it.message ?: "Couldn't mark done") } } }
-    fun gameCancel(id: String) { viewModelScope.launch { gameRepository.cancel(id) } }
+
+    fun openGamePicker() {
+        gameLocal.update { it.copy(showPicker = true) }
+        viewModelScope.launch { gameRepository.catalog().let { c -> gameLocal.update { it.copy(catalog = c) } } }
+    }
+    fun closeGamePicker() = gameLocal.update { it.copy(showPicker = false) }
+
+    fun startGame(opts: com.risaina.app.core.data.GameStartOptions) { viewModelScope.launch { start(opts) } }
+
+    private suspend fun start(opts: com.risaina.app.core.data.GameStartOptions) {
+        gameLocal.update { it.copy(startingKind = opts.kind) }
+        val r = gameRepository.start(opts)
+        gameLocal.update { it.copy(startingKind = null, showPicker = it.showPicker && !r.isSuccess) }
+        r.onFailure { gameError(it, null, "Couldn't start a game") }
+    }
+
+    /** One open game per couple: end the current one (for both), then start the new one. */
+    fun endAndStart(openId: String, opts: com.risaina.app.core.data.GameStartOptions) {
+        viewModelScope.launch {
+            gameLocal.update { it.copy(startingKind = opts.kind) }
+            val ended = gameRepository.cancel(openId)
+            if (ended is AppResult.Failure) {
+                gameLocal.update { it.copy(startingKind = null) }
+                gameError(ended.error, openId, "Couldn't end that game")
+                return@launch
+            }
+            start(opts)
+        }
+    }
+
+    /** Same kind, same options. */
+    fun playAgain(g: com.risaina.app.core.network.GameDto) = startGame(com.risaina.app.core.data.GameStartOptions.from(g))
+
+    fun gameMove(id: String, move: String) = gameWrite(id, "Couldn't play") { gameRepository.move(id, move) }
+    fun tttPlay(id: String, cell: Int) = gameWrite(id, "Couldn't play") {
+        gameRepository.play(id, com.risaina.app.core.network.GamePlayRequest(com.risaina.app.core.data.GameKinds.TICTACTOE, cell = cell))
+    }
+    fun triviaAnswer(id: String, item: Int, choice: Int) = gameWrite(id, "Couldn't send your answer") {
+        gameRepository.play(id, com.risaina.app.core.network.GamePlayRequest(com.risaina.app.core.data.GameKinds.TRIVIA, item = item, choice = choice))
+    }
+
+    /** This or That: picks build up locally; the last one sends them all. */
+    fun thisOrThatPick(id: String, choice: Int) {
+        val total = gameRepository.games.value.firstOrNull { it.id == id }?.quiz?.items?.size ?: return
+        val draft = (gameRepository.drafts.value[id].orEmpty() + choice).take(total)
+        gameRepository.setDraft(id, draft)
+        if (draft.size == total) thisOrThatSubmit(id)
+    }
+    fun thisOrThatUndo(id: String) {
+        val draft = gameRepository.drafts.value[id].orEmpty()
+        if (draft.isNotEmpty()) gameRepository.setDraft(id, draft.dropLast(1))
+    }
+    fun thisOrThatSubmit(id: String) {
+        val picks = gameRepository.drafts.value[id] ?: return
+        gameWrite(id, "Couldn't send your picks") {
+            val r = gameRepository.play(id, com.risaina.app.core.network.GamePlayRequest(com.risaina.app.core.data.GameKinds.THIS_OR_THAT, picks = picks))
+            // Sent, or the server already has picks (a retry after a lost answer): the draft is done.
+            if (r.isSuccess || (r.errorOrNull() as? com.risaina.app.core.common.AppError.Conflict)?.code == "already_moved") gameRepository.clearDraft(id)
+            r
+        }
+    }
+
+    fun gameEnd(id: String) = gameWrite(id, "Couldn't end it") { gameRepository.end(id) }
+    fun gameRematch(id: String) = gameWrite(id, "Couldn't start a rematch") { gameRepository.rematch(id) }
+    fun gameChallenge(id: String, truth: String, dare: String) = gameWrite(id, "Couldn't send") { gameRepository.challenge(id, truth, dare) }
+    fun gameChoose(id: String, kind: String) = gameWrite(id, "Couldn't choose") { gameRepository.choose(id, kind) }
+    fun gameConfirm(id: String) = gameWrite(id, "Couldn't confirm") { gameRepository.confirm(id) }
+    fun gameReject(id: String, note: String?) = gameWrite(id, "Couldn't send") { gameRepository.reject(id, note) }
+    fun gameComplete(id: String, answer: String?) = gameWrite(id, "Couldn't mark done") { gameRepository.complete(id, answer) }
+    fun gameCancel(id: String) = gameWrite(id, "Couldn't cancel the game") { gameRepository.cancel(id) }
     suspend fun gameSuggestions() = gameRepository.suggestions()
 
     fun send() {

@@ -216,11 +216,21 @@ import kotlinx.serialization.json.JsonObject
     val myMove: String? = null, val partnerMoved: Boolean = false, val partnerMove: String? = null,
     val winnerId: String? = null, val loserId: String? = null,
     val challenge: GameChallengeDto? = null, val answer: String? = null, val completedAt: String? = null, val round: Int = 1,
+    /** "truth_or_dare" (the winner gets the blind truth or dare) or "none" (just for fun). */
+    val prize: String = "truth_or_dare",
+    val ttt: TttDto? = null, val quiz: QuizDto? = null,
 )
 @Serializable data class GameResponse(val game: GameDto)
 @Serializable data class GameList(val items: List<GameDto>)
 @Serializable data class GameSuggestions(val truths: List<String>, val dares: List<String>)
-@Serializable data class CreateGameRequest(val kind: String = "rps")
+/**
+ * Null fields are left out of the JSON (explicitNulls = false), which keeps the body valid for the
+ * server's strict per-kind schema and for older servers that only accept { kind }.
+ */
+@Serializable data class CreateGameRequest(
+    val kind: String = "rps", val prize: String? = null, val category: Int? = null,
+    val difficulty: String? = null, val deck: String? = null,
+)
 @Serializable data class GameMoveRequest(val move: String)
 @Serializable data class GameChallengeRequest(val truth: String, val dare: String)
 @Serializable data class GameChooseRequest(val kind: String)
@@ -228,3 +238,41 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class GameCompleteRequest(val answer: String? = null)
 @Serializable data class HealthResponse(val status: String, val version: String? = null, val checks: JsonObject? = null)
 @Serializable data class ExportResponse(@SerialName("user") val user: UserDto, val couple: CoupleDto? = null)
+
+// ---- games stream: tic-tac-toe, trivia duel, This or That (every field defaulted: older servers omit them) ----
+@Serializable data class TttDto(
+    val board: List<String?> = List(9) { null }, val myMark: String = "o", val xId: String? = null,
+    val turnId: String? = null, val myTurn: Boolean = false, val lastCell: Int? = null,
+    val line: List<Int>? = null, val moveCount: Int = 0,
+)
+@Serializable data class QuizCategoryDto(val id: Int? = null, val name: String = "")
+/** One trivia question or This-or-That prompt, as this viewer may see it (the server hides the rest). */
+@Serializable data class QuizItemDto(
+    val index: Int = 0, val text: String? = null, val choices: List<String> = emptyList(),
+    val category: String? = null, val difficulty: String? = null, val myChoice: Int? = null,
+    val correct: Int? = null, val partnerChoice: Int? = null,
+)
+@Serializable data class QuizDto(
+    val source: String = "builtin", val attribution: String? = null, val category: QuizCategoryDto? = null,
+    val difficulty: String? = null, val deck: String? = null, val total: Int = 0,
+    val items: List<QuizItemDto> = emptyList(), val myAnswered: Int = 0, val partnerAnswered: Int = 0,
+    val myFinished: Boolean = false, val partnerFinished: Boolean = false,
+    val myScore: Int? = null, val partnerScore: Int? = null, val matches: Int? = null,
+)
+/** POST /games/:id/play. Only the fields of the game's kind are set; nulls are left out. */
+@Serializable data class GamePlayRequest(
+    val kind: String, val move: String? = null, val cell: Int? = null,
+    val item: Int? = null, val choice: Int? = null, val picks: List<Int>? = null,
+)
+@Serializable data class GameKindDto(val kind: String, val title: String = "", val emoji: String = "", val blurb: String = "", val competitive: Boolean = true)
+@Serializable data class TriviaCatalogDto(
+    val questionCount: Int = 5, val difficulties: List<String> = emptyList(),
+    val categories: List<QuizCategoryDto> = emptyList(), val attribution: String = "", val attributionUrl: String = "https://opentdb.com",
+)
+@Serializable data class DeckDto(val id: String, val name: String = "", val emoji: String = "")
+@Serializable data class ThisOrThatCatalogDto(val promptCount: Int = 7, val decks: List<DeckDto> = emptyList())
+/** GET /games/catalog. `legacyServer` is never sent: it marks the local rps-only stand-in for an older server. */
+@Serializable data class GameCatalogDto(
+    val kinds: List<GameKindDto> = emptyList(), val trivia: TriviaCatalogDto = TriviaCatalogDto(),
+    val thisOrThat: ThisOrThatCatalogDto = ThisOrThatCatalogDto(), val legacyServer: Boolean = false,
+)

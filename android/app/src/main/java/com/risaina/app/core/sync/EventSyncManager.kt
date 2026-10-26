@@ -94,6 +94,8 @@ class EventSyncManager @Inject constructor(
         if (replay) {
             val cutoff = java.time.Instant.now().minus(java.time.Duration.ofMinutes(10))
             collected.removeAll { (it is Incoming.NewPing && it.ping.createdAt.isBefore(cutoff)) || (it is Incoming.NewMessage && it.message.createdAt.isBefore(cutoff)) }
+            // Games stream: an old game move replayed after a sign-in or re-pair is not news either.
+            collected.removeAll { it is Incoming.Game && it.createdAt?.isBefore(cutoff) == true }
         }
         widgetSnapshotUpdater.recompute()
         // Open on screen but the event came by push or catch-up sync (not the socket): the

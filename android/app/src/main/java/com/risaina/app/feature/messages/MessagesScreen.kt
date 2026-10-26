@@ -78,6 +78,10 @@ import com.risaina.app.feature.common.MicIcon
 import com.risaina.app.feature.common.PauseIcon
 import com.risaina.app.feature.common.PlayIcon
 import com.risaina.app.feature.common.SendIcon
+import com.risaina.app.feature.messages.games.GameActions
+import com.risaina.app.feature.messages.games.GameCard
+import com.risaina.app.feature.messages.games.GamePickerSheet
+import com.risaina.app.feature.messages.games.isMyTurn
 import com.risaina.app.feature.voice.VoiceRecorderSheet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -99,9 +103,21 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
     var toDelete by remember { mutableStateOf<Message?>(null) }
     var showWallpaper by remember { mutableStateOf(false) }
     val gameActions = remember(vm) {
-        GameActions(vm::gameMove, vm::gameRematch, vm::gameChallenge, vm::gameChoose, vm::gameComplete, vm::gameConfirm, vm::gameReject, vm::gameCancel, vm::gameSuggestions, vm::startGame)
+        GameActions(
+            move = vm::gameMove, tttPlay = vm::tttPlay, triviaAnswer = vm::triviaAnswer,
+            thisOrThatPick = vm::thisOrThatPick, thisOrThatUndo = vm::thisOrThatUndo, thisOrThatSubmit = vm::thisOrThatSubmit,
+            rematch = vm::gameRematch, end = vm::gameEnd, challenge = vm::gameChallenge, choose = vm::gameChoose,
+            complete = vm::gameComplete, confirm = vm::gameConfirm, reject = vm::gameReject, cancel = vm::gameCancel,
+            suggestions = vm::gameSuggestions, playAgain = vm::playAgain, openPicker = vm::openGamePicker,
+        )
     }
     val wallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::setWallpaperPhoto); showWallpaper = false }
+    // Messages and game cards, newest first. Up here so the game picker's "Go to it" can find a card.
+    val timeline: List<Any> = remember(s.messages, s.games) {
+        (s.messages + s.games).sortedByDescending { item ->
+            when (item) { is Message -> item.createdAt; is com.risaina.app.core.network.GameDto -> java.time.Instant.parse(item.createdAt); else -> java.time.Instant.EPOCH }
+        }
+    }
 
     // Mark partner messages read as they become visible.
     LaunchedEffect(s.messages.size, listState.firstVisibleItemIndex) {
@@ -140,7 +156,7 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
             Composer(
                 text = s.composer, onText = vm::onComposer, onSend = vm::send,
                 onPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji, onGame = vm::startGame,
+                onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji, onGame = vm::openGamePicker,
             )
         },
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -153,14 +169,10 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
                 modifier = Modifier.padding(padding).fillMaxSize(),
             )
         } else {
-            val timeline: List<Any> = remember(s.messages, s.games) {
-                (s.messages + s.games).sortedByDescending { item ->
-                    when (item) { is Message -> item.createdAt; is com.risaina.app.core.network.GameDto -> java.time.Instant.parse(item.createdAt); else -> java.time.Instant.EPOCH }
-                }
-            }
-            // A new game, or a game that changed state (your turn, sealed, confirmed…), scrolls into view.
+            // A new game, a change of state, or your turn coming round scrolls the live game into view;
+            // a partner's move that leaves it their turn (or one trivia answer) doesn't yank the chat.
             val liveGame = s.games.filter { it.status !in setOf("completed", "cancelled") }.maxByOrNull { it.updatedAt }
-            LaunchedEffect(liveGame?.id, liveGame?.status) {
+            LaunchedEffect(liveGame?.id, liveGame?.status, liveGame?.let { isMyTurn(it, s.myId) }) {
                 val i = liveGame?.let { g -> timeline.indexOfFirst { it is com.risaina.app.core.network.GameDto && it.id == g.id } } ?: -1
                 if (i >= 0) listState.animateScrollToItem(i)
             }
@@ -173,7 +185,10 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
             ) {
                 itemsIndexed(timeline, key = { _, it -> if (it is Message) it.id else "game-" + (it as com.risaina.app.core.network.GameDto).id }) { index, item ->
                     if (item is com.risaina.app.core.network.GameDto) {
-                        GameCard(item, s.myId, s.partner?.displayName ?: "your partner", gameActions)
+                        GameCard(
+                            item, s.myId, s.partner?.displayName ?: "your partner", gameActions,
+                            busy = item.id in s.gameUi.busyIds, thisOrThatDraft = s.gameUi.drafts[item.id].orEmpty(),
+                        )
                         return@itemsIndexed
                     }
                     val m = item as Message
@@ -219,6 +234,21 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
         )
     }
     viewOnceUrl?.let { url -> ViewOnceViewer(url) { viewOnceUrl = null } }
+    if (s.gameUi.showPicker) {
+        GamePickerSheet(
+            catalog = s.gameUi.catalog,
+            openGame = s.games.firstOrNull { it.status !in setOf("completed", "cancelled") },
+            myId = s.myId, partner = s.partner?.displayName?.substringBefore(" ") ?: "your partner",
+            startingKind = s.gameUi.startingKind,
+            onStart = vm::startGame, onEndAndStart = vm::endAndStart, onEndOpen = vm::gameCancel,
+            onGoTo = { id ->
+                vm.closeGamePicker()
+                val i = timeline.indexOfFirst { it is com.risaina.app.core.network.GameDto && it.id == id }
+                if (i >= 0) scope.launch { listState.animateScrollToItem(i) }
+            },
+            onDismiss = vm::closeGamePicker,
+        )
+    }
     if (showWallpaper) ChatWallpaperSheet(
         current = s.wallpaper, photo = com.risaina.app.feature.common.rememberMediaModel(s.wallpaperMediaId),
         onPick = { vm.setWallpaper(it); showWallpaper = false },
@@ -335,7 +365,7 @@ private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit,
         }
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
             IconButton(onClick = onPhoto, enabled = uploading == null) { Icon(ImageIcon, contentDescription = "Send a photo") }
-            IconButton(onClick = onGame) { Text("✊", fontSize = 20.sp, modifier = Modifier.semantics { contentDescription = "Play stone paper scissors thread" }) }
+            IconButton(onClick = onGame) { Text("🎲", fontSize = 20.sp, modifier = Modifier.semantics { contentDescription = "Play a game" }) }
             TextField(
                 value = text, onValueChange = onText, modifier = Modifier.weight(1f),
                 placeholder = { Text("Write something small", fontFamily = FrauncesText) },

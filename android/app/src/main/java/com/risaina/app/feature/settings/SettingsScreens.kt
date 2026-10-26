@@ -363,6 +363,11 @@ fun AboutScreen(onBack: () -> Unit) {
         SectionHeader("Type")
         Text("Fraunces and Inter, both under the SIL Open Font License 1.1. Licence texts ship in the repository under android/licenses.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
         Spacer(Modifier.height(16.dp))
+        // Games stream: Open Trivia Database's CC BY-SA 4.0 licence asks for credit and a link.
+        SectionHeader("Trivia questions")
+        Text("Trivia duel questions come from Open Trivia Database, under CC BY-SA 4.0. Our server fetches them; your phone never contacts it.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
+        com.risaina.app.feature.messages.games.AttributionLine(null)
+        Spacer(Modifier.height(16.dp))
         SectionHeader("Privacy")
         Text("No analytics, no ads, no third-party SDKs beyond Firebase Cloud Messaging for push delivery. The server only ever receives what you choose to send.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 8.dp))
     }

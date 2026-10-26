@@ -37,7 +37,12 @@ sealed interface Incoming {
     /** Partner changed what my widgets show (no notification; widgets refresh). */
     data object WidgetChanged : Incoming
     data class Sos(val id: String) : Incoming
-    data class Game(val id: String, val action: String) : Incoming
+    /**
+     * The partner did something in a game. Read from the event itself (not the refreshed game) so a
+     * notification never waits for a network fetch: [kind] picks the text, [createdAt] lets a full
+     * replay skip old ones, [topic] is the trivia category for "5 questions on History".
+     */
+    data class Game(val id: String, val action: String, val kind: String = "rps", val createdAt: Instant? = null, val topic: String? = null) : Incoming
 }
 
 /**
@@ -144,7 +149,12 @@ class EventReducer @Inject constructor(
                 if (id != null) {
                     gameRepository.refreshOne(id)
                     val action = p.str("action")
-                    if (event.actorId != me && action != null) out += Incoming.Game(id, action)
+                    if (event.actorId != me && action != null) {
+                        out += Incoming.Game(
+                            id, action, kind = g.str("kind") ?: "rps",
+                            createdAt = runCatching { Instant.parse(event.createdAt) }.getOrNull(), topic = g.obj("quiz")?.str("categoryName"),
+                        )
+                    }
                 }
             }
             "couple.unlinked" -> { out += Incoming.Unlinked }
