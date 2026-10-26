@@ -34,6 +34,7 @@ class EventSyncManager @Inject constructor(
     private val coupleRepository: CoupleRepository,
     private val widgetSnapshotUpdater: WidgetSnapshotUpdater,
     private val haptics: com.risaina.app.core.notifications.Haptics,
+    private val gameRepository: com.risaina.app.core.data.GameRepository,
 ) {
     private val applyMutex = Mutex()
     private var socketJob: Job? = null
@@ -47,18 +48,25 @@ class EventSyncManager @Inject constructor(
     fun start(scope: CoroutineScope) {
         if (socketJob?.isActive == true) return
         socketJob = scope.launch {
+            // Games stream: the replay between `ready` and `synced` is a catch-up batch, so game
+            // re-fetches wait for `synced` (one per game, not one per event).
+            var backlog = false
             socket.connect(sinceProvider = { sessionStore.lastEventSeq.first() }).collect { msg ->
                 when (msg) {
-                    is SocketMessage.Ready -> Unit
+                    is SocketMessage.Ready -> backlog = true
                     is SocketMessage.Event -> {
-                        val results = applyMutex.withLock { reducer.apply(msg.event) }
+                        val results = applyMutex.withLock { reducer.apply(msg.event, deferGameRefresh = backlog) }
                         if (results.isNotEmpty()) {
                             if (results.any { it is Incoming.NewPing }) haptics.arrival()
                             results.forEach { _incoming.tryEmit(it) }
                             widgetSnapshotUpdater.recompute()
                         }
                     }
-                    SocketMessage.Synced -> widgetSnapshotUpdater.recompute()
+                    SocketMessage.Synced -> {
+                        backlog = false
+                        gameRepository.flushStale()
+                        widgetSnapshotUpdater.recompute()
+                    }
                     SocketMessage.Revoked -> coupleRepository.refreshMe()
                 }
             }
@@ -80,15 +88,19 @@ class EventSyncManager @Inject constructor(
         for (pageNo in 0 until 10) {
             val page = when (val r = apiCall { api.events(since = since, limit = 200) }) {
                 is AppResult.Success -> r.value
-                is AppResult.Failure -> return r
+                is AppResult.Failure -> { gameRepository.flushStale(full = replay); return r }
             }
             if (page.items.isEmpty()) break
             for (e in page.items) {
-                collected += applyMutex.withLock { reducer.apply(e) }
+                // No network inside the lock: a game is only marked here and fetched below.
+                collected += applyMutex.withLock { reducer.apply(e, deferGameRefresh = true) }
             }
             since = page.items.maxOf { it.seq }
             if (since >= page.latestSeq) break
         }
+        // Games stream: one GET per game the batch touched (one list request after a full replay),
+        // before returning, so the notifier reads fresh copies.
+        gameRepository.flushStale(full = replay)
         // Recompute even when nothing new arrived: the countdown's "days left" moves at midnight,
         // and an app update may change what the widgets derive from the same data.
         if (replay) {

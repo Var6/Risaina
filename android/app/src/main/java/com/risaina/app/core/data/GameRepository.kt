@@ -3,6 +3,7 @@ package com.risaina.app.core.data
 import com.risaina.app.core.common.AppError
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.common.map
+import com.risaina.app.core.common.onFailure
 import com.risaina.app.core.common.onSuccess
 import com.risaina.app.core.network.CreateGameRequest
 import com.risaina.app.core.network.DeckDto
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -120,28 +122,71 @@ class GameRepository @Inject constructor(private val api: RisainaApi) {
 
     private fun put(g: GameDto) = _games.update { list -> (listOf(g) + list.filter { it.id != g.id }).sortedByDescending { it.createdAt } }
 
-    suspend fun refresh(): AppResult<Unit> = apiCall { api.games() }.onSuccess { _games.value = it.items }.map { }
-    suspend fun refreshOne(id: String) { apiCall { api.game(id) }.onSuccess { put(it.game) } }
+    /**
+     * Games whose copy is behind an event that a catch-up batch applied without re-fetching
+     * ([onEvent] with `defer`). [flushStale] re-fetches each one once, at the end of the batch.
+     * Kept in memory like the games list: if the process dies, both are gone and the next open
+     * loads the list afresh. Concurrent, because the socket and a push-triggered sync can overlap.
+     */
+    private val stale: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    suspend fun refresh(): AppResult<Unit> {
+        // Unmarked before the call, so a game an event marks during it is still fetched next time.
+        val due = stale.toSet().also { stale.removeAll(it) }
+        return apiCall { api.games() }.onSuccess { _games.value = it.items }
+            .onFailure { if (it.isRetryable) stale.addAll(due) }.map { }
+    }
+
+    /** Re-fetches one game. When offline (or the server is busy) it stays marked for the next flush. */
+    suspend fun refreshOne(id: String): AppResult<Unit> {
+        stale.remove(id)
+        return apiCall { api.game(id) }.onSuccess { put(it.game) }
+            .onFailure { if (it.isRetryable) stale.add(id) }.map { }
+    }
 
     /**
-     * A `game.updated` event (socket or catch-up sync). Normally the game is re-fetched, because
-     * only the server can build this viewer's view. One exception keeps a push-triggered sync
-     * inside its few seconds: the partner answering one more trivia question changes nothing in my
-     * view except their progress count, which the event itself carries. Applying it locally saves
-     * a GET per answer; otherwise the partner's "finished" push waits behind four of them.
+     * A `game.updated` event (socket or catch-up sync). Only the server can build this viewer's
+     * view, so the game is re-fetched, with two savings that keep a push-triggered sync inside its
+     * few seconds (RisainaMessagingService allows 8):
+     * - The partner answering one more trivia question changes nothing in my view except their
+     *   progress count, which the event carries, so it is applied locally.
+     * - In a catch-up batch ([defer]), the game is only marked, and [flushStale] fetches it once
+     *   after the batch. A trivia duel is up to 12 events and a full replay holds every past game:
+     *   one GET each would blow the budget, and the copy fetched for the first event already shows
+     *   the rest.
      */
-    suspend fun onEvent(id: String, action: String?, actorId: String, fromPartner: Boolean, view: JsonObject?) {
-        if (fromPartner && action == "answered" && view != null) {
+    suspend fun onEvent(id: String, action: String?, actorId: String, fromPartner: Boolean, view: JsonObject?, defer: Boolean = false) {
+        // A game already due for a re-fetch: that fetch shows this event too, so don't patch an old copy.
+        if (id !in stale && fromPartner && action == "answered" && view != null) {
             val event = runCatching { eventJson.decodeFromJsonElement(GameEventViewDto.serializer(), view) }.getOrNull()
             val local = _games.value.firstOrNull { it.id == id }
             val merged = if (event != null && local != null) withPartnerProgress(local, event, actorId) else null
             if (merged != null) { put(merged); return }
         }
-        refreshOne(id)
+        if (defer) stale.add(id) else refreshOne(id)
     }
 
-    suspend fun start(opts: GameStartOptions = GameStartOptions()): AppResult<GameDto> =
-        apiCall { api.createGame(opts.toRequest()) }.onSuccess { put(it.game) }.map { it.game }
+    /**
+     * Re-fetches the games a catch-up batch marked, once each. After a full replay ([full]: a new
+     * sign-in or pairing), or with several games due, one list request replaces them all. Stops at
+     * the first retryable failure; whatever is left stays marked for the next sync.
+     */
+    suspend fun flushStale(full: Boolean = false) {
+        if (stale.isEmpty()) return
+        if (full || stale.size > MAX_SINGLE_REFRESHES) { refresh(); return }
+        while (true) {
+            val id = stale.firstOrNull() ?: return
+            if (refreshOne(id).errorOrNull()?.isRetryable == true) return
+        }
+    }
+
+    suspend fun start(opts: GameStartOptions = GameStartOptions()): AppResult<GameDto> {
+        val r = apiCall { api.createGame(opts.toRequest()) }.onSuccess { put(it.game) }.map { it.game }
+        // An open game this phone doesn't know about (an event it missed): load it, so the picker
+        // shows it with "End it" instead of only refusing to start another.
+        if ((r.errorOrNull() as? AppError.Conflict)?.code == "game_in_progress") refresh()
+        return r
+    }
     suspend fun move(id: String, move: String) = write(id) { api.gameMove(id, move) }
     suspend fun play(id: String, req: GamePlayRequest) = write(id) { api.gamePlay(id, req) }
     suspend fun end(id: String) = write(id) { api.gameEnd(id) }
@@ -169,13 +214,14 @@ class GameRepository @Inject constructor(private val api: RisainaApi) {
     /**
      * What the picker offers. Cached once loaded. A 404 means a server from before these games
      * (GET /games/catalog falls through to /games/:id there): offer stone-paper-scissors only.
-     * Offline: the built-in copy, not cached, so the next open asks again.
+     * Offline: the built-in copy. Neither is cached, so the next open asks again: the server may
+     * be deployed (or rolled forward) while the app keeps running.
      */
     suspend fun catalog(): GameCatalogDto {
         catalog?.let { return it }
         return when (val r = apiCall { api.gameCatalog() }) {
             is AppResult.Success -> r.value.also { catalog = it }
-            is AppResult.Failure -> if (r.error is AppError.NotFound) LEGACY_CATALOG.also { catalog = it } else DEFAULT_CATALOG
+            is AppResult.Failure -> if (r.error is AppError.NotFound) LEGACY_CATALOG else DEFAULT_CATALOG
         }
     }
 
@@ -188,9 +234,12 @@ class GameRepository @Inject constructor(private val api: RisainaApi) {
             )
     }
 
-    fun clear() { _games.value = emptyList(); _drafts.value = emptyMap(); catalog = null }
+    fun clear() { _games.value = emptyList(); _drafts.value = emptyMap(); catalog = null; stale.clear() }
 
     companion object {
+        /** More games than this due after a batch: one list request instead of one GET each. */
+        private const val MAX_SINGLE_REFRESHES = 3
+
         private val RPS_KIND = GameKindDto(GameKinds.RPS, "Stone Paper Scissors Thread", "✊", "One secret move each. Thread beats stone and paper; scissors cut thread.", true)
 
         /** Mirrors GET /games/catalog, for when it can't be loaded (offline). */

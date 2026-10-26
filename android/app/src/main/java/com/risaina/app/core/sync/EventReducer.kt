@@ -68,7 +68,11 @@ class EventReducer @Inject constructor(
     private val sosAlert: com.risaina.app.core.notifications.SosAlert,
     private val gameRepository: com.risaina.app.core.data.GameRepository,
 ) {
-    suspend fun apply(event: EventDto): List<Incoming> {
+    /**
+     * [deferGameRefresh]: the event is part of a catch-up batch, so a game it touches is only
+     * marked and re-fetched once when the batch ends (GameRepository.flushStale), not per event.
+     */
+    suspend fun apply(event: EventDto, deferGameRefresh: Boolean = false): List<Incoming> {
         val me = sessionStore.current()?.userId ?: return emptyList()
         val cursor = sessionStore.lastEventSeq.first()
         if (event.seq <= cursor) return emptyList()
@@ -148,8 +152,9 @@ class EventReducer @Inject constructor(
                 val id = (g?.get("id") as? kotlinx.serialization.json.JsonPrimitive)?.content
                 if (id != null) {
                     val action = p.str("action")
-                    // Games stream: re-fetches the game, except a partner's single trivia answer (applied from the event).
-                    gameRepository.onEvent(id, action, event.actorId, fromPartner = event.actorId != me, view = g)
+                    // Games stream: re-fetches the game (once per batch when deferred), except a partner's
+                    // single trivia answer, which is applied from the event.
+                    gameRepository.onEvent(id, action, event.actorId, fromPartner = event.actorId != me, view = g, defer = deferGameRefresh)
                     if (event.actorId != me && action != null) {
                         out += Incoming.Game(
                             id, action, kind = g.str("kind") ?: "rps",
