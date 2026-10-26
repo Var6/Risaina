@@ -181,6 +181,23 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
                 val i = liveGame?.let { g -> timeline.indexOfFirst { it is com.risaina.app.core.network.GameDto && it.id == g.id } } ?: -1
                 if (i >= 0) listState.animateScrollToItem(i)
             }
+            // Newest is at the bottom (index 0, reverse layout). LazyColumn keeps the item you were looking
+            // at anchored by its key, so a new message used to land just below the visible area. Bring the
+            // newest into view when the chat opens, when you send, and when something arrives while you
+            // are at (or near) the bottom; if you have scrolled up to read, leave you there.
+            val newest = timeline.firstOrNull()
+            val newestKey = when (newest) { is Message -> newest.id; is com.risaina.app.core.network.GameDto -> "game-" + newest.id; else -> null }
+            val newestMine = (newest as? Message)?.senderId == s.myId
+            var lastNewestKey by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(newestKey) {
+                val previous = lastNewestKey
+                lastNewestKey = newestKey
+                if (newestKey == null) return@LaunchedEffect
+                when {
+                    previous == null -> listState.scrollToItem(0)
+                    previous != newestKey && (newestMine || listState.firstVisibleItemIndex <= 2) -> listState.animateScrollToItem(0)
+                }
+            }
             LazyColumn(
                 state = listState, reverseLayout = true,
                 modifier = Modifier.fillMaxSize().padding(padding),
