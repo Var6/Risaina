@@ -199,7 +199,10 @@ describe('SOS push bypass', () => {
       expect(p1.statusCode).toBe(200);
       const r1 = await send();
       expect(r1.sosEv.push.state).toBe('sent');
-      expect(r1.pingEv.push).toMatchObject({ state: 'skipped', skipReason: 'notifications_disabled' });
+      // Notifications off: the ping is pushed silently (normal), the SOS at full priority.
+      expect(r1.pingEv.push.state).toBe('sent');
+      expect(push.calls.find((call) => call.data.type === 'ping.created')!.opts.priority).toBe('normal');
+      expect(push.calls.find((call) => call.data.type === 'sos.raised')!.opts.priority).toBe('high');
       expect(push.calls.filter((call) => call.data.type === 'sos.raised')).toHaveLength(1);
       expect(push.calls.find((call) => call.data.type === 'sos.raised')!.tokens).toEqual(['tok-y']);
 
@@ -223,7 +226,7 @@ describe('SOS push bypass', () => {
       expect(p2.statusCode).toBe(200);
       const r2 = await send();
       expect(r2.sosEv.push.state).toBe('sent');
-      expect(r2.pingEv.push).toMatchObject({ state: 'skipped', skipReason: 'quiet_hours' });
+      expect(r2.pingEv.push.state).toBe('sent'); // silently (normal priority) in quiet hours
 
       // 3. normal rules: notifications on, no quiet hours ⇒ both pushed
       await t2.app.inject({

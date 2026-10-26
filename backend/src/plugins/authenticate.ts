@@ -45,6 +45,15 @@ export async function resolveAccessToken(deps: AuthPluginDeps, token: string): P
   const session = await deps.db.sessions.findOne({ _id: new ObjectId(claims.sessionId) });
   if (!sessionIsLive(session, deps.now())) return null;
   if (!session.userId.equals(new ObjectId(claims.userId))) return null;
+  if (session.lastUsedAt === null) {
+    // First use of this session's access token: the phone did store this pair, so a later retry
+    // with the refresh token it replaced is reuse, not a lost response (AuthService.graceRetry).
+    // One write per session (sessions rotate every ~15 min), never per request.
+    await deps.db.sessions.updateOne(
+      { _id: session._id, lastUsedAt: null },
+      { $set: { lastUsedAt: deps.now() } },
+    );
+  }
   return { id: claims.userId, sessionId: claims.sessionId };
 }
 

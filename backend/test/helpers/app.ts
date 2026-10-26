@@ -19,7 +19,12 @@ import {
   type PasswordResetMail,
 } from '../../src/services/mailer/types.js';
 import { DisabledPushService } from '../../src/services/push/disabled.js';
-import type { PushData, PushSendResult, PushService } from '../../src/services/push/types.js';
+import type {
+  PushData,
+  PushSendOptions,
+  PushSendResult,
+  PushService,
+} from '../../src/services/push/types.js';
 import { LOCAL_STORAGE_ROUTE_PREFIX } from '../../src/services/storage/index.js';
 import { LocalStorageDriver } from '../../src/services/storage/local.js';
 import { OutboxWorker } from '../../src/workers/outbox.js';
@@ -59,28 +64,30 @@ export class CapturingMailer implements Mailer {
 export class FakePushService implements PushService {
   readonly enabled = true;
   readonly provider = 'fake' as const;
-  readonly calls: { tokens: string[]; data: PushData }[] = [];
+  readonly calls: { tokens: string[]; data: PushData; opts: PushSendOptions }[] = [];
   failTimes = 0;
   unregistered = new Set<string>();
 
-  async send(tokens: string[], data: PushData): Promise<PushSendResult> {
-    this.calls.push({ tokens: [...tokens], data: { ...data } });
+  async send(tokens: string[], data: PushData, opts?: PushSendOptions): Promise<PushSendResult> {
+    this.calls.push({ tokens: [...tokens], data: { ...data }, opts: { priority: 'high', ...opts } });
     if (this.failTimes > 0) {
       this.failTimes--;
       return {
         successCount: 0,
         failureCount: tokens.length,
         unregisteredTokens: [],
+        acceptedTokens: [],
         retryable: true,
         errorSummary: 'messaging/internal-error',
       };
     }
     const unregisteredTokens = tokens.filter((t) => this.unregistered.has(t));
-    const ok = tokens.length - unregisteredTokens.length;
+    const acceptedTokens = tokens.filter((t) => !this.unregistered.has(t));
     return {
-      successCount: ok,
+      successCount: acceptedTokens.length,
       failureCount: unregisteredTokens.length,
       unregisteredTokens,
+      acceptedTokens,
       retryable: false,
       errorSummary: unregisteredTokens.length ? 'messaging/registration-token-not-registered' : null,
     };

@@ -78,7 +78,7 @@ describe('outbox with a push service', () => {
     expect(push.calls).toHaveLength(0);
   });
 
-  it('sends a data-only payload {type,eventId,coupleId,seq} to the OTHER member only', async () => {
+  it('sends a data-only payload {type,eventId,coupleId,seq,pr} to the OTHER member only', async () => {
     const tokenB = `fcm-b-${randomUUID()}`;
     const tokenA = `fcm-a-${randomUUID()}`;
     await registerDevice(b, tokenB);
@@ -96,8 +96,35 @@ describe('outbox with a push service', () => {
       eventId: ev!._id.toHexString(),
       coupleId: ev!.coupleId.toHexString(),
       seq: String(ev!.seq),
+      pr: 'h',
     });
-    expect(Object.keys(call.data).sort()).toEqual(['coupleId', 'eventId', 'seq', 'type']); // no content leaks
+    expect(Object.keys(call.data).sort()).toEqual(['coupleId', 'eventId', 'pr', 'seq', 'type']); // no content leaks
+    // A ping shows a notification: high priority, never collapsed with other pushes.
+    expect(call.opts).toEqual({ priority: 'high', collapseKey: undefined, ttlMs: undefined });
+    // Delivery health: FCM accepted it for b's phone.
+    const tok = await t.db.deviceTokens.findOne({ token: tokenB });
+    expect(tok!.lastPushSentAt).toBeInstanceOf(Date);
+    expect(tok!.lastPushSentPriority).toBe('high');
+  });
+
+  it('sends silent event types at normal priority with the sync collapse key', async () => {
+    // b's ping → a is the recipient (a has a token). ping.delivered from a → b (b has a token).
+    const ping = await sendPing(t.app, b);
+    await t.outbox.runOnce();
+    push.calls.length = 0;
+    const ack = await t.app.inject({
+      method: 'POST',
+      url: `${API}/pings/${ping.json().ping.id}/delivered`,
+      headers: bearer(a),
+    });
+    expect(ack.statusCode).toBe(200);
+    await t.outbox.runOnce();
+    const call = push.calls.find((c) => c.data.type === 'ping.delivered');
+    expect(call).toBeDefined();
+    expect(call!.data.pr).toBe('n');
+    expect(call!.opts).toEqual({ priority: 'normal', collapseKey: 'sync', ttlMs: 24 * 60 * 60 * 1000 });
+    const ev = await t.db.events.findOne({ type: 'ping.delivered', 'payload.pingId': ping.json().ping.id });
+    expect(ev!.push.state).toBe('sent');
   });
 
   it('retries with exponential backoff; attempts increment and the state becomes sent', async () => {
@@ -161,18 +188,23 @@ describe('outbox with a push service', () => {
     expect(await t.db.deviceTokens.countDocuments({ userId: new ObjectId(a.user.id) })).toBe(1);
   });
 
-  it('skips when the recipient disabled notifications', async () => {
+  it('sends a silent normal push (not none) when the recipient disabled notifications', async () => {
     await t.app.inject({
       method: 'PUT',
       url: `${API}/me/preferences`,
       headers: bearer(a),
       payload: { notificationsEnabled: false },
     });
+    push.calls.length = 0;
     const ping = await sendPing(t.app, b);
     await t.outbox.runOnce();
     const ev = await t.db.events.findOne({ type: 'ping.created', 'payload.ping.id': ping.json().ping.id });
-    expect(ev!.push.state).toBe('skipped');
-    expect(ev!.push.skipReason).toBe('notifications_disabled');
+    // Their widgets must still change; the app posts nothing because notifications are off.
+    expect(ev!.push.state).toBe('sent');
+    const call = push.calls.find((c) => c.data.type === 'ping.created');
+    expect(call!.opts.priority).toBe('normal');
+    expect(call!.opts.collapseKey).toBe('sync');
+    expect(call!.data.pr).toBe('n');
     await t.app.inject({
       method: 'PUT',
       url: `${API}/me/preferences`,
@@ -181,7 +213,7 @@ describe('outbox with a push service', () => {
     });
   });
 
-  it('skips inside quiet hours (recipient time zone, window crossing midnight) unless allowPushInQuietHours', async () => {
+  it('pushes silently (normal) inside quiet hours (recipient time zone, window crossing midnight), high with allowPushInQuietHours', async () => {
     // Recipient a in Asia/Kolkata (UTC+5:30). Build a window that contains "now" and crosses midnight.
     const now = t.clock.now();
     const fmt = new Intl.DateTimeFormat('en-US', {
@@ -210,23 +242,26 @@ describe('outbox with a push service', () => {
       payload: { quietHours: window, allowPushInQuietHours: false },
     });
     expect(set.statusCode).toBe(200);
+    push.calls.length = 0;
     const ping = await sendPing(t.app, b);
     await t.outbox.runOnce();
     const ev = await t.db.events.findOne({ type: 'ping.created', 'payload.ping.id': ping.json().ping.id });
-    expect(ev!.push.state).toBe('skipped');
-    expect(ev!.push.skipReason).toBe('quiet_hours');
+    expect(ev!.push.state).toBe('sent');
+    expect(push.calls.find((c) => c.data.type === 'ping.created')!.opts.priority).toBe('normal');
 
-    // allowPushInQuietHours → sent
+    // allowPushInQuietHours → sent at full priority
     await t.app.inject({
       method: 'PUT',
       url: `${API}/me/preferences`,
       headers: bearer(a),
       payload: { allowPushInQuietHours: true },
     });
+    push.calls.length = 0;
     const ping2 = await sendPing(t.app, b);
     await t.outbox.runOnce();
     const ev2 = await t.db.events.findOne({ type: 'ping.created', 'payload.ping.id': ping2.json().ping.id });
     expect(ev2!.push.state).toBe('sent');
+    expect(push.calls.find((c) => c.data.type === 'ping.created')!.opts.priority).toBe('high');
   });
 });
 

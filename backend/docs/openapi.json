@@ -1735,6 +1735,90 @@
           "createdAt"
         ]
       },
+      "DeviceHealthInput": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "description": "Only for the caller's own phones",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "appVersion": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "lastPushSentAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPushAckAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPushPriority": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "normal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPushDowngraded": {
+            "type": "boolean"
+          },
+          "healthFlags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "deviceId",
+          "model",
+          "appVersion",
+          "updatedAt",
+          "lastPushSentAt",
+          "lastPushAckAt",
+          "lastPushPriority",
+          "lastPushDowngraded",
+          "healthFlags"
+        ]
+      },
       "City": {
         "type": "object",
         "properties": {
@@ -3479,6 +3563,91 @@
           "actorId",
           "payload",
           "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "DeviceHealth": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "description": "Only for the caller's own phones",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "appVersion": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "lastPushSentAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPushAckAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPushPriority": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "normal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPushDowngraded": {
+            "type": "boolean"
+          },
+          "healthFlags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "deviceId",
+          "model",
+          "appVersion",
+          "updatedAt",
+          "lastPushSentAt",
+          "lastPushAckAt",
+          "lastPushPriority",
+          "lastPushDowngraded",
+          "healthFlags"
         ],
         "additionalProperties": false
       }
@@ -5639,6 +5808,265 @@
         "responses": {
           "204": {
             "description": "No content"
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/test-push": {
+      "post": {
+        "summary": "Send a test push to my own phone(s)",
+        "tags": [
+          "Devices"
+        ],
+        "description": "High priority, data-only `{ type: \"test.push\", eventId, coupleId: \"\", seq: \"0\", pr: \"h\" }`, sent straight to the caller's device tokens (never to the partner, never stored as an event). `scheduled: false` with a reason when push is disabled on the server or no phone is registered. 6 per user per 10 minutes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "deviceId": {
+                    "description": "Only this phone (default: every phone of the caller)",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "delaySeconds": {
+                    "default": 0,
+                    "description": "Wait before sending, so there is time to lock the phone or close the app",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 60
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scheduled": {
+                      "type": "boolean"
+                    },
+                    "devices": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "push_disabled",
+                            "no_tokens"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "scheduled",
+                    "devices",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{deviceId}/push-ack": {
+      "post": {
+        "summary": "This phone received a push (delivery health)",
+        "tags": [
+          "Devices"
+        ],
+        "description": "Records lastPushAckAt, the priority the push arrived with, whether FCM downgraded it, and optional health flags. Only the caller's own device row is updated; unknown ids are ignored.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "high",
+                      "normal"
+                    ],
+                    "description": "Priority the push arrived with (RemoteMessage.priority)"
+                  },
+                  "originalPriority": {
+                    "type": "string",
+                    "enum": [
+                      "high",
+                      "normal"
+                    ],
+                    "description": "Priority it was sent with (RemoteMessage.originalPriority)"
+                  },
+                  "healthFlags": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$",
+                      "example": "battery_optimized"
+                    }
+                  }
+                },
+                "required": [
+                  "priority",
+                  "originalPriority"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "deviceId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/health": {
+      "get": {
+        "summary": "Delivery health of my phones and, when paired, my partner's",
+        "tags": [
+          "Devices"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mine": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DeviceHealth"
+                      }
+                    },
+                    "partner": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DeviceHealth"
+                      }
+                    }
+                  },
+                  "required": [
+                    "mine",
+                    "partner"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "401": {
             "description": "Default Response",

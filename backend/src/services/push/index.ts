@@ -9,5 +9,6 @@ export function createPushService(env: Env): PushService {
 }
 
 export { DisabledPushService } from './disabled.js';
-export { FcmPushService } from './fcm.js';
+export { FcmPushService, fcmAndroidConfig } from './fcm.js';
+export * from './policy.js';
 export * from './types.js';

@@ -88,6 +88,7 @@ describe('widget board', () => {
       eventId: ev!._id.toHexString(),
       coupleId: ev!.coupleId.toHexString(),
       seq: String(ev!.seq),
+      pr: 'n', // silent widget refresh: normal priority (services/push/policy.ts)
     });
     expect((await t.db.events.findOne({ _id: ev!._id }))!.push.state).toBe('sent');
   });

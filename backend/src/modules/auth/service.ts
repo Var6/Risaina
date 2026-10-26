@@ -18,6 +18,14 @@ export interface SessionMeta {
 
 const DISPLAY_NAME_MAX = 60; // users validator + DisplayName schema
 
+/**
+ * How long a just-rotated refresh token may be presented again without counting as reuse. A phone
+ * syncing in the background can be frozen or killed after the server rotated its token but before
+ * it stored the new one; it then retries with the old token and used to be signed out (the whole
+ * family was revoked). Kept short, and honoured only while the replacement session is unused.
+ */
+export const REFRESH_GRACE_MS = 60_000;
+
 export class AuthService {
   private readonly repo: AuthRepo;
   private readonly verification: EmailVerificationService;
@@ -186,6 +194,8 @@ export class AuthService {
     if (session.revokedAt) throw errors.unauthorized('Session revoked');
 
     if (session.rotatedAt) {
+      const retried = await this.graceRetry(session, meta, now);
+      if (retried) return { tokens: retried };
       // Reuse of an already-rotated refresh token: treat the whole family as compromised.
       await this.revokeFamily(session.familyId, 'refresh_reuse');
       this.ctx.logger.warn(
@@ -204,11 +214,41 @@ export class AuthService {
       throw errors.unauthorized('Refresh token reuse detected');
     }
 
-    const tokens = await this.createSession(session.userId, session.familyId, {
+    const next = await this.createSessionWithId(session.userId, session.familyId, {
       deviceId: meta.deviceId ?? session.deviceId,
       userAgent: meta.userAgent ?? session.userAgent,
     });
-    return { tokens };
+    await this.repo.setReplacedBy(session._id, next.sessionId);
+    return { tokens: next.tokens };
+  }
+
+  /**
+   * The phone presents a token it already rotated. Within REFRESH_GRACE_MS, if the session it was
+   * rotated into has never been used (no request with its access token, no refresh with its refresh
+   * token), the phone most likely never received that response: revoke the unused replacement and
+   * issue a fresh pair in the same family instead of signing the person out. The user agent must
+   * match (a weak binding; both phones share it, so the "unused" check is the real guard). Anything
+   * else falls through to reuse detection.
+   */
+  private async graceRetry(session: SessionDoc, meta: SessionMeta, now: Date): Promise<TokensDto | null> {
+    if (!session.rotatedAt || !session.replacedBy || session.revokedAt) return null;
+    if (now.getTime() - session.rotatedAt.getTime() > REFRESH_GRACE_MS) return null;
+    if (meta.userAgent && session.userAgent && meta.userAgent.slice(0, 200) !== session.userAgent)
+      return null;
+    if (session.expiresAt.getTime() <= now.getTime()) return null;
+    const dropped = await this.repo.revokeIfUnused(session.replacedBy, 'refresh_grace_replaced', now);
+    if (!dropped) return null;
+    this.ctx.hub.revokeSession(session.replacedBy.toHexString());
+    const next = await this.createSessionWithId(session.userId, session.familyId, {
+      deviceId: meta.deviceId ?? session.deviceId,
+      userAgent: meta.userAgent ?? session.userAgent,
+    });
+    await this.repo.setReplacedBy(session._id, next.sessionId);
+    this.ctx.logger.info(
+      { userId: session.userId.toHexString() },
+      'refresh retried within the grace window; unused replacement session revoked',
+    );
+    return next.tokens;
   }
 
   async logout(refreshToken: string, deviceId: string | undefined): Promise<void> {
@@ -283,6 +323,14 @@ export class AuthService {
     familyId: ObjectId | null,
     meta: SessionMeta,
   ): Promise<TokensDto> {
+    return (await this.createSessionWithId(userId, familyId, meta)).tokens;
+  }
+
+  private async createSessionWithId(
+    userId: ObjectId,
+    familyId: ObjectId | null,
+    meta: SessionMeta,
+  ): Promise<{ tokens: TokensDto; sessionId: ObjectId }> {
     const now = this.ctx.now();
     const refreshToken = randomToken(32); // 256-bit
     const session: SessionDoc = {
@@ -305,10 +353,13 @@ export class AuthService {
       sessionId: session._id.toHexString(),
     });
     return {
-      accessToken: access.token,
-      accessExpiresAt: access.expiresAt.toISOString(),
-      refreshToken,
-      refreshExpiresAt: session.expiresAt.toISOString(),
+      sessionId: session._id,
+      tokens: {
+        accessToken: access.token,
+        accessExpiresAt: access.expiresAt.toISOString(),
+        refreshToken,
+        refreshExpiresAt: session.expiresAt.toISOString(),
+      },
     };
   }
 }
