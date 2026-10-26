@@ -102,7 +102,12 @@ class LiveLocationController @Inject constructor(
 ) {
     /** What the controller asks of Android. Replaced in unit tests. */
     internal interface Effects {
-        /** Throws when Android refuses (Risaina is no longer visible). */
+        /**
+         * Throws when Android refuses. Callers must be on a visible screen: Android 8-11, and 12+
+         * with the battery exemption, accept a start from the background, but the location service
+         * then gets no while-in-use location (Android 14+ refuses it in startForeground). reconcile()
+         * gets this from SafetyLifecycle's repeatOnLifecycle(STARTED) cancelling it, not from here.
+         */
         fun startService(plan: SessionPlan)
         fun stopService()
         fun enqueueStop(sessionId: String?, reason: String)
