@@ -5,7 +5,8 @@ export interface PushSendResult {
   unregisteredTokens: string[];
   /**
    * Tokens FCM accepted (in the order sent). Accepted only means FCM queued the message, not that
-   * the phone received it; the app reports receipt itself (POST /devices/:deviceId/push-ack).
+   * the phone received it; the app reports receipt itself, in headers on its next GET /events
+   * (DeviceService.ackFromHeaders).
    */
   acceptedTokens: string[];
   /** True when at least one failure looks retryable (network, 5xx, quota). */

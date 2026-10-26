@@ -487,8 +487,8 @@ Bearer + active couple.
 Events: `sos.raised` `{ sos: Sos }` (actor = sender); `sos.acknowledged` `{ sosId, acknowledgedAt }`
 (actor = recipient, emitted once). **Push:** `sos.raised` is pushed even when the recipient has
 `notificationsEnabled: false` or is inside quiet hours. It is still skipped when push is disabled on the
-server (`push_disabled`) or the recipient has no device tokens (`no_tokens`). Every other event keeps the
-old rules. The SOS message is never logged.
+server (`push_disabled`) or the recipient has no device tokens (`no_tokens`). Every other event follows the
+push policy in "Push delivery and delivery health" below. The SOS message is never logged.
 
 ### Weather city
 
@@ -649,8 +649,8 @@ Emitted once per successful write (actor = caller): `challenge` ⇒ `'challenged
 `'revealed'` or `'draw'` with both `moves`; a first move emits `'moved'` with `moves: null` and only
 `movedBy`. A move is never present in any payload (event, `GET /events`, WebSocket, push) before both
 players moved, and the truth/dare texts, the answer and the reject note are never present in any event at
-all. Push goes through the normal outbox to the other member, subject to `notificationsEnabled` and quiet
-hours (push data is the usual `{ type, eventId, coupleId, seq }`). (If two moves race, both requests
+all. Push goes through the normal outbox to the other member, at the priority its `action` gets in "Push
+delivery and delivery health" below (push data is the usual `{ type, eventId, coupleId, seq, pr }`). (If two moves race, both requests
 succeed and the later event may also say `'moved'` while already carrying the revealed state: render from
 `status`.)
 

@@ -226,7 +226,11 @@ describe('SOS push bypass', () => {
       expect(p2.statusCode).toBe(200);
       const r2 = await send();
       expect(r2.sosEv.push.state).toBe('sent');
-      expect(r2.pingEv.push.state).toBe('sent'); // silently (normal priority) in quiet hours
+      // Quiet hours keep the ping high: the app posts it on its silent quiet-hours channel. Only
+      // notificationsEnabled=false (step 1) downgrades it to a silent normal push.
+      expect(r2.pingEv.push.state).toBe('sent');
+      const quietPing = push.calls.filter((call) => call.data.type === 'ping.created').at(-1);
+      expect(quietPing!.opts.priority).toBe('high');
 
       // 3. normal rules: notifications on, no quiet hours ⇒ both pushed
       await t2.app.inject({

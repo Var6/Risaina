@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EVENT_TYPES } from '../src/db/types.js';
 import { fcmAndroidConfig } from '../src/services/push/fcm.js';
@@ -109,6 +111,61 @@ describe('pushPolicyFor', () => {
         expect(CLIENT_NOTIFIES.has(type), `${type} ${JSON.stringify(payload)}`).toBe(true);
     }
   });
+
+  /**
+   * game.updated is checked per action, not as a whole type: a high game push whose action the app
+   * has no text for ends in no notification (RisainaNotifier returns early), which is exactly what
+   * makes FCM deprioritise the phone. The app's list is read from RisainaNotifier.kt itself, so the
+   * two cannot drift apart.
+   */
+  const notifierKt = fileURLToPath(
+    new URL(
+      '../../android/app/src/main/java/com/risaina/app/core/notifications/RisainaNotifier.kt',
+      import.meta.url,
+    ),
+  );
+  const gamesService = fileURLToPath(new URL('../src/modules/games/service.ts', import.meta.url));
+
+  /** Actions the client's `is Incoming.Game ->` branch has a notification text for. */
+  function clientGameActions(source: string): Set<string> {
+    const start = source.indexOf('is Incoming.Game ->');
+    const end = source.indexOf('?: return', start);
+    const block = start >= 0 && end > start ? source.slice(start, end) : '';
+    return new Set([...block.matchAll(/"([a-z_]+)"(?=\s*(?:,|->))/g)].map((m) => m[1]!));
+  }
+
+  /** Actions this server emits today (the GameAction union in the games module). */
+  function emittedGameActions(source: string): Set<string> {
+    const union = /export type GameAction =([^;]+);/.exec(source)?.[1] ?? '';
+    return new Set([...union.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+  }
+
+  /**
+   * High in the policy (main-session decision) but not emitted yet: the games stream adds these
+   * actions together with their notification texts in RisainaNotifier.kt. The test below fails as
+   * soon as the server emits one without a client text.
+   */
+  const AWAITING_GAMES_STREAM: ReadonlySet<string> = new Set(['finished', 'matched']);
+
+  it.skipIf(!existsSync(notifierKt))(
+    'pushes a game action high only if the app posts a notification for it',
+    () => {
+      const client = clientGameActions(readFileSync(notifierKt, 'utf8'));
+      const emitted = emittedGameActions(readFileSync(gamesService, 'utf8'));
+      // The parsers still understand both files (a refactor must update this test, not pass it).
+      expect(client.has('moved')).toBe(true);
+      expect(emitted.has('moved')).toBe(true);
+      for (const action of GAME_NOTIFYING_ACTIONS) {
+        if (client.has(action)) continue;
+        expect(AWAITING_GAMES_STREAM.has(action), `game.updated ${action}: no client text`).toBe(true);
+        expect(emitted.has(action), `game.updated ${action} is emitted but the app posts nothing`).toBe(
+          false,
+        );
+      }
+      // And nothing the app announces is silently left out of the high list.
+      for (const action of client) expect(GAME_NOTIFYING_ACTIONS.has(action), action).toBe(true);
+    },
+  );
 
   it('covers every event type the server can emit', () => {
     const covered = new Set(TABLE.map(([type]) => type));

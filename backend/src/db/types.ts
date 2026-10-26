@@ -250,7 +250,7 @@ export interface DeviceTokenDoc {
   // until the first push / ack: read missing as null / false / [].
   lastPushSentAt?: Date | null; // the outbox's last push FCM accepted for this token
   lastPushSentPriority?: 'high' | 'normal' | null;
-  lastPushAckAt?: Date | null; // the app said it received a push (POST /devices/:deviceId/push-ack)
+  lastPushAckAt?: Date | null; // the app said it received a push (X-Risaina-Push header on GET /events)
   lastPushPriority?: 'high' | 'normal' | null; // priority that push arrived with on the phone
   lastPushDowngraded?: boolean; // sent high, arrived normal: FCM deprioritised this phone
   healthFlags?: string[]; // short codes the app reports, e.g. 'battery_optimized', 'standby_rare'
