@@ -1,5 +1,6 @@
 import type { ObjectId } from 'mongodb';
 import type { Collections } from '../../db/collections.js';
+import type { DeviceTokenDoc } from '../../db/types.js';
 import { newId } from '../../lib/ids.js';
 
 export class DeviceRepo {
@@ -34,5 +35,37 @@ export class DeviceRepo {
 
   async remove(userId: ObjectId, deviceId: string): Promise<void> {
     await this.db.deviceTokens.deleteOne({ userId, deviceId });
+  }
+
+  // --- delivery health (stream: delivery) -------------------------------------------------------
+
+  async tokensFor(userId: ObjectId, deviceId?: string): Promise<string[]> {
+    const filter = deviceId ? { userId, deviceId } : { userId };
+    const docs = await this.db.deviceTokens.find(filter, { projection: { token: 1 } }).toArray();
+    return docs.map((d) => d.token);
+  }
+
+  /** Records that the phone received a push. Only the caller's own row can match. */
+  async recordAck(
+    userId: ObjectId,
+    deviceId: string,
+    ack: { priority: 'high' | 'normal'; downgraded: boolean; healthFlags?: string[] },
+    now: Date,
+  ): Promise<void> {
+    const set: Partial<DeviceTokenDoc> = {
+      lastPushAckAt: now,
+      lastPushPriority: ack.priority,
+      lastPushDowngraded: ack.downgraded,
+    };
+    if (ack.healthFlags) set.healthFlags = ack.healthFlags;
+    await this.db.deviceTokens.updateOne({ userId, deviceId }, { $set: set });
+  }
+
+  /** Every phone of these users, without tokens (never returned by any endpoint). */
+  healthFor(userIds: ObjectId[]): Promise<Omit<DeviceTokenDoc, 'token'>[]> {
+    return this.db.deviceTokens
+      .find({ userId: { $in: userIds } }, { projection: { token: 0 } })
+      .sort({ updatedAt: -1 })
+      .toArray();
   }
 }

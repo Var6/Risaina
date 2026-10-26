@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { AppContext } from '../../app-context.js';
 import { errors } from '../../lib/errors.js';
+import { DeviceService } from '../devices/service.js';
 import { ErrorEnvelope } from '../shared/schemas.js';
 import { EventsQuery, EventsResponse } from './schemas.js';
 import { EventQueryService } from './service.js';
@@ -9,6 +10,7 @@ import { EventQueryService } from './service.js';
 export const eventRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
   const r = app.withTypeProvider<ZodTypeProvider>();
   const service = new EventQueryService(ctx);
+  const devices = new DeviceService(ctx); // push acks ride on the sync request (stream: delivery)
 
   r.get(
     '/events',
@@ -27,6 +29,10 @@ export const eventRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
       },
     },
     async (req) => {
+      // Delivery health: "this phone received a push" (see DeviceService.ackFromHeaders). Best effort.
+      await devices.ackFromHeaders(req.user!.id, req.headers).catch((err: unknown) => {
+        req.log.warn({ err: (err as Error).message }, 'push ack not recorded');
+      });
       const feed = await service.feedFor(req.user!.id);
       if (!feed) throw errors.notPaired();
       return service.since(feed, req.query.since, req.query.limit);

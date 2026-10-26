@@ -206,6 +206,9 @@ collection created with it.
 | `memories` | `sourceMessageId: ObjectId\|null` (auto-memory from a chat photo) | `null` |
 | `couples` | `chatWallpaper: { style DEFAULT\|PAPER\|HEARTS\|NIGHT\|GLOW\|PHOTO, photoMediaId\|null, setBy, setAt } \| null` (exposed as `sharedPreferences.chatWallpaper`) | `null` |
 | `couples` | `purgedAt: date\|null` (unlink purge marker) | `null` (not purged: ended before purging existed, or never active) |
+| `sessions` | `replacedBy: ObjectId\|null` (the session this refresh token was rotated into; refresh grace window, API.md "Refresh grace window") | `null` (no grace) |
+| `deviceTokens` | `lastPushSentAt: date\|null`, `lastPushSentPriority: 'high'\|'normal'\|null` (outbox: FCM accepted a push for this token) | `null` |
+| `deviceTokens` | `lastPushAckAt: date\|null`, `lastPushPriority: 'high'\|'normal'\|null`, `lastPushDowngraded: bool`, `healthFlags: string[] (≤16, ≤40 chars)` (the phone's push ack on `GET /events`) | `null`, `null`, `false`, `[]` |
 
 Extra indexes: `messages {mediaId:1}` partial (`mediaId` is an ObjectId), `messages {openedAt:1, createdAt:1}`
 partial `{viewOnce: true}` (unopened purge), `media {openedAt:1}` partial `{viewOnce: true}` (opened purge),
@@ -222,7 +225,7 @@ partial `{viewOnce: true}` (unopened purge), `media {openedAt:1}` partial `{view
 | `push.state` | `pending` \| `sent` \| `skipped` \| `failed` |
 | `push.attempts` | incremented per send attempt (max 5) |
 | `push.leaseUntil` | worker lease; also used as "not before" for exponential backoff (2 s · 2ⁿ) |
-| `push.lastError`, `push.skipReason`, `push.sentAt` | `skipReason` ∈ `push_disabled`, `no_recipient`, `recipient_missing`, `notifications_disabled`, `quiet_hours`, `no_tokens`, `tokens_unregistered`, `couple_missing` |
+| `push.lastError`, `push.skipReason`, `push.sentAt` | `skipReason` ∈ `push_disabled`, `no_recipient`, `recipient_missing`, `not_pushed` (the type's push policy is "none"), `no_tokens`, `tokens_unregistered`, `couple_missing`; older events may also carry `notifications_disabled` or `quiet_hours`, which are no longer written (a silent normal push is sent instead) |
 
 Indexes: `{coupleId:1, seq:1}` unique (WS replay, `GET /events?since`); `{'push.state':1, 'push.leaseUntil':1}` (outbox lease query); `{createdAt:1}` partial `{type: 'couple.unlinked'}` (`unlinked_createdAt`: 7-day retention of an unlinked couple's final event).
 

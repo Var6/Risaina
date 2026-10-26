@@ -603,8 +603,9 @@ describe('rock–paper–scissors with truth or dare', () => {
     await post(a, `/games/${g.json().game.id}/move`, { move: 'rock' });
     await t.outbox.runOnce();
     const ev = await lastGameEvent();
-    expect(ev!.push.state).toBe('skipped');
-    expect(ev!.push.skipReason).toBe('notifications_disabled');
+    // Notifications off: still pushed, silently at normal priority (widgets/home refresh).
+    expect(ev!.push.state).toBe('sent');
+    expect(push.calls.at(-1)!.opts.priority).toBe('normal');
     await t.app.inject({
       method: 'PUT',
       url: `${API}/me/preferences`,

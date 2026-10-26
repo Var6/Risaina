@@ -81,7 +81,7 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             LockScreenSection()
             Spacer(Modifier.height(16.dp))
-            BackgroundUpdatesCard()
+            com.risaina.app.feature.delivery.DeliveryHealthCard()
             Spacer(Modifier.height(16.dp))
             androidx.compose.material3.TextButton(onClick = { showMore = !showMore }) {
                 Text(if (showMore) "Hide single-purpose widgets" else "More widgets (${more.size})", style = MaterialTheme.typography.titleSmall)
@@ -108,38 +108,6 @@ private fun WidgetRow(w: WidgetInfo, canPin: Boolean, onAdd: () -> Unit) {
         if (canPin) {
             Spacer(Modifier.height(12.dp))
             SecondaryButton("Add to home screen", onClick = onAdd)
-        }
-    }
-}
-
-/**
- * Widgets change the moment a ping arrives only if the phone lets Risaina wake up in the
- * background. Many phones (Realme, Oppo, Xiaomi, Vivo, some Samsung) hold that back by default.
- */
-@Composable
-private fun BackgroundUpdatesCard() {
-    val context = LocalContext.current
-    val unrestricted = remember {
-        context.getSystemService(android.os.PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
-    }
-    RisainaCard(Modifier.fillMaxWidth()) {
-        Text("Instant updates", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            if (unrestricted) "Risaina may run in the background, so widgets change as soon as your partner reaches out."
-            else "Widgets update within seconds of a ping, even when Risaina is closed. Some phones delay this to save battery. On Realme, Oppo, Xiaomi or Vivo: open App info → Battery, choose \u201cAllow background activity\u201d (or \u201cNo restrictions\u201d) and turn on Auto launch.",
-            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
-        )
-        if (!unrestricted) {
-            Spacer(Modifier.height(10.dp))
-            SecondaryButton("Open App info", onClick = {
-                runCatching {
-                    context.startActivity(
-                        android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null))
-                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                }
-            })
         }
     }
 }

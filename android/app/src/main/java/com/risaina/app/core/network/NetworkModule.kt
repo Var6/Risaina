@@ -28,8 +28,11 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import java.net.URI
 import java.time.Instant
@@ -39,6 +42,9 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
+
+    /** Upper bound for one token refresh, which runs even when its caller was cancelled. */
+    private const val REFRESH_BUDGET_MS = 15_000L
 
     val json: Json = Json {
         ignoreUnknownKeys = true
@@ -102,20 +108,30 @@ object NetworkModule {
                             if (oldTokens?.accessToken != current.accessToken) {
                                 return@withLock BearerTokens(current.accessToken, current.refreshToken)
                             }
-                            val result = runCatching {
-                                plain.post("auth/refresh") {
-                                    contentType(ContentType.Application.Json)
-                                    setBody(RefreshRequest(current.refreshToken))
-                                }.body<TokensResponse>()
+                            // The server rotates the refresh token as soon as it answers, so the request and
+                            // storing its answer must finish together: a background sync's time budget (or
+                            // any caller's cancellation) must not stop in between, or the phone would keep a
+                            // dead token and be signed out on its next refresh. Bounded so a hung request
+                            // cannot hold the caller for long; the server's short grace window covers a retry.
+                            val result = withContext(NonCancellable) {
+                                withTimeoutOrNull(REFRESH_BUDGET_MS) {
+                                    runCatching {
+                                        plain.post("auth/refresh") {
+                                            contentType(ContentType.Application.Json)
+                                            // The install id lets the server honour a retry of this
+                                            // refresh if its answer is lost (refresh grace window).
+                                            setBody(RefreshRequest(current.refreshToken, current.deviceId.ifBlank { null }))
+                                        }.body<TokensResponse>()
+                                    }.onSuccess { r ->
+                                        sessionStore.updateTokens(
+                                            r.tokens.accessToken, Instant.parse(r.tokens.accessExpiresAt),
+                                            r.tokens.refreshToken, Instant.parse(r.tokens.refreshExpiresAt),
+                                        )
+                                    }
+                                } ?: Result.failure(java.io.IOException("token refresh timed out"))
                             }
                             result.fold(
-                                onSuccess = { r ->
-                                    sessionStore.updateTokens(
-                                        r.tokens.accessToken, Instant.parse(r.tokens.accessExpiresAt),
-                                        r.tokens.refreshToken, Instant.parse(r.tokens.refreshExpiresAt),
-                                    )
-                                    BearerTokens(r.tokens.accessToken, r.tokens.refreshToken)
-                                },
+                                onSuccess = { r -> BearerTokens(r.tokens.accessToken, r.tokens.refreshToken) },
                                 onFailure = { e ->
                                     if (e is ClientRequestException && e.response.status.value in setOf(400, 401, 403)) {
                                         sessionEvents.signalExpired()

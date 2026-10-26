@@ -149,7 +149,8 @@ Event types: `ping.created`, `ping.delivered`, `ping.seen`, `message.created`, `
 `milestone.created`, `milestone.updated`, `milestone.deleted`, `couple.updated`,
 `couple.unlinked`, `partner.updated`.
 
-Push (FCM data message) payload mirrors a minimal event: `{ type, eventId, coupleId, seq }`.
+Push (FCM data message) payload mirrors a minimal event: `{ type, eventId, coupleId, seq }`, plus `pr` and
+`ref` (see "Push delivery and delivery health" for both and for the priority of each type).
 
 ## Health
 
@@ -486,8 +487,8 @@ Bearer + active couple.
 Events: `sos.raised` `{ sos: Sos }` (actor = sender); `sos.acknowledged` `{ sosId, acknowledgedAt }`
 (actor = recipient, emitted once). **Push:** `sos.raised` is pushed even when the recipient has
 `notificationsEnabled: false` or is inside quiet hours. It is still skipped when push is disabled on the
-server (`push_disabled`) or the recipient has no device tokens (`no_tokens`). Every other event keeps the
-old rules. The SOS message is never logged.
+server (`push_disabled`) or the recipient has no device tokens (`no_tokens`). Every other event follows the
+push policy in "Push delivery and delivery health" below. The SOS message is never logged.
 
 ### Weather city
 
@@ -648,8 +649,8 @@ Emitted once per successful write (actor = caller): `challenge` ⇒ `'challenged
 `'revealed'` or `'draw'` with both `moves`; a first move emits `'moved'` with `moves: null` and only
 `movedBy`. A move is never present in any payload (event, `GET /events`, WebSocket, push) before both
 players moved, and the truth/dare texts, the answer and the reject note are never present in any event at
-all. Push goes through the normal outbox to the other member, subject to `notificationsEnabled` and quiet
-hours (push data is the usual `{ type, eventId, coupleId, seq }`). (If two moves race, both requests
+all. Push goes through the normal outbox to the other member, at the priority its `action` gets in "Push
+delivery and delivery health" below (push data is the usual `{ type, eventId, coupleId, seq, pr }`). (If two moves race, both requests
 succeed and the later event may also say `'moved'` while already carrying the revealed state: render from
 `status`.)
 
@@ -815,3 +816,65 @@ everything it created**. The response is still `204`; nothing can be recovered a
   from 1).
 - Idempotent: a second unlink is `409 not_paired`; the server re-runs the purge for 7 days to remove
   anything written concurrently with the unlink.
+
+## Push delivery and delivery health (stream: delivery)
+
+### Push data
+FCM data-only message: `{ type, eventId, coupleId, seq, pr, ref? }`. Never content.
+- `pr`: the priority the server sent (`h` high, `n` normal). The app compares it with what arrived
+  (`RemoteMessage.priority` vs `originalPriority`) to spot FCM lowering this phone's pushes.
+- `ref`: an opaque id, only for `message.created` (the message id) and `ping.created` (the ping id). The
+  app uses it to post a quick, generic notification before it syncs, under the id the detailed one
+  replaces in place, and to skip that quick alert when an earlier sync already brought the item.
+
+### Priority per event type (`services/push/policy.ts`, `pushPolicyFor(type, payload)`)
+FCM lowers an app's high-priority pushes to normal (per phone, judged over about 7 days) when they rarely
+end in a visible notification. So only events the recipient SEES are high.
+
+| Priority | Event types | FCM `android` options |
+|---|---|---|
+| high | `ping.created`, `message.created`, `couple.unlinked`, `widget.updated` (the app posts a quiet "<partner> updated your widget"), `location.started`, `game.updated` with `action` ∈ created, moved, revealed, draw, rematch, challenged, chosen, done, confirmed, rejected, finished, matched | `priority: high`, ttl 1 h, no collapse key |
+| high, bypasses preferences | `sos.raised`, `sos.resolved` | same |
+| normal (silent: the app syncs and redraws widgets) | `ping.delivered`, `ping.seen`, `message.read`, `message.opened`, `message.deleted`, `media.ready`, `list.*`, `memory.*`, `milestone.*`, `partner.updated`, `couple.updated`, `sos.acknowledged`, `sos.delivered`, `location.stopped`, `game.updated` with any other or no action, and any type not listed | `priority: normal`, ttl 24 h, `collapseKey: "sync"` (a later silent push replaces an undelivered one) |
+| none (stored, never pushed; `push.state: skipped`, `skipReason: not_pushed`) | `game.updated` with `action` ∈ answered, cancelled, ended | |
+
+Recipient preferences (changed): with `notificationsEnabled: false` a high push is sent as a silent
+**normal** push instead of being skipped, so the widgets still update; the app posts nothing. Quiet hours no
+longer change the push at all: it stays high and the app posts on its silent "quiet" channels (unless
+`allowPushInQuietHours`). Before, both cases were skipped for good and froze the widgets. SOS types always
+stay high. Later, when FCM `AndroidConfigV2` is out of preview: high-with-notification maps to
+`remote_notification` (mutable content) and normal maps to `background_sync`.
+
+### Devices: test push and health
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/devices/test-push` | `{ deviceId?, delaySeconds: 0–60 = 0 }` | `200 { scheduled, devices, reason: null \| 'push_disabled' \| 'no_tokens' }` |
+| GET | `/devices/health` | | `200 { mine: DeviceHealth[], partner: DeviceHealth[] }` |
+
+`test-push` sends a high `{ type: "test.push", eventId: "test-<id>", coupleId: "", seq: "0", pr: "h" }`
+straight to the caller's own phones (only `deviceId` when given; never the partner; never stored as an
+event; ttl 10 min). The app answers it with a visible "Test notification" even with notifications switched
+off in-app, because the person asked for it. 6 per user per 10 minutes (`429 rate_limited`).
+
+`DeviceHealth`: `{ deviceId (own phones only, else null), model, appVersion, updatedAt, lastPushSentAt,
+lastPushAckAt, lastPushPriority: 'high'|'normal'|null, lastPushDowngraded, healthFlags: string[] }`. Tokens
+are never returned. `appVersion` is the build id (`0.2.0+<git sha>`), so it shows which build a phone runs.
+
+### Push acknowledgement (on `GET /events`)
+The app says "this phone received a push" on the `GET /events` request its sync makes anyway (no extra
+request inside the few seconds Android gives the push handler):
+`X-Risaina-Device: <deviceId>`, `X-Risaina-Push: <priority>/<originalPriority>` (`high`|`normal` each),
+optional `X-Risaina-Health: flag,flag` (≤ 16 snake_case codes such as `battery_optimized`,
+`standby_rare`, `background_restricted`, `data_saver`, `notifications_off`, `channel_off`,
+`force_stopped`). The server stores `lastPushAckAt`, `lastPushPriority`, `lastPushDowngraded` (sent high,
+arrived normal) and `healthFlags` on that device row. Malformed headers are ignored; they never fail the
+request.
+
+### Refresh grace window
+`POST /auth/refresh` accepts an optional `deviceId` (the app's install id). Presenting a refresh token that
+was already rotated normally revokes the whole family. Exception: within **60 s** of the rotation, from the
+same `deviceId`, while the session it was rotated into has never been used (no request with its access
+token, no refresh), the server revokes that unused session and issues a fresh pair in the same family. This
+covers a phone frozen or killed after the server rotated its token but before it stored the answer. The
+server stores only hashes, so it cannot resend the earlier pair. A session's first authenticated request
+sets its `lastUsedAt`.

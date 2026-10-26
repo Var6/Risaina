@@ -2,6 +2,7 @@ package com.risaina.app.core.datastore
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -45,6 +46,8 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         val hasPassword = stringPreferencesKey("has_password")
         val sharedTimeZone = stringPreferencesKey("shared_time_zone")
         val cityJson = stringPreferencesKey("city")
+        /** Events up to this seq were history when this phone started from cursor 0 (see ReplayGuard). */
+        val bootstrapUntilSeq = longPreferencesKey("bootstrap_until_seq")
     }
 
     val session: Flow<Session?> = context.sessionDataStore.data.map { p ->
@@ -62,6 +65,7 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
     }
 
     val lastEventSeq: Flow<Long> = context.sessionDataStore.data.map { it[Keys.lastEventSeq] ?: 0L }
+    val bootstrapUntilSeq: Flow<Long> = context.sessionDataStore.data.map { it[Keys.bootstrapUntilSeq] ?: 0L }
     val activeCoupleId: Flow<String?> = context.sessionDataStore.data.map { it[Keys.activeCoupleId] }
     val lastPingSentAt: Flow<Instant?> = context.sessionDataStore.data.map { p -> p[Keys.lastPingSentAt]?.let(Instant::ofEpochMilli) }
 
@@ -130,11 +134,16 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
         }
     }
 
+    /**
+     * Starting from cursor 0 (fresh sign-in or a new pairing), everything up to [latestSeq] is
+     * history: it is applied, but must not notify, reveal or buzz as if it were new. See [markBootstrap].
+     */
+    suspend fun setBootstrapUntilSeqIfFresh(latestSeq: Long) {
+        context.sessionDataStore.edit { p -> markBootstrap(p, latestSeq) }
+    }
+
     suspend fun setLastEventSeq(seq: Long) {
-        context.sessionDataStore.edit { p ->
-            val current = p[Keys.lastEventSeq] ?: 0L
-            if (seq > current) p[Keys.lastEventSeq] = seq
-        }
+        context.sessionDataStore.edit { p -> advanceCursor(p, seq) }
     }
 
     /**
@@ -143,11 +152,15 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
      * Unlinking keeps the cursor, so the old couple's `couple.unlinked` is not replayed.
      */
     suspend fun setActiveCoupleId(id: String?) {
-        context.sessionDataStore.edit { p ->
-            if (id == null) { p.remove(Keys.activeCoupleId); return@edit }
-            if (p[Keys.activeCoupleId] != id) p[Keys.lastEventSeq] = 0L
-            p[Keys.activeCoupleId] = id
-        }
+        context.sessionDataStore.edit { p -> bindCouple(p, id) }
+    }
+
+    /**
+     * Records the couple whose events this phone is applying right now (EventReducer, on an active
+     * `couple.updated`), keeping the cursor and the replay mark. See [adoptCouple].
+     */
+    suspend fun adoptActiveCoupleId(id: String) {
+        context.sessionDataStore.edit { p -> adoptCouple(p, id) }
     }
 
     suspend fun setLastPingSentAt(at: Instant) {
@@ -160,6 +173,43 @@ class SessionStore @Inject constructor(@ApplicationContext private val context: 
             val device = p[Keys.deviceId]
             p.clear()
             if (device != null) p[Keys.deviceId] = device
+        }
+    }
+
+    /** The cursor rules as plain edits of the stored preferences, so they are unit-tested (SessionCursorTest). */
+    internal companion object {
+        fun advanceCursor(p: MutablePreferences, seq: Long) {
+            if (seq > (p[Keys.lastEventSeq] ?: 0L)) p[Keys.lastEventSeq] = seq
+        }
+
+        /**
+         * The mark is written once per cursor-0 epoch: the first of the socket's Ready and a sync's
+         * first page wins. Overwriting it (with a later, higher latestSeq while the cursor is still 0)
+         * would turn events created after the first snapshot into "history", and a ping the partner
+         * sent at that moment would never buzz or get its delivered receipt. A new epoch starts with
+         * no mark: [bindCouple] and [clear] remove it together with the cursor.
+         */
+        fun markBootstrap(p: MutablePreferences, latestSeq: Long) {
+            if ((p[Keys.lastEventSeq] ?: 0L) == 0L && p[Keys.bootstrapUntilSeq] == null) p[Keys.bootstrapUntilSeq] = latestSeq
+        }
+
+        fun bindCouple(p: MutablePreferences, id: String?) {
+            if (id == null) { p.remove(Keys.activeCoupleId); return }
+            if (p[Keys.activeCoupleId] != id) { p[Keys.lastEventSeq] = 0L; p.remove(Keys.bootstrapUntilSeq) }
+            p[Keys.activeCoupleId] = id
+        }
+
+        /**
+         * The server only serves the active couple's events, so while the phone applies an active
+         * `couple.updated` its cursor (and replay mark) already belong to that couple: store the
+         * couple without restarting them. Only fills an empty slot. This used to happen later, in
+         * refreshMe through [bindCouple], which saw "no couple → this couple", reset the cursor to 0
+         * after the sync had moved it, and made the next push's events count as history (no
+         * notification, no delivered tick). A different stored couple is left to refreshMe, which
+         * wipes the old couple's data and restarts the cursor on purpose.
+         */
+        fun adoptCouple(p: MutablePreferences, id: String) {
+            if (p[Keys.activeCoupleId] == null) p[Keys.activeCoupleId] = id
         }
     }
 }

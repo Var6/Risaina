@@ -182,3 +182,62 @@ storage). Backend 227/227 tests; Android 89 unit tests, lint 0 errors. Not yet r
 - ❌ Not verified: anything on a device (picker, cards, notifications with the app closed, each game from both
   roles with the process killed, the trivia fallback with opentdb blocked, an old APK on the new server); live
   Open Trivia DB from Render; `GameCardsTest` (instrumented) compiles but was not run.
+
+## Delivery round: widgets and alerts with the app closed, false gift alerts (2026-10-26)
+Goal: on a realme/ColorOS phone with Risaina closed, the partner's widgets and notifications change as
+promptly as a notification does. Checked with unit tests (backend Vitest, Android JUnit) only: not yet
+on the real phones.
+
+- ✅ **Widgets are drawn inside the push handler**: each placed widget is composed with Glance
+  `runComposition` and handed to `AppWidgetManager` directly ("Us" first, one 2.5 s deadline for all,
+  per-widget fallback to the queued Glance update). Before, `updateAll()` only queued a job that ColorOS
+  could freeze until the app was opened.
+- ✅ **Push handler order**: SOS first (unchanged), then the safety-net SyncWorker (inside FCM's expedited
+  exemption), then a network-free alert for a ping or message, then a sync bounded to 4 s. Each
+  notification is posted as its event is applied, so a timeout or a later error never loses one. Photo
+  downloads, delivered receipts and game refreshes run after the sync, only with what is left of the 4 s
+  (the worker does the rest).
+- ✅ **One sync at a time**: the push handler and the workers share a sync instead of fetching side by
+  side, but never one that started before their push arrived. Widget recomputes run one at a time, so an
+  older one cannot overwrite a newer snapshot.
+- ✅ **Push priority per event type** (backend): only events that end in a visible notification are high;
+  receipts, lists, memories and other silent changes are normal with one collapse key; game answered,
+  cancelled and ended are not pushed. "Their widget" changes stay high and post a quiet "updated your
+  widget". Notifications off now sends a silent push (widgets still update) instead of nothing; quiet hours
+  now only make the phone silent. (FCM lowers an app whose high pushes rarely show anything.)
+- ✅ **Delivery health** card on the Widgets screen: notification permission and channels, battery
+  optimisation (one-tap exemption request), background restriction, standby bucket, Data Saver, Play
+  services, recent swipe-kills/freezes (Android 11+), force-stop (Android 15+), realme/ColorOS steps and a
+  phone-maker settings chain ending at App info, the last push this phone received (with an FCM downgrade
+  warning), when the partner's phone last received one, the build id, and "Send me a test push".
+- ✅ **Build id**: `versionName` is `0.2.0+<git sha>` and `versionCode` the commit count; shown in Settings
+  and in Delivery health, and sent to the server as the device's `appVersion`.
+- ✅ **No sign-outs from a killed refresh**: the token refresh and storing its answer cannot be cut in half
+  by a caller's timeout, and the server accepts a retry of a just-rotated token for 60 s from the same install
+  while the new session is unused.
+- ✅ **False gift alerts (on top of 6619f22)**: the calm lock card never shows a gift through the emoji
+  fields; it is re-posted only when its content changes (a swipe is respected, a reboot or force-stop brings
+  it back) with a stable time; a sign-in or re-pair replays history without notifying, buzzing or revealing
+  old gifts (persisted high-water mark, used by both the sync and the socket); opening the app clears the
+  gift/ping, game and widget-update notifications (not chat messages); the detailed alert after a quick one
+  for the same item is silent; a quick alert never overwrites a notification an earlier sync already posted.
+- ✅ **Review fixes**: sign-out, session expiry, account deletion and unlink clear every partner
+  notification again, unread chat included (opening the app still keeps chat); a new pairing applied by a
+  sync no longer rewinds the event cursor to 0 (which made the next push count as history); the replay mark
+  is written once per fresh start; a sync waiting out a retry backoff is replaced by a fresh expedited one on
+  the next push; the push is recorded before the worker starts, so its ack reaches the server; each shared
+  sync ends after 15 s and one running over 8 s no longer blocks a new push; the photo download runs
+  outside the shared sync; the socket runs receipts once after its replay, beside the collector; a queued
+  game refresh asked for again while it runs runs again, and a receipt the server keeps refusing is dropped
+  after 5 tries; the quick alert can no longer replace the detailed one; game pushes are checked per action
+  against the app's notification texts. Delivery health: "I've done this" turns the phone-maker check green
+  (a later kill brings it back), and ColorOS phones get an "Auto launch list" button next to App info.
+- ❌ Not verified on real phones yet. Main-session device checks: build id on Raina's Realme; with the app
+  swiped away and the screen off, a text, a photo and a gift each update the "Us" widget within seconds;
+  `dumpsys package com.risaina.app | grep stopped`; Delivery health on ColorOS (which settings screens open;
+  "Allow" for the battery exemption); the test push; the lock card on a PIN-locked ColorOS lock screen;
+  Glance responsive sizes drawn by `runComposition` on the realme launcher; on ColorOS, what "Auto launch
+  list" opens; sign out with message notifications showing (they must all go, an SOS must stay).
+- Merge notes for the games stream: `finished` and `matched` are pushed high; add their texts to
+  RisainaNotifier's game branch when the server starts emitting them (backend/test/push-policy.test.ts
+  fails until then).

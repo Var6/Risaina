@@ -1,9 +1,9 @@
 import type { ObjectId } from 'mongodb';
 import type { Logger } from 'pino';
 import type { Collections } from '../db/collections.js';
-import type { EventDoc, EventType } from '../db/types.js';
-import { isInQuietHours } from '../lib/quiet-hours.js';
+import type { EventDoc, EventType, Preferences } from '../db/types.js';
 import type { Clock } from '../lib/time.js';
+import { type PushPolicy, pushPolicyFor, quietPolicy } from '../services/push/policy.js';
 import type { PushService } from '../services/push/types.js';
 
 /** Event types pushed regardless of the recipient's notificationsEnabled / quiet hours. */
@@ -24,9 +24,10 @@ export type OutboxOutcome =
 
 /**
  * Push outbox worker (D-04). Leases `push.state = pending` events whose lease has lapsed,
- * resolves the OTHER member of the couple, applies the recipient's notification preferences and
- * quiet hours, sends an FCM data-only message to every registered device token, and records
- * sent / skipped / failed with bounded exponential backoff.
+ * resolves the OTHER member of the couple, picks the push priority for the event type
+ * (services/push/policy.ts) and the recipient's notification preferences and quiet hours, sends an
+ * FCM data-only message to every registered device token, and records sent / skipped / failed with
+ * bounded exponential backoff.
  *
  * `leaseUntil` doubles as "not before": a failed attempt sets it to now + backoff.
  */
@@ -116,32 +117,36 @@ export class OutboxWorker {
 
     if (!this.push.enabled) return { state: 'skipped', reason: 'push_disabled' };
 
+    const basePolicy = pushPolicyFor(event.type, event.payload);
+    // Stored for the socket and the next sync; nothing on the recipient's phone needs a wake-up.
+    if (basePolicy.priority === 'none') return { state: 'skipped', reason: 'not_pushed' };
+
     const recipient = await this.db.users.findOne(
       { _id: recipientId },
       { projection: { preferences: 1, deletedAt: 1 } },
     );
     if (!recipient || recipient.deletedAt) return { state: 'skipped', reason: 'recipient_missing' };
-    // An SOS must always reach the partner: it bypasses the notification and quiet-hours preferences
-    // (push_disabled, recipient_missing and no_tokens still apply).
-    if (!BYPASS_PREFERENCES.has(event.type)) {
-      const prefs = recipient.preferences;
-      if (!prefs.notificationsEnabled) return { state: 'skipped', reason: 'notifications_disabled' };
-      if (!prefs.allowPushInQuietHours && isInQuietHours(prefs.quietHours, this.now())) {
-        return { state: 'skipped', reason: 'quiet_hours' };
-      }
-    }
+    const policy = this.applyPreferences(event, basePolicy, recipient.preferences);
+    const priority = policy.priority === 'normal' ? 'normal' : 'high';
 
     const tokens = await this.tokensFor(recipientId);
     if (tokens.length === 0) return { state: 'skipped', reason: 'no_tokens' };
 
     let result: Awaited<ReturnType<PushService['send']>>;
     try {
-      result = await this.push.send(tokens, {
-        type: event.type,
-        eventId: event._id.toHexString(),
-        coupleId: event.coupleId.toHexString(),
-        seq: String(event.seq),
-      });
+      result = await this.push.send(
+        tokens,
+        {
+          type: event.type,
+          eventId: event._id.toHexString(),
+          coupleId: event.coupleId.toHexString(),
+          seq: String(event.seq),
+          // What the server meant: lets the app tell a push FCM downgraded from one sent as normal.
+          pr: priority === 'high' ? 'h' : 'n',
+          ...pushRefFor(event),
+        },
+        { priority, collapseKey: policy.collapseKey, ttlMs: policy.ttlMs },
+      );
     } catch (err) {
       return this.retryOrFail(event, (err as Error).name || 'send_error');
     }
@@ -150,9 +155,28 @@ export class OutboxWorker {
       await this.db.deviceTokens.deleteMany({ token: { $in: result.unregisteredTokens } });
       this.logger.info({ count: result.unregisteredTokens.length }, 'removed unregistered device tokens');
     }
+    if (result.acceptedTokens.length > 0) {
+      // Delivery health (GET /devices/health): when FCM last accepted a push for each phone.
+      // Optional fields, safe under the live validator.
+      await this.db.deviceTokens.updateMany(
+        { token: { $in: result.acceptedTokens } },
+        { $set: { lastPushSentAt: this.now(), lastPushSentPriority: priority } },
+      );
+    }
     if (result.successCount > 0) return { state: 'sent' };
     if (!result.retryable) return { state: 'skipped', reason: 'tokens_unregistered' };
     return this.retryOrFail(event, result.errorSummary ?? 'unknown');
+  }
+
+  /**
+   * Notifications off: the push is sent silently at normal priority instead of being skipped, so the
+   * recipient's widgets still update while the app posts nothing. Quiet hours change nothing here:
+   * the app decides on the phone, posting silently on its quiet channels (it used to be skipped,
+   * which froze the widgets all night). An SOS bypasses the preference and stays high.
+   */
+  private applyPreferences(event: EventDoc, policy: PushPolicy, prefs: Preferences): PushPolicy {
+    if (policy.bypassPrefs || BYPASS_PREFERENCES.has(event.type)) return policy;
+    return prefs.notificationsEnabled ? policy : quietPolicy(policy);
   }
 
   private retryOrFail(event: EventDoc, error: string): OutboxOutcome {
@@ -213,4 +237,18 @@ export class OutboxWorker {
         return;
     }
   }
+}
+
+/**
+ * An opaque id the app needs to post a quick notification before it syncs, which the detailed
+ * notification then replaces in place: message.created → the message id (the app's message
+ * notification id is derived from it); ping.created → the ping id (the app skips the quick alert
+ * when an earlier sync already brought that ping, so a generic line never overwrites the real one).
+ * Never content.
+ */
+export function pushRefFor(event: Pick<EventDoc, 'type' | 'payload'>): { ref?: string } {
+  const key = event.type === 'message.created' ? 'message' : event.type === 'ping.created' ? 'ping' : null;
+  if (!key) return {};
+  const item = event.payload[key] as { id?: unknown } | undefined;
+  return typeof item?.id === 'string' ? { ref: item.id } : {};
 }

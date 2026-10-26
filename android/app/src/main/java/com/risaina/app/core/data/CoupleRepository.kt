@@ -211,7 +211,7 @@ class CoupleRepository @Inject constructor(
         widgetBoardRepository.get().clear()
         gameRepository.get().clear()
         lockScreenCard.cancel()
-        notifier.clearPartnerAlerts()
+        notifier.clearAllPartnerNotifications()
         sessionStore.setActiveCoupleId(null)
         invitation.value = null
         runCatching { widgetRefresher.refreshAll() }

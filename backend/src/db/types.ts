@@ -83,6 +83,9 @@ export interface SessionDoc {
   revokedReason: string | null;
   deviceId: string | null;
   userAgent: string | null;
+  // The session this refresh token was rotated into (optional; absent on older sessions). Lets a
+  // refresh whose response never reached the phone be retried within a short grace window.
+  replacedBy?: ObjectId | null;
 }
 
 export interface PasswordResetDoc {
@@ -243,6 +246,14 @@ export interface DeviceTokenDoc {
   model: string | null;
   createdAt: Date;
   updatedAt: Date;
+  // Delivery health (stream: delivery). Optional in the validator (Atlas cannot collMod) and absent
+  // until the first push / ack: read missing as null / false / [].
+  lastPushSentAt?: Date | null; // the outbox's last push FCM accepted for this token
+  lastPushSentPriority?: 'high' | 'normal' | null;
+  lastPushAckAt?: Date | null; // the app said it received a push (X-Risaina-Push header on GET /events)
+  lastPushPriority?: 'high' | 'normal' | null; // priority that push arrived with on the phone
+  lastPushDowngraded?: boolean; // sent high, arrived normal: FCM deprioritised this phone
+  healthFlags?: string[]; // short codes the app reports, e.g. 'battery_optimized', 'standby_rare'
 }
 
 export interface MemoryDoc {

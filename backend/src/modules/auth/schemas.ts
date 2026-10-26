@@ -23,7 +23,12 @@ export const DisplayName = z
 
 export const RegisterBody = z.object({ email: Email, password: Password, displayName: DisplayName });
 export const LoginBody = z.object({ email: Email, password: z.string().min(1).max(200) });
-export const RefreshBody = z.object({ refreshToken: z.string().min(20).max(200) });
+export const RefreshBody = z.object({
+  refreshToken: z.string().min(20).max(200),
+  // The app's install id. Binds the session it creates, so a retry after a lost response is honoured
+  // only from the same install (AuthService.graceRetry). Optional for older apps.
+  deviceId: z.string().min(1).max(128).optional(),
+});
 export const LogoutBody = z.object({
   refreshToken: z.string().min(20).max(200),
   deviceId: z.string().min(1).max(128).optional(),

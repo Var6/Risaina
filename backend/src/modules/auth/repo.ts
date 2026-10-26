@@ -71,6 +71,24 @@ export class AuthRepo {
     return res.modifiedCount === 1;
   }
 
+  /** Remembers which session a rotated refresh token was exchanged for (refresh grace window). */
+  async setReplacedBy(sessionId: ObjectId, replacedBy: ObjectId): Promise<void> {
+    await this.db.sessions.updateOne({ _id: sessionId }, { $set: { replacedBy } });
+  }
+
+  /**
+   * Revokes a session only if it belongs to this install, nothing ever used it (no access-token
+   * request, no refresh) and it is still live. Atomic, so two retries cannot both win. Returns
+   * whether it was revoked.
+   */
+  async revokeIfUnused(sessionId: ObjectId, deviceId: string, reason: string, now: Date): Promise<boolean> {
+    const res = await this.db.sessions.updateOne(
+      { _id: sessionId, deviceId, revokedAt: null, rotatedAt: null, lastUsedAt: null },
+      { $set: { revokedAt: now, revokedReason: reason } },
+    );
+    return res.modifiedCount === 1;
+  }
+
   async familySessionIds(familyId: ObjectId): Promise<ObjectId[]> {
     const docs = await this.db.sessions
       .find({ familyId, revokedAt: null }, { projection: { _id: 1 } })

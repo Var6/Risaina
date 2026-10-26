@@ -117,6 +117,7 @@ export const VALIDATORS: Record<string, Document> = {
         revokedReason: nullableString,
         deviceId: nullableString,
         userAgent: nullableString,
+        replacedBy: nullableObjectId, // optional (refresh grace window)
       },
     },
   },
@@ -298,6 +299,13 @@ export const VALIDATORS: Record<string, Document> = {
         model: nullableString,
         createdAt: date,
         updatedAt: date,
+        // optional delivery-health fields (stream: delivery; never in `required`)
+        lastPushSentAt: nullableDate,
+        lastPushSentPriority: { enum: ['high', 'normal', null] },
+        lastPushAckAt: nullableDate,
+        lastPushPriority: { enum: ['high', 'normal', null] },
+        lastPushDowngraded: bool,
+        healthFlags: { bsonType: 'array', maxItems: 16, items: { bsonType: 'string', maxLength: 40 } },
       },
     },
   },

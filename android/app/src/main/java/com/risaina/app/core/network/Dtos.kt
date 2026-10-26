@@ -44,7 +44,7 @@ import kotlinx.serialization.json.JsonObject
 
 @Serializable data class RegisterRequest(val email: String, val password: String, val displayName: String)
 @Serializable data class LoginRequest(val email: String, val password: String)
-@Serializable data class RefreshRequest(val refreshToken: String)
+@Serializable data class RefreshRequest(val refreshToken: String, val deviceId: String? = null)
 @Serializable data class LogoutRequest(val refreshToken: String, val deviceId: String? = null)
 @Serializable data class ForgotRequest(val email: String)
 @Serializable data class ResetRequest(val token: String, val newPassword: String)
@@ -285,3 +285,12 @@ import kotlinx.serialization.json.JsonObject
     val id: String, val kind: String = "rps", val status: String = "", val round: Int = 1,
     val updatedAt: String? = null, val quiz: QuizEventDto? = null,
 )
+// ---- delivery health (stream: delivery) ----
+@Serializable data class TestPushRequest(val deviceId: String? = null, val delaySeconds: Int = 0)
+@Serializable data class TestPushResponse(val scheduled: Boolean, val devices: Int = 0, val reason: String? = null)
+@Serializable data class DeviceHealthDto(
+    val deviceId: String? = null, val model: String? = null, val appVersion: String = "", val updatedAt: String? = null,
+    val lastPushSentAt: String? = null, val lastPushAckAt: String? = null, val lastPushPriority: String? = null,
+    val lastPushDowngraded: Boolean = false, val healthFlags: List<String> = emptyList(),
+)
+@Serializable data class DeviceHealthResponse(val mine: List<DeviceHealthDto> = emptyList(), val partner: List<DeviceHealthDto> = emptyList())

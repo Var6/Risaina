@@ -51,6 +51,11 @@ data class WidgetSnapshot(
     val latestKind: String? = null,
     val latestAtMillis: Long? = null,
     val latestUnseen: Boolean = false,
+    /**
+     * latestEmoji / latestEmojiLabel come from a gift (the partner's newest ping is a gift). The
+     * lock-screen card's calm state skips them, so a gift is never announced again once seen.
+     */
+    val latestEmojiFromGift: Boolean = false,
 )
 
 @Singleton
@@ -82,6 +87,7 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
         val latestKind = stringPreferencesKey("latest_kind")
         val latestAt = longPreferencesKey("latest_at")
         val latestUnseen = stringPreferencesKey("latest_unseen")
+        val emojiFromGift = stringPreferencesKey("emoji_from_gift")
         /** Everything the partner sent before this instant counts as seen on this phone. */
         val seenUntil = longPreferencesKey("seen_until")
     }
@@ -114,6 +120,7 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
             latestKind = p[K.latestKind],
             latestAtMillis = p[K.latestAt],
             latestUnseen = p[K.latestUnseen] == "1",
+            latestEmojiFromGift = p[K.emojiFromGift] == "1",
         )
     }
 
@@ -135,6 +142,7 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
             put(K.pingEmoji, s.latestPingEmoji); put(K.pingLine, s.latestPingLine); putL(K.pingAt, s.latestPingAtMillis)
             put(K.pingUnseen, if (s.pingUnseen) "1" else "0"); put(K.giftUnseen, if (s.giftUnseen) "1" else "0")
             put(K.latestKind, s.latestKind); putL(K.latestAt, s.latestAtMillis); put(K.latestUnseen, if (s.latestUnseen) "1" else "0")
+            put(K.emojiFromGift, if (s.latestEmojiFromGift) "1" else "0")
         }
     }
 

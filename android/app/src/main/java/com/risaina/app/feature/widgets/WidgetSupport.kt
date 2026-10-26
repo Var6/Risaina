@@ -1,5 +1,6 @@
 package com.risaina.app.feature.widgets
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -9,12 +10,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.glance.ExperimentalGlanceApi
+import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.action.Action
+import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
-import androidx.glance.appwidget.updateAll
+import androidx.glance.appwidget.runComposition
 import androidx.glance.background
 import androidx.glance.color.ColorProvider
 import androidx.glance.color.ColorProviders
@@ -38,6 +43,11 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -145,18 +155,69 @@ fun loadWidgetBitmap(path: String?): Bitmap? {
 }
 
 
-/** Re-render every widget from the snapshot store. Called by the sync layer after relevant events. */
+/**
+ * Re-render every placed widget from the snapshot store, drawn right now, before this returns.
+ *
+ * Why not just `updateAll()`: in Glance 1.2 that only queues a WorkManager job (SessionWorker, not
+ * expedited) which draws later. On a stock emulator it runs at once, but realme/ColorOS freezes or
+ * kills the app as soon as the push handler returns and defers background jobs, so the widgets
+ * changed only when the app was next opened while notifications (posted directly) arrived fine.
+ * Here each placed widget is composed in this coroutine (Glance's `runComposition`) and handed to
+ * AppWidgetManager directly. If that fails or takes too long, that one widget falls back to the
+ * queued Glance update, so nothing is worse than before.
+ */
 @Singleton
-class GlanceWidgetRefresher @Inject constructor(@ApplicationContext private val context: Context) : WidgetRefresher {
-    override suspend fun refreshAll() {
-        UsWidget().updateAll(context)
-        PhotoWidget().updateAll(context)
-        LoveNoteWidget().updateAll(context)
-        TouchPingWidget().updateAll(context)
-        EmojiWidget().updateAll(context)
-        CountdownWidget().updateAll(context)
-        VoiceNoteWidget().updateAll(context)
-        GiftWidget().updateAll(context)
+class GlanceWidgetRefresher @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val diagnostics: com.risaina.app.core.notifications.DeliveryDiagnostics,
+) : WidgetRefresher {
+    /** Us first: it is the widget most people have, so it gets the time budget first. */
+    private fun widgets(): List<GlanceAppWidget> = listOf(
+        UsWidget(), TouchPingWidget(), PhotoWidget(), LoveNoteWidget(), EmojiWidget(), GiftWidget(), CountdownWidget(), VoiceNoteWidget(),
+    )
+
+    override suspend fun refreshAll(): Unit = withContext(Dispatchers.Default) {
+        val glance = GlanceAppWidgetManager(context)
+        val appWidgets = AppWidgetManager.getInstance(context)
+        // Only widgets the person actually placed; most classes have none.
+        val placed = widgets().flatMap { w ->
+            val ids = try { glance.getGlanceIds(w.javaClass) } catch (e: CancellationException) { throw e } catch (_: Throwable) { emptyList() }
+            ids.map { w to it }
+        }
+        val drawn = mutableSetOf<GlanceId>()
+        // One deadline for all of them (a per-widget timeout could add up to many seconds inside the
+        // push handler). Each widget fails on its own; a failure never skips the rest.
+        withTimeoutOrNull(DRAW_DEADLINE_MS) {
+            for ((widget, id) in placed) if (drawNow(widget, id, glance, appWidgets)) drawn += id
+        }
+        // Not drawn in time, or failed: Glance's queued update, as before this change.
+        var fallbacks = 0
+        for ((widget, id) in placed) {
+            if (id in drawn) continue
+            fallbacks++
+            try { widget.update(context, id) } catch (e: CancellationException) { throw e } catch (_: Throwable) {}
+        }
+        if (placed.isNotEmpty()) diagnostics.recordWidgetDraw(drawn.size, fallbacks)
+        Unit
+    }
+
+    @OptIn(ExperimentalGlanceApi::class)
+    private suspend fun drawNow(widget: GlanceAppWidget, id: GlanceId, glance: GlanceAppWidgetManager, appWidgets: AppWidgetManager): Boolean {
+        val appWidgetId = try { glance.getAppWidgetId(id) } catch (_: Throwable) { return false }
+        val views = try {
+            // The options carry the widget's current size, so responsive layouts pick the right one.
+            widget.runComposition(context, id, appWidgets.getAppWidgetOptions(appWidgetId)).first()
+        } catch (e: CancellationException) {
+            throw e // the overall deadline: stop here, the rest falls back
+        } catch (_: Throwable) {
+            return false
+        }
+        return try { appWidgets.updateAppWidget(appWidgetId, views); true } catch (_: Throwable) { false }
+    }
+
+    private companion object {
+        /** All widgets together. A cold composition takes well under a second; this guards a hang. */
+        const val DRAW_DEADLINE_MS = 2_500L
     }
 }
 
