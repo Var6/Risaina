@@ -9,9 +9,15 @@ import com.risaina.app.core.network.RisainaApi
 import com.risaina.app.core.network.SocketMessage
 import com.risaina.app.core.network.SocketState
 import com.risaina.app.core.network.apiCall
+import com.risaina.app.core.notifications.DeliveryDiagnostics
+import com.risaina.app.core.notifications.DeliveryHealthRules
+import com.risaina.app.core.notifications.DeviceStateReader
+import com.risaina.app.core.notifications.RisainaNotifier
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -20,7 +26,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,9 +44,21 @@ class EventSyncManager @Inject constructor(
     private val widgetSnapshotUpdater: WidgetSnapshotUpdater,
     private val haptics: com.risaina.app.core.notifications.Haptics,
     private val deferred: DeferredEffects,
+    private val notifier: RisainaNotifier,
+    private val diagnostics: DeliveryDiagnostics,
+    private val deviceState: DeviceStateReader,
 ) {
     private val applyMutex = Mutex()
     private var socketJob: Job? = null
+
+    /** Shared syncs run here, not in a caller that may give up (see [SingleFlight]). */
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val flights = SingleFlight<SyncOptions, AppResult<List<Incoming>>>(syncScope) { a, b ->
+        SyncOptions(notify = a.notify || b.notify, fetchMedia = a.fetchMedia || b.fetchMedia)
+    }
+
+    /** [notify]: post notifications for new items. [fetchMedia]: download a new widget photo too. */
+    data class SyncOptions(val notify: Boolean, val fetchMedia: Boolean)
 
     val socketState: StateFlow<SocketState> = socket.state
 
@@ -81,70 +98,76 @@ class EventSyncManager @Inject constructor(
     /**
      * Fetch and apply everything after the cursor. Returns the new incoming items.
      *
-     * [onIncoming] is called for each new item as soon as its event is applied, so a caller with a
-     * deadline (the push handler) never loses a notification: applying an event and announcing it
-     * run as one non-cancellable step, and the cursor only moves past events that were announced.
-     * (The push handler used to collect everything and notify at the end; its 8 s timeout then
-     * dropped the list after the cursor had already moved, and no later sync posted it.)
-     *
-     * [fetchMedia] = false leaves a new photo's download to the caller
-     * (WidgetSnapshotUpdater.completeMedia), so text, pings and gifts reach the widgets first.
+     * One sync at a time: the push handler, the expedited SyncWorker and the periodic worker share a
+     * running sync (their options merge), instead of fetching the same events side by side.
+     * With [notify], each new item's notification is posted as soon as its event is applied, before
+     * the widgets are recomputed (see [runPagedSync]), so a caller's deadline or a later error never
+     * loses one. [fetchMedia] = false leaves a new photo's download to a later sync (the worker), so
+     * text, pings and gifts reach the widgets first.
      */
-    suspend fun syncOnce(
-        fetchMedia: Boolean = true,
-        onIncoming: (suspend (Incoming) -> Unit)? = null,
-    ): AppResult<List<Incoming>> {
+    suspend fun syncOnce(notify: Boolean = false, fetchMedia: Boolean = true): AppResult<List<Incoming>> {
         if (sessionStore.current() == null) return AppResult.Success(emptyList())
-        val collected = mutableListOf<Incoming>()
-        var since = sessionStore.lastEventSeq.first()
-        var failure: AppResult.Failure? = null
-        // At most 10 pages per sync. (This used `repeat` with `return@repeat`, which only skips to the
-        // next pass, so every sync made 10 requests even when it had already caught up.)
-        for (pageNo in 0 until 10) {
-            val page = when (val r = fetchPage(since, retry = pageNo == 0)) {
-                is AppResult.Success -> r.value
-                is AppResult.Failure -> { failure = r; break }
-            }
-            // Cursor 0 = a full replay (fresh sign-in or a new pairing): mark where history ends.
-            if (since == 0L) sessionStore.setBootstrapUntilSeqIfFresh(page.latestSeq)
-            if (page.items.isEmpty()) break
-            val mark = sessionStore.bootstrapUntilSeq.first()
-            for (e in page.items) {
-                withContext(NonCancellable) {
-                    val replay = ReplayGuard.isReplay(e.seq, mark)
-                    val fresh = ReplayGuard.announceable(applyMutex.withLock { reducer.apply(e, replay) }, e.seq, mark)
-                    collected += fresh
-                    if (onIncoming != null) fresh.forEach { runCatching { onIncoming(it) } }
-                }
-            }
-            since = page.items.maxOf { it.seq }
-            if (since >= page.latestSeq) break
-        }
+        return flights.run(SyncOptions(notify, fetchMedia)) { flight -> runSync(flight) }
+    }
+
+    private suspend fun runSync(flight: SingleFlight.Flight<SyncOptions>): AppResult<List<Incoming>> {
+        val result = runPagedSync(
+            since0 = sessionStore.lastEventSeq.first(),
+            fetch = ::fetchPage,
+            bootstrapMark = { latest -> sessionStore.setBootstrapUntilSeqIfFresh(latest); sessionStore.bootstrapUntilSeq.first() },
+            currentMark = { sessionStore.bootstrapUntilSeq.first() },
+            apply = { e, replay -> applyMutex.withLock { reducer.apply(e, replay) } },
+            announce = { item -> if (flight.options.notify) notifier.notifyIncoming(item) },
+        )
         // Recompute even when nothing new arrived, or a page failed after others were applied: the
         // countdown's "days left" moves at midnight, and what was applied must reach the widgets.
-        widgetSnapshotUpdater.recompute(fetchMedia = fetchMedia)
-        failure?.let { return it }
+        // Its own try: a widget, DataStore or download error must not fail a sync whose events (and
+        // notifications) are already done.
+        try {
+            widgetSnapshotUpdater.recompute(fetchMedia = flight.options.fetchMedia)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+        }
+        result.failure?.let { return it }
         // Open on screen but the event came by push or catch-up sync (not the socket): the
         // notification is suppressed in the foreground, so buzz and reveal it in the app instead.
         if (androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-            val freshPing = collected.filterIsInstance<Incoming.NewPing>().any { java.time.Duration.between(it.ping.createdAt, java.time.Instant.now()).seconds < 60 }
+            val freshPing = result.items.filterIsInstance<Incoming.NewPing>().any { java.time.Duration.between(it.ping.createdAt, java.time.Instant.now()).seconds < 60 }
             if (freshPing) haptics.arrival()
-            collected.forEach { _incoming.tryEmit(it) }
+            result.items.forEach { _incoming.tryEmit(it) }
         }
-        return AppResult.Success(collected)
+        return AppResult.Success(result.items)
     }
 
     /** Run the network follow-ups the reducer queued (receipts, game refresh). See [DeferredEffects]. */
     suspend fun runDeferred() = deferred.drain()
 
     /**
-     * Right after a Doze wake the network can lag for a moment: retry the first page once after a
-     * second instead of giving up on the whole sync.
+     * Right after a Doze wake the network can lag for a moment: the first page is retried once after
+     * a second instead of giving up on the whole sync. The first page also carries "this phone
+     * received a push" for delivery health (no separate request inside the push handler's window).
      */
-    private suspend fun fetchPage(since: Long, retry: Boolean): AppResult<EventsResponse> {
-        val first = apiCall { api.events(since = since, limit = 200) }
-        if (first !is AppResult.Failure || !retry || !first.error.isRetryable) return first
-        delay(1_000)
-        return apiCall { api.events(since = since, limit = 200) }
+    private suspend fun fetchPage(since: Long, first: Boolean): AppResult<EventsResponse> {
+        val ack = if (first) diagnostics.pendingAck() else null
+        val headers = ack?.let { ackHeaders(it) }.orEmpty()
+        suspend fun once() = apiCall { if (headers.isEmpty()) api.events(since = since, limit = 200) else api.eventsWithAck(since, 200, headers) }
+        var r = once()
+        if (first && r is AppResult.Failure && r.error.isRetryable) {
+            delay(1_000)
+            r = once()
+        }
+        if (r is AppResult.Success && ack != null) diagnostics.clearPendingAck(ack)
+        return r
+    }
+
+    private suspend fun ackHeaders(ack: Pair<String, String>): Map<String, String> {
+        val deviceId = sessionStore.current()?.deviceId?.takeIf { it.isNotBlank() } ?: return emptyMap()
+        val flags = runCatching { DeliveryHealthRules.flags(deviceState.read()) }.getOrDefault(emptyList())
+        return mapOf(
+            "X-Risaina-Device" to deviceId,
+            "X-Risaina-Push" to "${ack.first}/${ack.second}",
+            "X-Risaina-Health" to flags.joinToString(","),
+        )
     }
 }

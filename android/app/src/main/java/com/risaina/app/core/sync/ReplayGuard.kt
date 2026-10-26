@@ -15,9 +15,9 @@ object ReplayGuard {
 
     /**
      * What may be announced for the event with [seq]. A replayed event keeps only items that are not
-     * "something new arrived" (an unlink, a widget change, an SOS, which has its own safety rules).
+     * "something new arrived": an unlink, and an SOS, which has its own safety rules (SosAlert).
      */
     fun announceable(results: List<Incoming>, seq: Long, bootstrapUntilSeq: Long): List<Incoming> =
         if (!isReplay(seq, bootstrapUntilSeq)) results
-        else results.filterNot { it is Incoming.NewPing || it is Incoming.NewMessage || it is Incoming.Game }
+        else results.filterNot { it is Incoming.NewPing || it is Incoming.NewMessage || it is Incoming.Game || it is Incoming.WidgetChanged }
 }

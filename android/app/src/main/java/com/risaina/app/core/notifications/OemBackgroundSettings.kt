@@ -67,8 +67,17 @@ object OemBackgroundSettings {
         else -> null
     }
 
-    /** Opens the first OEM screen that exists, else App info, else Settings. Returns false only if nothing opened. */
-    fun openBackgroundSettings(context: Context): Boolean {
+    /**
+     * The main "let Risaina run in the background" button. On realme / OPPO / OnePlus (ColorOS) this is
+     * App info, where Battery usage holds Allow background activity and Allow auto launch: the
+     * safecenter screens are often missing or not exported on current versions. Elsewhere the phone
+     * maker's auto-start screen comes first.
+     */
+    fun openBackgroundSettings(context: Context): Boolean =
+        if (DeliveryHealthRules.colorOs(android.os.Build.MANUFACTURER.orEmpty())) openAppInfo(context) else openAutoLaunchList(context)
+
+    /** Opens the first OEM auto-launch / background screen that exists, else App info, else Settings. */
+    fun openAutoLaunchList(context: Context): Boolean {
         val label = runCatching { context.applicationInfo.loadLabel(context.packageManager).toString() }.getOrDefault("Risaina")
         for (screen in candidates(android.os.Build.MANUFACTURER.orEmpty(), context.packageName, label)) {
             val intent = Intent().setComponent(ComponentName(screen.pkg, screen.cls))

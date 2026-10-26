@@ -14,7 +14,6 @@ import androidx.core.content.ContextCompat
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.network.DeviceHealthResponse
-import com.risaina.app.core.network.PushAckRequest
 import com.risaina.app.core.network.RisainaApi
 import com.risaina.app.core.network.TestPushRequest
 import com.risaina.app.core.network.TestPushResponse
@@ -39,7 +38,14 @@ data class DeviceDeliveryState(
     val dataSaverBlocksBackground: Boolean = false,
     val playServicesAvailable: Boolean = true,
     val manufacturer: String = "",
+    /** The last time Android or the person stopped Risaina the hard way (Android 11+), if recent. */
+    val lastKill: AppKill? = null,
+    /** Android 15+: Risaina was force-stopped before its last start (no pushes while stopped). */
+    val forceStoppedBeforeLastStart: Boolean = false,
 )
+
+/** How Risaina's process last ended, when it was not a normal exit. [kind]: swiped, stopped, frozen, other. */
+data class AppKill(val kind: String, val atMillis: Long, val description: String? = null)
 
 enum class HealthStatus { OK, WARNING, PROBLEM }
 
@@ -61,7 +67,10 @@ object DeliveryHealthRules {
     fun aggressiveOem(manufacturer: String): Boolean =
         manufacturer.lowercase() in setOf("realme", "oppo", "oneplus", "xiaomi", "redmi", "poco", "vivo", "iqoo", "huawei", "honor", "samsung", "meizu", "asus", "tecno", "infinix")
 
-    fun checks(s: DeviceDeliveryState): List<HealthCheck> = buildList {
+    /** How long a kill stays worth mentioning. */
+    const val RECENT_KILL_MS = 3L * 24 * 3600 * 1000
+
+    fun checks(s: DeviceDeliveryState, now: Long = System.currentTimeMillis()): List<HealthCheck> = buildList {
         if (!s.pushConfigured) add(HealthCheck("push", HealthStatus.PROBLEM, "Push isn't set up in this build", "Nothing can reach this phone while Risaina is closed."))
         if (!s.playServicesAvailable) add(HealthCheck("play", HealthStatus.PROBLEM, "Google Play services missing", "Risaina's alerts travel through Google Play services, which this phone doesn't have."))
 
@@ -92,10 +101,26 @@ object DeliveryHealthRules {
         if (s.dataSaverBlocksBackground) {
             add(HealthCheck("datasaver", HealthStatus.WARNING, "Data Saver blocks background data", "Updates wait until you open the app. Allow Risaina unrestricted data.", HealthAction.DATA_SAVER, "Allow"))
         }
+        if (s.forceStoppedBeforeLastStart) {
+            add(HealthCheck("forcestop", HealthStatus.WARNING, "Risaina was force-stopped", "While an app is stopped, no push can reach it. Swiping it away can do this on some phones. Allow auto launch.", HealthAction.OEM_BACKGROUND, "Fix"))
+        }
+        val kill = s.lastKill?.takeIf { now - it.atMillis in 0 until RECENT_KILL_MS }
+        if (kill != null) {
+            val how = when (kill.kind) {
+                "swiped" -> "was swiped away"
+                "frozen" -> "was frozen by the system"
+                "stopped" -> "was stopped"
+                else -> "was closed by the system"
+            }
+            add(HealthCheck("killed", HealthStatus.WARNING, "Risaina $how recently", "Pushes can wait until it's allowed to run again. Lock it in Recents and allow background activity.", HealthAction.OEM_BACKGROUND, "Fix"))
+        }
         if (aggressiveOem(s.manufacturer)) {
-            add(HealthCheck("oem", HealthStatus.WARNING, "Check auto launch on this phone", "${brand(s.manufacturer)} phones stop apps in the background unless you allow it. Allow auto launch and background activity for Risaina.", HealthAction.OEM_BACKGROUND, "Open settings"))
+            add(HealthCheck("oem", HealthStatus.WARNING, "Check auto launch on this phone", "${brand(s.manufacturer)} phones stop apps in the background unless you allow it. Allow auto launch and background activity for Risaina.", HealthAction.OEM_BACKGROUND, if (colorOs(s.manufacturer)) "Open App info" else "Open settings"))
         }
     }
+
+    /** True for realme, OPPO and OnePlus (ColorOS), where App info → Battery usage is the reliable route. */
+    fun colorOs(manufacturer: String): Boolean = manufacturer.lowercase() in setOf("realme", "oppo", "oneplus")
 
     /** Short codes sent with push acks, so the partner's phone can say why alerts may be late here. */
     fun flags(s: DeviceDeliveryState): List<String> = buildList {
@@ -109,6 +134,7 @@ object DeliveryHealthRules {
         }
         if (s.dataSaverBlocksBackground) add("data_saver")
         if (!s.playServicesAvailable) add("no_play_services")
+        if (s.forceStoppedBeforeLastStart) add("force_stopped")
     }
 
     /** One line for the top of the card. */
@@ -163,48 +189,55 @@ class DeviceStateReader @Inject constructor(
             }.getOrDefault(false),
             playServicesAvailable = runCatching { context.packageManager.getApplicationInfo(PLAY_SERVICES, 0).enabled }.getOrDefault(false),
             manufacturer = Build.MANUFACTURER.orEmpty(),
+            lastKill = if (Build.VERSION.SDK_INT >= 30) lastKill() else null,
+            forceStoppedBeforeLastStart = Build.VERSION.SDK_INT >= 35 && wasForceStopped(),
         )
     }
 
-    private companion object { const val PLAY_SERVICES = "com.google.android.gms" }
+    /**
+     * Swipe-kills, force-stops and freezes, after the fact (Android 11+). ColorOS often reports its
+     * own cleanups as "other" with a description, which is shown as is.
+     */
+    @androidx.annotation.RequiresApi(30)
+    private fun lastKill(): AppKill? = runCatching {
+        val am = context.getSystemService(ActivityManager::class.java) ?: return null
+        am.getHistoricalProcessExitReasons(context.packageName, 0, 10).firstNotNullOfOrNull { e ->
+            val kind = when (e.reason) {
+                android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "swiped"
+                android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "stopped"
+                REASON_FREEZER -> "frozen"
+                android.app.ApplicationExitInfo.REASON_OTHER -> "other"
+                else -> null
+            }
+            kind?.let { AppKill(it, e.timestamp, e.description) }
+        }
+    }.getOrNull()
+
+    @androidx.annotation.RequiresApi(35)
+    private fun wasForceStopped(): Boolean = runCatching {
+        context.getSystemService(ActivityManager::class.java)?.getHistoricalProcessStartReasons(1)?.firstOrNull()?.wasForceStopped() == true
+    }.getOrDefault(false)
+
+    private companion object {
+        const val PLAY_SERVICES = "com.google.android.gms"
+        /** ApplicationExitInfo.REASON_FREEZER (Android 13); the value is reported on any version. */
+        const val REASON_FREEZER = 14
+    }
 }
 
-/** Talks to the server about delivery: push acks, the test push, and both phones' health. */
+/**
+ * Talks to the server about delivery: the test push and both phones' health. (Push acks ride on the
+ * sync's GET /events instead; see EventSyncManager.)
+ */
 @Singleton
 class DeliveryHealthReporter @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val api: RisainaApi,
     private val sessionStore: SessionStore,
-    private val stateReader: DeviceStateReader,
 ) {
-    private val prefs get() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-
-    /**
-     * Tells the server this phone received a push, so either partner can see when it last did. At
-     * most every few minutes (an extra request per push would cost battery for little), but always
-     * for a downgraded or test push, which is exactly what the health view needs to show.
-     */
-    suspend fun ackPush(priority: String, originalPriority: String, force: Boolean) {
-        val now = System.currentTimeMillis()
-        val downgraded = originalPriority == DeliverySnapshot.PRIORITY_HIGH && priority == DeliverySnapshot.PRIORITY_NORMAL
-        if (!force && !downgraded && now - prefs.getLong(K_LAST_ACK, 0L) in 0 until ACK_INTERVAL_MS) return
-        val session = sessionStore.current() ?: return
-        if (priority == DeliverySnapshot.PRIORITY_UNKNOWN || originalPriority == DeliverySnapshot.PRIORITY_UNKNOWN) return
-        val flags = DeliveryHealthRules.flags(stateReader.read())
-        val r = apiCall { api.pushAck(session.deviceId, PushAckRequest(priority, originalPriority, flags)) }
-        if (r is AppResult.Success) prefs.edit().putLong(K_LAST_ACK, now).apply()
-    }
-
     suspend fun sendTestPush(delaySeconds: Int): AppResult<TestPushResponse> {
         val deviceId = sessionStore.current()?.deviceId?.takeIf { it.isNotBlank() }
         return apiCall { api.testPush(TestPushRequest(deviceId = deviceId, delaySeconds = delaySeconds)) }
     }
 
     suspend fun health(): AppResult<DeviceHealthResponse> = apiCall { api.deviceHealth() }
-
-    private companion object {
-        const val PREFS = "delivery_health"
-        const val K_LAST_ACK = "last_ack_at"
-        const val ACK_INTERVAL_MS = 10 * 60_000L
-    }
 }

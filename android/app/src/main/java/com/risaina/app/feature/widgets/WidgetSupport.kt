@@ -171,27 +171,33 @@ class GlanceWidgetRefresher @Inject constructor(
     @ApplicationContext private val context: Context,
     private val diagnostics: com.risaina.app.core.notifications.DeliveryDiagnostics,
 ) : WidgetRefresher {
+    /** Us first: it is the widget most people have, so it gets the time budget first. */
     private fun widgets(): List<GlanceAppWidget> = listOf(
-        UsWidget(), PhotoWidget(), LoveNoteWidget(), TouchPingWidget(), EmojiWidget(), CountdownWidget(), VoiceNoteWidget(), GiftWidget(),
+        UsWidget(), TouchPingWidget(), PhotoWidget(), LoveNoteWidget(), EmojiWidget(), GiftWidget(), CountdownWidget(), VoiceNoteWidget(),
     )
 
     override suspend fun refreshAll(): Unit = withContext(Dispatchers.Default) {
         val glance = GlanceAppWidgetManager(context)
         val appWidgets = AppWidgetManager.getInstance(context)
-        var drawn = 0
-        var fallbacks = 0
-        for (widget in widgets()) {
-            // Only widgets the person actually placed; most classes have none.
-            val ids = try { glance.getGlanceIds(widget.javaClass) } catch (e: CancellationException) { throw e } catch (_: Throwable) { emptyList() }
-            for (id in ids) {
-                if (drawNow(widget, id, glance, appWidgets)) drawn++
-                else {
-                    fallbacks++
-                    try { widget.update(context, id) } catch (e: CancellationException) { throw e } catch (_: Throwable) {}
-                }
-            }
+        // Only widgets the person actually placed; most classes have none.
+        val placed = widgets().flatMap { w ->
+            val ids = try { glance.getGlanceIds(w.javaClass) } catch (e: CancellationException) { throw e } catch (_: Throwable) { emptyList() }
+            ids.map { w to it }
         }
-        if (drawn + fallbacks > 0) diagnostics.recordWidgetDraw(drawn, fallbacks)
+        val drawn = mutableSetOf<GlanceId>()
+        // One deadline for all of them (a per-widget timeout could add up to many seconds inside the
+        // push handler). Each widget fails on its own; a failure never skips the rest.
+        withTimeoutOrNull(DRAW_DEADLINE_MS) {
+            for ((widget, id) in placed) if (drawNow(widget, id, glance, appWidgets)) drawn += id
+        }
+        // Not drawn in time, or failed: Glance's queued update, as before this change.
+        var fallbacks = 0
+        for ((widget, id) in placed) {
+            if (id in drawn) continue
+            fallbacks++
+            try { widget.update(context, id) } catch (e: CancellationException) { throw e } catch (_: Throwable) {}
+        }
+        if (placed.isNotEmpty()) diagnostics.recordWidgetDraw(drawn.size, fallbacks)
         Unit
     }
 
@@ -200,18 +206,18 @@ class GlanceWidgetRefresher @Inject constructor(
         val appWidgetId = try { glance.getAppWidgetId(id) } catch (_: Throwable) { return false }
         val views = try {
             // The options carry the widget's current size, so responsive layouts pick the right one.
-            withTimeoutOrNull(DRAW_TIMEOUT_MS) { widget.runComposition(context, id, appWidgets.getAppWidgetOptions(appWidgetId)).first() }
+            widget.runComposition(context, id, appWidgets.getAppWidgetOptions(appWidgetId)).first()
         } catch (e: CancellationException) {
-            throw e
+            throw e // the overall deadline: stop here, the rest falls back
         } catch (_: Throwable) {
-            null
-        } ?: return false
+            return false
+        }
         return try { appWidgets.updateAppWidget(appWidgetId, views); true } catch (_: Throwable) { false }
     }
 
     private companion object {
-        /** Per widget. A cold composition takes well under a second; this only guards a hang. */
-        const val DRAW_TIMEOUT_MS = 2_500L
+        /** All widgets together. A cold composition takes well under a second; this guards a hang. */
+        const val DRAW_DEADLINE_MS = 2_500L
     }
 }
 

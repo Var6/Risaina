@@ -42,8 +42,8 @@ class ReplayGuardTest {
         assertTrue(ReplayGuard.announceable(listOf(ping), seq = 2_300, bootstrapUntilSeq = 2_500).isEmpty())
     }
 
-    @Test fun unlinkWidgetChangeAndSosAreKeptEvenInAReplay() {
-        val keep = listOf(Incoming.Unlinked, Incoming.WidgetChanged, Incoming.Sos("s1"))
-        assertEquals(keep, ReplayGuard.announceable(keep + ping, seq = 5, bootstrapUntilSeq = 120))
+    @Test fun unlinkAndSosAreKeptEvenInAReplay() {
+        val keep = listOf(Incoming.Unlinked, Incoming.Sos("s1"))
+        assertEquals(keep, ReplayGuard.announceable(keep + ping + Incoming.WidgetChanged, seq = 5, bootstrapUntilSeq = 120))
     }
 }

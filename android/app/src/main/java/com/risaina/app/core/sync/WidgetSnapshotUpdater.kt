@@ -13,8 +13,6 @@ import com.risaina.app.core.datastore.WidgetSnapshotStore
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.model.PingType
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDate
 import javax.inject.Inject
@@ -45,7 +43,8 @@ class WidgetSnapshotUpdater @Inject constructor(
     private val pingRepository: com.risaina.app.core.data.PingRepository,
     private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
 ) {
-    private val mutex = Mutex()
+    /** One recompute at a time, in call order (see the class comment). */
+    private val serial = SerialRunner()
 
     /** A new partner photo the widgets want but this phone has not downloaded yet. */
     @Volatile private var pendingPhotoMediaId: String? = null
@@ -78,7 +77,7 @@ class WidgetSnapshotUpdater @Inject constructor(
      * what is left of its time budget.
      */
     suspend fun recompute(fetchMedia: Boolean = true) {
-        mutex.withLock { recomputeLocked() }
+        serial.run { recomputeLocked() }
         if (fetchMedia) completeMedia()
     }
 
@@ -90,7 +89,7 @@ class WidgetSnapshotUpdater @Inject constructor(
         val mediaId = pendingPhotoMediaId ?: return false
         val fetched = withTimeoutOrNull(timeoutMs) { mediaRepository.ensureCached(mediaId, "image/jpeg") }
         if (fetched !is AppResult.Success) return false
-        mutex.withLock { recomputeLocked() }
+        serial.run { recomputeLocked() }
         return true
     }
 
@@ -202,8 +201,10 @@ class WidgetSnapshotUpdater @Inject constructor(
                 latestEmojiFromGift = emojiFromGift,
             )
         }
-        runCatching { refresher.refreshAll() }
-        runCatching { lockScreenCard.update(store.current()) }
+        // Each on its own: a widget error must not stop the lock card, and neither may swallow a
+        // cancellation (runCatching would), which has to reach the caller.
+        try { refresher.refreshAll() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) {}
+        try { lockScreenCard.update(store.current()) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) {}
     }
 
     private companion object {

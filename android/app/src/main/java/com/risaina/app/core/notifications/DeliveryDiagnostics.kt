@@ -67,7 +67,28 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
             .putString(K_PUSH_ORIGINAL, DeliverySnapshot.priorityName(originalPriority))
             .putLong(K_PUSH_SENT, sentTime)
             .apply { if (type == TEST_PUSH_TYPE) putLong(K_TEST_AT, now) }
+            .apply {
+                val p = DeliverySnapshot.priorityName(priority)
+                val o = DeliverySnapshot.priorityName(originalPriority)
+                if (p != DeliverySnapshot.PRIORITY_UNKNOWN && o != DeliverySnapshot.PRIORITY_UNKNOWN) putString(K_ACK_PRIORITY, p).putString(K_ACK_ORIGINAL, o)
+            }
             .apply()
+    }
+
+    /**
+     * "This phone received a push", waiting to ride on the next GET /events (the sync that the push
+     * starts anyway), so no extra request is made inside the push handler's few seconds.
+     */
+    fun pendingAck(): Pair<String, String>? {
+        val p = prefs
+        val priority = p.getString(K_ACK_PRIORITY, null) ?: return null
+        val original = p.getString(K_ACK_ORIGINAL, null) ?: return null
+        return priority to original
+    }
+
+    fun clearPendingAck(sent: Pair<String, String>) {
+        // Only if no newer push replaced it while the request was in flight.
+        if (pendingAck() == sent) prefs.edit().remove(K_ACK_PRIORITY).remove(K_ACK_ORIGINAL).apply()
     }
 
     fun recordSync(result: String, millis: Long, now: Long = System.currentTimeMillis()) {
@@ -130,5 +151,7 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         private const val K_WORKER_AT = "worker_at"
         private const val K_TEST_AT = "test_push_at"
         private const val K_FAST_PREFIX = "fast_alert_at_"
+        private const val K_ACK_PRIORITY = "ack_priority"
+        private const val K_ACK_ORIGINAL = "ack_original_priority"
     }
 }

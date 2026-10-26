@@ -63,8 +63,13 @@ class RisainaApi @Inject constructor(
     suspend fun removeDevice(deviceId: String) { client.delete("devices/$deviceId") }
     // delivery health (stream: delivery)
     suspend fun testPush(req: TestPushRequest): TestPushResponse = client.post("devices/test-push") { json(req) }.body()
-    suspend fun pushAck(deviceId: String, req: PushAckRequest) { client.post("devices/$deviceId/push-ack") { json(req) } }
     suspend fun deviceHealth(): DeviceHealthResponse = client.get("devices/health").body()
+    /** GET /events carrying "this phone received a push" headers (X-Risaina-Device / -Push / -Health). */
+    suspend fun eventsWithAck(since: Long, limit: Int, ackHeaders: Map<String, String>): EventsResponse =
+        client.get("events") {
+            parameter("since", since); parameter("limit", limit)
+            ackHeaders.forEach { (k, v) -> headers.append(k, v) }
+        }.body()
 
     // ---- pings ----
     suspend fun createPing(req: CreatePingRequest): PingResponse = client.post("pings") { json(req) }.body()

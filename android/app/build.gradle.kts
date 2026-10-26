@@ -18,6 +18,16 @@ if (hasGoogleServices) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
 }
 
+// Build id: which commit a phone is running. It shows in Settings and reaches the server as the
+// device's appVersion, so "is Raina on the new build?" has an answer. versionCode is the commit
+// count, so every newer build installs over an older one. Without git (e.g. a source zip) the build
+// still works, as "0.2.0+dev".
+fun gitOutput(vararg args: String): String? = runCatching {
+    providers.exec { commandLine("git", *args) }.standardOutput.asText.get().trim().ifBlank { null }
+}.getOrNull()
+val buildSha: String = gitOutput("rev-parse", "--short=7", "HEAD") ?: "dev"
+val buildNumber: Int = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 2
+
 android {
     namespace = "com.risaina.app"
     compileSdk = 37
@@ -26,8 +36,8 @@ android {
         applicationId = "com.risaina.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = buildNumber
+        versionName = "0.2.0+$buildSha"
         testInstrumentationRunner = "com.risaina.app.HiltTestRunner"
         vectorDrawables.useSupportLibrary = true
 

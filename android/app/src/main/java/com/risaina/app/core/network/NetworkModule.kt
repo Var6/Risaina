@@ -118,7 +118,9 @@ object NetworkModule {
                                     runCatching {
                                         plain.post("auth/refresh") {
                                             contentType(ContentType.Application.Json)
-                                            setBody(RefreshRequest(current.refreshToken))
+                                            // The install id lets the server honour a retry of this
+                                            // refresh if its answer is lost (refresh grace window).
+                                            setBody(RefreshRequest(current.refreshToken, current.deviceId.ifBlank { null }))
                                         }.body<TokensResponse>()
                                     }.onSuccess { r ->
                                         sessionStore.updateTokens(

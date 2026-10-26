@@ -24,7 +24,6 @@ import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.data.MessageRepository
 import com.risaina.app.core.data.PreferencesRepository
 import com.risaina.app.core.notifications.DeliveryDiagnostics
-import com.risaina.app.core.notifications.RisainaNotifier
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.time.Duration
@@ -43,15 +42,16 @@ class SyncWorker @AssistedInject constructor(
     private val syncManager: EventSyncManager,
     private val messageRepository: MessageRepository,
     private val preferencesRepository: PreferencesRepository,
-    private val notifier: RisainaNotifier,
     private val diagnostics: DeliveryDiagnostics,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
         diagnostics.recordWorkerRun()
         val notify = inputData.getBoolean(KEY_NOTIFY, true)
-        val result = syncManager.syncOnce(onIncoming = if (notify) { item -> notifier.notifyIncoming(item) } else null)
-        // Receipts and game refreshes the push handler had no time for.
+        // Joins the push handler's sync if it is still running (one sync at a time), and also fetches
+        // a new widget photo, which the push handler leaves to this worker.
+        val result = syncManager.syncOnce(notify = notify, fetchMedia = true)
+        // Receipts and game refreshes: network follow-ups kept out of the push handler's few seconds.
         runCatching { syncManager.runDeferred() }
         messageRepository.drainOutbox()
         preferencesRepository.pushIfDirty()

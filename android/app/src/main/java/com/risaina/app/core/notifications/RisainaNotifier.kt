@@ -42,21 +42,17 @@ class RisainaNotifier @Inject constructor(
         ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
 
     /**
-     * Opening Risaina means the partner's ping or gift and the game nudge were seen: remove those
-     * notifications so an old gift never lingers in the shade. Chat messages stay until read or
-     * tapped (they are not "seen" just because the app opened on Home), and SOS, the lock-screen
-     * card and service notifications are left alone.
+     * Opening Risaina means the partner's ping or gift, the game nudge and "updated your widget" were
+     * seen: remove those notifications so an old gift never lingers in the shade. Chat messages stay
+     * until read or tapped (they are not "seen" just because the app opened on Home), and SOS, the
+     * lock-screen card and service notifications are left alone.
      */
     fun clearPartnerAlerts() {
         val nm = NotificationManagerCompat.from(context)
         nm.cancel(PING_NOTIFICATION_ID)
         nm.cancel(GAME_NOTIFICATION_ID)
-        nm.cancel(MESSAGE_FALLBACK_ID)
+        nm.cancel(WIDGET_NOTIFICATION_ID)
     }
-
-    private fun isShowing(id: Int): Boolean = runCatching {
-        context.getSystemService(android.app.NotificationManager::class.java).activeNotifications.any { it.id == id }
-    }.getOrDefault(false)
 
     /**
      * A generic alert for this kind was posted from the push moments ago. The detailed notification
@@ -106,17 +102,27 @@ class RisainaNotifier @Inject constructor(
                     m.type == MessageType.VOICE -> "Sent you a voice note"
                     else -> m.text ?: "New message"
                 }
-                // The generic "sent you a message" from the push is replaced by the real one.
-                if (isShowing(MESSAGE_FALLBACK_ID)) NotificationManagerCompat.from(context).cancel(MESSAGE_FALLBACK_ID)
+                // Same id as the quick "sent you a message" posted from the push (messageNotificationId),
+                // so this replaces it in place without a second alert.
                 post(
-                    id = m.id.hashCode(),
+                    id = messageNotificationId(m.id),
+                    onlyAlertOnce = true,
                     silent = followsFastAlert(FAST_MESSAGE),
                     channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
                     title = partner, body = body, deepLink = "risaina://app/messages",
                     category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
                 )
             }
-            Incoming.WidgetChanged -> Unit
+            // The partner changed "Their widget" (mood, note, photo): a quiet line while the widget
+            // redraws, so this high-priority push still ends in something visible.
+            Incoming.WidgetChanged -> {
+                ensureWidgetChannel()
+                post(
+                    id = WIDGET_NOTIFICATION_ID, onlyAlertOnce = true, channel = WIDGET_CHANNEL,
+                    title = partner, body = "${partner.substringBefore(" ")} updated your widget", deepLink = "risaina://app/home",
+                    category = NotificationCompat.CATEGORY_STATUS, priority = NotificationCompat.PRIORITY_LOW,
+                )
+            }
             is Incoming.Sos -> Unit // SosAlert already rang
             is Incoming.Game -> {
                 val body = when (item.action) {
@@ -167,17 +173,18 @@ class RisainaNotifier @Inject constructor(
 
     /**
      * Straight from a message push, before the network: the phone alerts within a second even when
-     * the sync after a Doze wake is slow or fails. Generic (the push carries no content); the real
-     * message notification replaces it silently once the sync has it.
+     * the sync after a Doze wake is slow or fails. Generic (the push carries no content, only the
+     * message's opaque id [messageId]), posted under the id the real message notification uses, so
+     * that one replaces it in place once the sync has it.
      */
-    suspend fun notifyMessageArrivedFast() {
+    suspend fun notifyMessageArrivedFast(messageId: String) {
         if (!canPost()) return
         val prefs = preferencesStore.current()
         if (!prefs.notificationsEnabled || appInForeground()) return
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
         val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
         post(
-            id = MESSAGE_FALLBACK_ID,
+            id = messageNotificationId(messageId),
             channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
             title = partner, body = "Sent you a message", deepLink = "risaina://app/messages",
             category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
@@ -203,9 +210,13 @@ class RisainaNotifier @Inject constructor(
     companion object {
         const val PING_NOTIFICATION_ID = 4242
         const val GAME_NOTIFICATION_ID = 5050
-        /** The generic "sent you a message" posted from a push before the sync (stream: delivery). */
-        const val MESSAGE_FALLBACK_ID = 4343
         const val TEST_NOTIFICATION_ID = 4344
+        const val WIDGET_NOTIFICATION_ID = 4345
+        /** Low importance: no sound, no buzz, no heads-up. */
+        const val WIDGET_CHANNEL = "widget_updates"
+
+        /** One notification per chat message; the quick and the detailed post share it. */
+        fun messageNotificationId(messageId: String): Int = messageId.hashCode()
         private const val FAST_PING = "ping"
         private const val FAST_MESSAGE = "message"
         private const val FAST_ALERT_WINDOW_MS = 2 * 60_000L
@@ -216,6 +227,17 @@ class RisainaNotifier @Inject constructor(
             ms < 120_000 -> "${ms / 1000} s"
             else -> "${ms / 60_000} min"
         }
+    }
+
+    private fun ensureWidgetChannel() {
+        val nm = context.getSystemService(android.app.NotificationManager::class.java) ?: return
+        if (nm.getNotificationChannel(WIDGET_CHANNEL) != null) return
+        nm.createNotificationChannel(
+            android.app.NotificationChannel(WIDGET_CHANNEL, "Widget updates", android.app.NotificationManager.IMPORTANCE_LOW).apply {
+                description = "A quiet note when your partner changes what your widgets show"
+                enableVibration(false); setSound(null, null); setShowBadge(false)
+            },
+        )
     }
 
     private fun post(id: Int, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int, onlyAlertOnce: Boolean = false, silent: Boolean = false) {
