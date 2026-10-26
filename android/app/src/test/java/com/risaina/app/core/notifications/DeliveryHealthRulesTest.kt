@@ -2,6 +2,7 @@ package com.risaina.app.core.notifications
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,6 +29,35 @@ class DeliveryHealthRulesTest {
         assertEquals(HealthStatus.WARNING, oem.status)
         assertEquals(HealthAction.OEM_BACKGROUND, oem.action)
         assertTrue(oem.detail.startsWith("Realme"))
+    }
+
+    @Test fun onColorOsTheAutoLaunchListIsOfferedNextToAppInfo() {
+        // App info is the reliable route on current realme UI; older versions only have the
+        // startup manager, which the second button reaches (with App info as its fallback).
+        val oem = DeliveryHealthRules.checks(healthy.copy(manufacturer = "realme")).single { it.id == "oem" }
+        assertEquals("Open App info", oem.actionLabel)
+        assertEquals(HealthAction.OEM_AUTO_LAUNCH, oem.secondaryAction)
+        assertNotNull(oem.secondaryLabel)
+        assertNull(DeliveryHealthRules.checks(healthy.copy(manufacturer = "samsung")).single { it.id == "oem" }.secondaryAction)
+    }
+
+    @Test fun aRealmeWhoseOwnerAllowedAutoLaunchCanBeAllGood() {
+        val done = healthy.copy(manufacturer = "realme", oemStepsConfirmedAt = 1_000L)
+        val checks = DeliveryHealthRules.checks(done, now = 5_000L)
+        assertEquals(HealthStatus.OK, checks.single { it.id == "oem" }.status)
+        assertTrue(DeliveryHealthRules.summary(checks).startsWith("All good"))
+    }
+
+    @Test fun aKillAfterTheConfirmationBringsTheWarningBack() {
+        val now = 10L * 24 * 3600 * 1000
+        val confirmed = healthy.copy(manufacturer = "realme", oemStepsConfirmedAt = now - 3_600_000)
+        val killedLater = confirmed.copy(lastKill = AppKill("swiped", now - 60_000))
+        val oem = DeliveryHealthRules.checks(killedLater, now).single { it.id == "oem" }
+        assertEquals(HealthStatus.WARNING, oem.status)
+        assertTrue(oem.detail, oem.detail.contains("again"))
+        // A kill from before the confirmation does not.
+        val killedBefore = confirmed.copy(lastKill = AppKill("swiped", now - 7_200_000))
+        assertEquals(HealthStatus.OK, DeliveryHealthRules.checks(killedBefore, now).single { it.id == "oem" }.status)
     }
 
     @Test fun everyProblemHasAFixButton() {

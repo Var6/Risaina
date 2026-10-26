@@ -42,6 +42,11 @@ data class DeviceDeliveryState(
     val lastKill: AppKill? = null,
     /** Android 15+: Risaina was force-stopped before its last start (no pushes while stopped). */
     val forceStoppedBeforeLastStart: Boolean = false,
+    /**
+     * When the person said they allowed auto launch and background activity (the app cannot read
+     * those OEM switches). Null = not confirmed.
+     */
+    val oemStepsConfirmedAt: Long? = null,
 )
 
 /** How Risaina's process last ended, when it was not a normal exit. [kind]: swiped, stopped, frozen, other. */
@@ -50,9 +55,19 @@ data class AppKill(val kind: String, val atMillis: Long, val description: String
 enum class HealthStatus { OK, WARNING, PROBLEM }
 
 /** What a check's button does. The UI maps each to an Intent (OemBackgroundSettings). */
-enum class HealthAction { NOTIFICATION_SETTINGS, BATTERY_EXEMPTION, APP_INFO, OEM_BACKGROUND, DATA_SAVER }
+enum class HealthAction { NOTIFICATION_SETTINGS, BATTERY_EXEMPTION, APP_INFO, OEM_BACKGROUND, OEM_AUTO_LAUNCH, DATA_SAVER }
 
-data class HealthCheck(val id: String, val status: HealthStatus, val title: String, val detail: String, val action: HealthAction? = null, val actionLabel: String? = null)
+data class HealthCheck(
+    val id: String,
+    val status: HealthStatus,
+    val title: String,
+    val detail: String,
+    val action: HealthAction? = null,
+    val actionLabel: String? = null,
+    /** A second route to the same fix, e.g. the phone maker's auto-launch list next to App info. */
+    val secondaryAction: HealthAction? = null,
+    val secondaryLabel: String? = null,
+)
 
 /**
  * Turns the phone's state into checks and short flags. Pure, so it is unit-tested
@@ -114,8 +129,32 @@ object DeliveryHealthRules {
             }
             add(HealthCheck("killed", HealthStatus.WARNING, "Risaina $how recently", "Pushes can wait until it's allowed to run again. Lock it in Recents and allow background activity.", HealthAction.OEM_BACKGROUND, "Fix"))
         }
-        if (aggressiveOem(s.manufacturer)) {
-            add(HealthCheck("oem", HealthStatus.WARNING, "Check auto launch on this phone", "${brand(s.manufacturer)} phones stop apps in the background unless you allow it. Allow auto launch and background activity for Risaina.", HealthAction.OEM_BACKGROUND, if (colorOs(s.manufacturer)) "Open App info" else "Open settings"))
+        if (aggressiveOem(s.manufacturer)) add(oemCheck(s, kill))
+    }
+
+    /**
+     * The phone maker's own background switches, which no API can read. It stays a warning until the
+     * person says they turned them on, so the card can reach "All good" on these phones too. A later
+     * kill (swipe, freeze, stop) shows the switches did not hold, or were reset by an OS update: the
+     * warning comes back.
+     */
+    private fun oemCheck(s: DeviceDeliveryState, recentKill: AppKill?): HealthCheck {
+        val confirmedAt = s.oemStepsConfirmedAt
+        val undone = confirmedAt != null && recentKill != null && recentKill.atMillis > confirmedAt
+        if (confirmedAt != null && !undone) {
+            return HealthCheck("oem", HealthStatus.OK, "Auto launch allowed", "You allowed auto launch and background activity.", HealthAction.OEM_BACKGROUND, "Check")
+        }
+        val detail = if (undone) {
+            "Risaina was stopped after you allowed it, so a setting may have been reset. Check auto launch and background activity again."
+        } else {
+            "${brand(s.manufacturer)} phones stop apps in the background unless you allow it. Allow auto launch and background activity for Risaina."
+        }
+        // ColorOS: App info (Battery usage) is the reliable route on current versions; the older
+        // startup manager screens are offered next to it, for versions that only have them there.
+        return if (colorOs(s.manufacturer)) {
+            HealthCheck("oem", HealthStatus.WARNING, "Check auto launch on this phone", detail, HealthAction.OEM_BACKGROUND, "Open App info", HealthAction.OEM_AUTO_LAUNCH, "Auto launch list")
+        } else {
+            HealthCheck("oem", HealthStatus.WARNING, "Check auto launch on this phone", detail, HealthAction.OEM_BACKGROUND, "Open settings")
         }
     }
 
@@ -167,6 +206,7 @@ object DeliveryHealthRules {
 class DeviceStateReader @Inject constructor(
     @ApplicationContext private val context: Context,
     private val pushAvailability: PushAvailability,
+    private val diagnostics: DeliveryDiagnostics,
 ) {
     fun read(): DeviceDeliveryState {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -191,6 +231,7 @@ class DeviceStateReader @Inject constructor(
             manufacturer = Build.MANUFACTURER.orEmpty(),
             lastKill = if (Build.VERSION.SDK_INT >= 30) lastKill() else null,
             forceStoppedBeforeLastStart = Build.VERSION.SDK_INT >= 35 && wasForceStopped(),
+            oemStepsConfirmedAt = diagnostics.oemStepsConfirmedAt(),
         )
     }
 

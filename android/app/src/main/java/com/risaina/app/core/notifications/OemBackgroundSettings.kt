@@ -114,6 +114,7 @@ object OemBackgroundSettings {
         HealthAction.BATTERY_EXEMPTION -> requestBatteryExemption(context)
         HealthAction.APP_INFO -> openAppInfo(context)
         HealthAction.OEM_BACKGROUND -> openBackgroundSettings(context)
+        HealthAction.OEM_AUTO_LAUNCH -> openAutoLaunchList(context)
         HealthAction.DATA_SAVER -> openDataSaverSettings(context)
     }
 

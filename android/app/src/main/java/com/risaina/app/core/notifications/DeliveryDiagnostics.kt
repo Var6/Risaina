@@ -130,6 +130,13 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
     fun lastFastAlert(kind: String): Pair<Long, String?> =
         prefs.getLong(K_FAST_PREFIX + kind, 0L) to prefs.getString(K_FAST_REF_PREFIX + kind, null)
 
+    /** The person said they turned on auto launch and background activity (Delivery health). */
+    fun confirmOemSteps(now: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong(K_OEM_CONFIRMED, now).apply()
+    }
+
+    fun oemStepsConfirmedAt(): Long? = prefs.takeIf { it.contains(K_OEM_CONFIRMED) }?.getLong(K_OEM_CONFIRMED, 0L)
+
     fun snapshot(): DeliverySnapshot {
         val p = prefs
         fun long(k: String): Long? = if (p.contains(k)) p.getLong(k, 0L) else null
@@ -170,5 +177,6 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         private const val K_FAST_REF_PREFIX = "fast_alert_ref_"
         private const val K_ACK_PRIORITY = "ack_priority"
         private const val K_ACK_ORIGINAL = "ack_original_priority"
+        private const val K_OEM_CONFIRMED = "oem_steps_confirmed_at"
     }
 }

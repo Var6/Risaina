@@ -60,6 +60,8 @@ data class DeliveryHealthUiState(
     val partnerLastAckAt: Long? = null,
     val partnerFlags: List<String> = emptyList(),
     val steps: String? = null,
+    /** The phone maker's background switches are still unconfirmed: offer "I've done this". */
+    val canConfirmOemSteps: Boolean = false,
     val sendingTest: Boolean = false,
     val testMessage: String? = null,
 )
@@ -84,6 +86,7 @@ class DeliveryHealthViewModel @Inject constructor(
                 it.copy(
                     loaded = true, checks = checks, summary = DeliveryHealthRules.summary(checks),
                     diagnostics = diagnostics.snapshot(), steps = OemBackgroundSettings.steps(device.manufacturer),
+                    canConfirmOemSteps = checks.any { c -> c.id == "oem" && c.status != HealthStatus.OK },
                     partnerName = coupleDao.partner()?.displayName,
                 )
             }
@@ -98,6 +101,12 @@ class DeliveryHealthViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** "I've done this": the app cannot read the phone maker's switches, so it takes the person's word. */
+    fun confirmOemSteps() {
+        diagnostics.confirmOemSteps()
+        refresh()
     }
 
     fun sendTestPush() {
@@ -152,11 +161,12 @@ fun DeliveryHealthCard(modifier: Modifier = Modifier, vm: DeliveryHealthViewMode
             val worst = s.checks.maxOfOrNull { it.status } ?: HealthStatus.OK
             StatusPill(s.summary, when (worst) { HealthStatus.OK -> PillTone.Success; HealthStatus.WARNING -> PillTone.Warning; HealthStatus.PROBLEM -> PillTone.Danger })
             Spacer(Modifier.height(6.dp))
-            s.checks.forEach { c -> CheckRow(c) { c.action?.let { OemBackgroundSettings.open(context, it) } } }
+            s.checks.forEach { c -> CheckRow(c) { action -> OemBackgroundSettings.open(context, action) } }
             s.steps?.let {
                 Spacer(Modifier.height(6.dp))
                 Text(it, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
             }
+            if (s.canConfirmOemSteps) TextButton(onClick = vm::confirmOemSteps) { Text("I've done this") }
             Spacer(Modifier.height(12.dp))
             Text(lastPushLine(s.diagnostics), style = MaterialTheme.typography.bodySmall)
             if (s.diagnostics.downgraded) {
@@ -183,7 +193,7 @@ fun DeliveryHealthCard(modifier: Modifier = Modifier, vm: DeliveryHealthViewMode
 }
 
 @Composable
-private fun CheckRow(c: HealthCheck, onAction: () -> Unit) {
+private fun CheckRow(c: HealthCheck, onAction: (com.risaina.app.core.notifications.HealthAction) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         val (mark, color) = when (c.status) {
             HealthStatus.OK -> "✓" to Risaina.colors.success
@@ -195,7 +205,10 @@ private fun CheckRow(c: HealthCheck, onAction: () -> Unit) {
             Text(c.title, style = MaterialTheme.typography.titleSmall)
             if (c.status != HealthStatus.OK) Text(c.detail, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
         }
-        if (c.action != null && c.actionLabel != null) TextButton(onClick = onAction) { Text(c.actionLabel) }
+        Column(horizontalAlignment = Alignment.End) {
+            if (c.action != null && c.actionLabel != null) TextButton(onClick = { onAction(c.action) }) { Text(c.actionLabel) }
+            if (c.secondaryAction != null && c.secondaryLabel != null) TextButton(onClick = { onAction(c.secondaryAction) }) { Text(c.secondaryLabel) }
+        }
     }
 }
 
