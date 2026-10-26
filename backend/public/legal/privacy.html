@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Risaina Privacy Policy</title>
+<meta name="description" content="How the Risaina app collects, uses, shares and deletes your data.">
+<style>
+  :root {
+    --bg: #fbf8f6; --surface: #ffffff; --text: #2a2024; --muted: #6b5d63;
+    --accent: #9c3d5a; --border: #e8dfe2; --mark-bg: #fff1b8; --mark-text: #4a3b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17121a; --surface: #211a24; --text: #f1e9ee; --muted: #b8a9b1;
+      --accent: #f09ab4; --border: #3a2f3d; --mark-bg: #5a4a00; --mark-text: #fff3c4;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17121a; --surface: #211a24; --text: #f1e9ee; --muted: #b8a9b1;
+    --accent: #f09ab4; --border: #3a2f3d; --mark-bg: #5a4a00; --mark-text: #fff3c4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 4px; }
+  h2 { font-size: 1.25rem; margin: 2.2em 0 0.5em; padding-top: 0.6em; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.4em 0 0.3em; }
+  p, li { max-width: 68ch; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .summary { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px 20px; }
+  mark.ph { background: var(--mark-bg); color: var(--mark-text); padding: 0 4px; border-radius: 4px; font-weight: 600; }
+  .table-wrap { overflow-x: auto; margin: 0.8em 0; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; background: var(--surface); }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid var(--border); font-size: 0.95rem; }
+  th { font-weight: 600; }
+  nav ol { padding-left: 1.2em; }
+  footer { margin-top: 3em; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Risaina Privacy Policy</h1>
+<p class="muted">Last updated: 26 October 2026 · Applies to the Risaina Android app (package <code>com.risaina.app</code>) and the Risaina server it talks to.</p>
+
+<p>Risaina is a private app for two people in a relationship. It is run by {{DEVELOPER_NAME}}
+(“we”, “us”). This policy explains, in plain words, what the app collects, why, who else handles it, how long we
+keep it, and how you can delete it. If anything here is unclear, write to <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.</p>
+
+<div class="summary">
+  <h3>The short version</h3>
+  <ul>
+    <li>We collect what Risaina needs to work: your account details, what you send to your partner, and a few technical details about your phone so notifications arrive.</li>
+    <li>Only you and the one partner you pair with can see your content. We do not sell data, show ads, use analytics or track you across other apps.</li>
+    <li>Your location is collected only while you choose to share it. We keep only your latest position and delete it when sharing stops. There is no location history.</li>
+    <li>Data travels encrypted (TLS). It is <strong>not end-to-end encrypted</strong>: the server can technically read it, and we only access it to run and fix the service.</li>
+    <li>You can export your data, unlink (which deletes everything the two of you shared) and delete your account from inside the app.</li>
+  </ul>
+</div>
+
+<nav aria-label="Contents">
+  <h2 style="border-top:0">Contents</h2>
+  <ol>
+    <li><a href="#collect">What we collect and why</a></li>
+    <li><a href="#phone">What stays only on your phone</a></li>
+    <li><a href="#partner">What your partner can see</a></li>
+    <li><a href="#location">Live location</a></li>
+    <li><a href="#sos">SOS and the panic button</a></li>
+    <li><a href="#permissions">Android permissions</a></li>
+    <li><a href="#providers">Service providers who handle data for us</a></li>
+    <li><a href="#security">Security</a></li>
+    <li><a href="#retention">How long we keep data, and deletion</a></li>
+    <li><a href="#choices">Your choices and rights</a></li>
+    <li><a href="#children">Children</a></li>
+    <li><a href="#transfers">Where data is stored</a></li>
+    <li><a href="#changes">Changes to this policy</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ol>
+</nav>
+
+<h2 id="collect">1. What we collect and why</h2>
+<p>We use this data only to provide Risaina's features to you and your partner, keep accounts secure, and fix
+problems. We do not use it for advertising, profiling or analytics, and we do not sell it.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Data</th><th>When it is collected</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Email address</strong></td><td>When you create an account (or from Google if you sign in with Google)</td><td>Your sign-in name, the 6-digit email confirmation code, and password reset</td></tr>
+    <tr><td><strong>Password</strong></td><td>If you sign up with email</td><td>Sign-in. We store only a one-way hash (argon2id), never the password itself</td></tr>
+    <tr><td><strong>Google account identifier, name</strong></td><td>Only if you choose “Sign in with Google”</td><td>Sign-in. We receive your email, a Google account ID and your first name (used as your starting display name)</td></tr>
+    <tr><td><strong>Display name and profile photo</strong></td><td>When you set them</td><td>Shown to your partner</td></tr>
+    <tr><td><strong>Birthday</strong> (optional; you can hide the year)</td><td>When you add it</td><td>Your partner's birthday countdown</td></tr>
+    <tr><td><strong>Time zone</strong> (optional)</td><td>When you set it</td><td>Shows your partner your local time, if you allow it</td></tr>
+    <tr><td><strong>Your city</strong> (optional)</td><td>When you pick it in your profile</td><td>Shows your partner the weather where you are, if you allow it. We store the city name and its coordinates rounded to about 1 km. This is a city you choose, never your GPS position</td></tr>
+    <tr><td><strong>Messages and shared content</strong>: chat text, emoji, photos, view-once photos, voice notes, touch pings, gifts, memories and captions, notes and checklists, dates and countdowns, widget notes and moods, chat wallpaper, game moves, truth-or-dare texts and answers</td><td>When you send or save them</td><td>To deliver them to your partner and show them on both phones</td></tr>
+    <tr><td><strong>Activity status</strong>: delivered, seen and read times; when a view-once photo was opened</td><td>Automatically, as you use the app</td><td>Read receipts and “seen” status for your partner</td></tr>
+    <tr><td><strong>Live location</strong> (precise or approximate, your choice), accuracy, time and battery level</td><td>Only while you share your location (see <a href="#location">section 4</a>)</td><td>Shows your partner where you are while you share</td></tr>
+    <tr><td><strong>SOS alerts</strong>: the optional message, time, and when it was delivered, acknowledged and resolved</td><td>When you send or receive an SOS</td><td>To ring your partner's phone and tell you it got through</td></tr>
+    <tr><td><strong>Device details</strong>: a random install ID created by the app, a push token from Firebase Cloud Messaging, phone model, app version</td><td>When you sign in and when the push token changes</td><td>To send notifications to the right phone and keep sign-in sessions tied to it</td></tr>
+    <tr><td><strong>Delivery diagnostics</strong>: when your phone last received a push and at what priority; short status codes such as “battery optimised”, “notifications off” or “background restricted”; when an SOS rings, the phone's alarm volume, ringer mode, Do Not Disturb state and whether the full-screen alarm could open</td><td>Automatically, while the app syncs or an SOS rings</td><td>To show you and your partner why an alert might not arrive, and to explain a missed SOS afterwards. It never contains message content</td></tr>
+    <tr><td><strong>Settings</strong>: notification preferences, quiet hours, previews, what widgets may show, sharing switches</td><td>When you change them</td><td>So the app behaves the way you chose</td></tr>
+    <tr><td><strong>Sign-in sessions</strong>: session ID, install ID, your phone's user-agent string, creation and last-use times</td><td>When you sign in</td><td>Keeping you signed in and detecting stolen tokens</td></tr>
+    <tr><td><strong>Server logs</strong>: IP address, request type and path, time, response code</td><td>Every request to our server</td><td>Security (for example rate limiting) and fixing errors. Logs never contain message text, passwords, tokens, email addresses, SOS messages or coordinates; those are removed before anything is written</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>We do <strong>not</strong> collect your contacts, call log, SMS messages, calendar, files, browsing history,
+advertising ID or background location. The photo picker gives Risaina only the photos you pick; the app cannot
+browse your gallery.</p>
+
+<h2 id="phone">2. What stays only on your phone</h2>
+<ul>
+  <li><strong>Your partner's phone number</strong>, if you add it in Settings → Safety. It never leaves your phone. It is used only for the “Call” and “Text” buttons when an SOS is not getting through, and those open your own phone and messaging apps.</li>
+  <li>A local copy of your chat, games and widget content, and cached photos and voice notes, so the app and widgets work quickly and offline. They are kept in Risaina's private storage, which other apps cannot read, and are excluded from Android cloud backup and device-to-device transfer. The chat, games and widget content are cleared when you sign out, unlink or delete your account. Cached photo and voice-note files stay in Risaina's private storage until you uninstall the app or clear its storage (Android Settings → Apps → Risaina → Storage → Clear storage).</li>
+  <li>Appearance settings (colour, dark mode, home background).</li>
+  <li>The data export file, which the app saves to your phone's Downloads folder when you ask for it.</li>
+</ul>
+
+<h2 id="partner">3. What your partner can see</h2>
+<p>Risaina connects exactly two accounts. Your partner can see:</p>
+<ul>
+  <li>Your display name and profile photo, and your birthday (without the year if you hide it).</li>
+  <li>Your local time and your city's weather, only while those switches are on (Settings → Privacy → “Your partner sees”).</li>
+  <li>Everything you send or save in the shared space: messages, photos, voice notes, pings, gifts, memories, notes, lists, dates, widget notes, games and their results.</li>
+  <li>When your phone received and read their messages and pings.</li>
+  <li>Your live location, accuracy, battery level and last update time, only while you are sharing.</li>
+  <li>The status of an SOS: whether it rang on the other phone and when it was acknowledged.</li>
+  <li>For troubleshooting: your phone model, app version, when your phone last received a push, the status codes listed in section 1, and the phone's alarm and ringer state when an SOS rang on it.</li>
+</ul>
+<p>Nobody else can see your content. There are no public profiles, no search for other users and no group chats.</p>
+
+<h2 id="location">4. Live location</h2>
+<ul>
+  <li>Live location is <strong>off until you turn it on</strong> (Settings → Panic button &amp; SOS → “Share my live location”), or until you send a panic alert or an SOS with “Also share my live location” switched on.</li>
+  <li>Only you can start it, from a screen you are looking at. Your partner cannot request it or switch it on. Risaina does not have background location permission.</li>
+  <li>A notification with a “Stop sharing” button shows on your phone the whole time.</li>
+  <li>You choose how long: 1 hour, 8 hours, or until you turn it off. A panic alert shares for 2 hours unless you stop earlier or tap “I'm safe now”.</li>
+  <li>You can give Android “approximate” instead of “precise” location; your partner then sees an area of about 2 km.</li>
+  <li>The server keeps <strong>only your latest position</strong>, never a history. It is deleted as soon as you stop, when the time runs out, when you sign out, unlink or delete your account, or after 12 hours without an update. After you stop, a marker without any coordinates is kept for up to 10 minutes so that a delayed “start” cannot restart sharing.</li>
+  <li>Positions are sent to your partner's phone live and are never written into notifications, push messages, the sync log or server logs. Your data export contains only your own current position, if you are sharing at that moment.</li>
+  <li>Your phone's location is determined by Google Play services (the fused location provider) on your phone. Google's handling of location settings on your phone is covered by Google's own privacy policy.</li>
+</ul>
+
+<h2 id="sos">5. SOS and the panic button</h2>
+<p>An SOS rings your partner's phone like an alarm. To do that, our server sends a high-priority push through
+Firebase Cloud Messaging. The push contains only identifiers, never your message or location. Your partner's
+phone then fetches the SOS from our server. If your partner's phone does not confirm the SOS, the server sends
+the push again, at most once a minute and up to 6 times, during the first 10 minutes. When the SOS rings, the receiving phone reports its alarm
+volume, ringer mode, Do Not Disturb state and similar technical details (no content), so that a missed alarm can
+be explained.</p>
+<p>Risaina is not an emergency service and cannot contact the police, an ambulance or anyone other than your
+partner. In an emergency, call your local emergency number.</p>
+
+<h2 id="permissions">6. Android permissions</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Permission</th><th>What it is used for</th></tr></thead>
+  <tbody>
+    <tr><td>Internet, network state</td><td>Talking to the Risaina server</td></tr>
+    <tr><td>Notifications</td><td>Pings, messages, game turns, the lock-screen card (if you turn it on), and the notification shown while you share your location</td></tr>
+    <tr><td>Microphone</td><td>Only while you record a voice note</td></tr>
+    <tr><td>Location (precise and approximate)</td><td>Only while you share your live location. There is no background location permission</td></tr>
+    <tr><td>Foreground services (location, alarm)</td><td>Keeping location sharing running while you share it, and keeping an incoming SOS alarm ringing until you answer it</td></tr>
+    <tr><td>Full-screen alerts, wake lock, show on lock screen</td><td>Showing the SOS alarm screen on a locked phone, like an alarm clock. It never unlocks your phone</td></tr>
+    <tr><td>Alarms &amp; reminders (you allow it in system settings)</td><td>A backup way to start the SOS alarm if Android refuses the first try</td></tr>
+    <tr><td>Do Not Disturb access (you grant it in system settings)</td><td>Optional: lets an SOS ring through Do Not Disturb. Risaina never changes your Do Not Disturb or ringer settings</td></tr>
+    <tr><td>Vibration</td><td>Ping and alarm vibrations</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Risaina never changes your phone's wallpaper or lock screen.</p>
+
+<h2 id="providers">7. Service providers who handle data for us</h2>
+<p>We use the following companies and services to run Risaina. They process data only to provide their service.
+We do not share your data with anyone else, except where the law requires it (see the end of this section).</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Provider</th><th>What it does</th><th>What it receives</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Render</strong> (<a href="https://render.com/privacy">privacy policy</a>)</td><td>Hosts the Risaina server</td><td>All data passing through the server while it is processed, and server logs (IP address, request path, time)</td></tr>
+    <tr><td><strong>MongoDB Atlas</strong> (<a href="https://www.mongodb.com/legal/privacy-policy">privacy policy</a>)</td><td>Database</td><td>Accounts, settings, messages and other shared content, the latest live position while sharing, device records</td></tr>
+    <tr><td><strong>Cloudflare R2</strong> (<a href="https://www.cloudflare.com/privacypolicy/">privacy policy</a>)</td><td>Private file storage</td><td>Photos, voice notes, profile photos and chat wallpapers. Your phone uploads and downloads them directly through short-lived signed links, so Cloudflare also sees your IP address</td></tr>
+    <tr><td><strong>Firebase Cloud Messaging</strong>, by Google (<a href="https://firebase.google.com/support/privacy">Firebase privacy</a>)</td><td>Wakes your phone when something arrives</td><td>Your phone's push token and Firebase installation ID, and push messages that contain only an event type and identifiers, never content</td></tr>
+    <tr><td><strong>Google Sign-In</strong> (<a href="https://policies.google.com/privacy">Google privacy policy</a>)</td><td>Optional sign-in with your Google account</td><td>Google confirms your identity to us and gives us your email, account ID and name</td></tr>
+    <tr><td><strong>Open-Meteo</strong> (<a href="https://open-meteo.com/en/terms">terms and privacy</a>)</td><td>Weather and city search</td><td>Your phone asks Open-Meteo directly. It receives the city coordinates your partner shared (rounded to about 1 km) to get the weather, the text you type when searching for your own city, and your IP address. It receives no name, account or message</td></tr>
+    <tr><td><strong>Open Trivia Database</strong> (<a href="https://opentdb.com">opentdb.com</a>)</td><td>Trivia questions</td><td>Only our server contacts it, asking for a category and a difficulty. No data about you or your partner is sent</td></tr>
+  </tbody>
+</table>
+</div>
+<p>We may disclose data if the law requires it, for example to answer a valid court order, and only as much as
+the order requires. If Risaina ever passed to someone else, this policy would continue to apply to your data, and
+we would tell you first.</p>
+
+<h2 id="security">8. Security</h2>
+<ul>
+  <li>All connections use TLS encryption (HTTPS and secure WebSockets). The release app refuses unencrypted connections.</li>
+  <li>The database and file storage are private and require credentials that only the server holds. Files are reachable only through short-lived signed links, and only by the two members of a couple.</li>
+  <li>Passwords are stored as argon2id hashes. Sign-in tokens are short-lived and stored only as hashes on the server.</li>
+  <li>On your phone, sign-in data and cached content are kept in Risaina's private storage and are excluded from cloud backup.</li>
+  <li>View-once photos are blocked from screenshots on the receiving phone and cannot be downloaded a second time.</li>
+  <li><strong>Limits:</strong> content is not end-to-end encrypted. Encryption at rest is provided by MongoDB Atlas and Cloudflare. Someone with access to the server, which is us, can technically read stored content. We only access it when needed to run, secure or fix the service, or if the law requires it.</li>
+</ul>
+
+<h2 id="retention">9. How long we keep data, and deletion</h2>
+<h3>While you use Risaina</h3>
+<ul>
+  <li><strong>Account and profile:</strong> until you delete your account.</li>
+  <li><strong>Shared content</strong> (messages, photos, voice notes, pings, gifts, memories, lists, dates, games, SOS alerts): until you delete it, until you or your partner unlinks, or until either of you deletes your account.</li>
+  <li><strong>Deleting a chat message you sent</strong> (long-press, then Delete) removes its text and any photo or voice note for both of you, and deletes the file from storage. A record that a message was sent, and when, remains in the chat.</li>
+  <li><strong>Sync log:</strong> so that a phone that was offline can catch up, the server keeps a log of changes in your shared space (for example “new message”, with its content, or “list updated”, with the list). This log is kept until you unlink or one of you deletes your account. This means the original text of a deleted message, and earlier versions of lists and profile details, stay in the log until then. Live location is never part of this log.</li>
+  <li><strong>Deleting a memory or a list</strong> hides it for both of you at once. A hidden copy stays on the server until you unlink or delete your account. A photo you remove from Memories stays in the chat until you delete that message.</li>
+  <li><strong>Deleting a date or countdown</strong> deletes it at once.</li>
+  <li><strong>View-once photos</strong> are deleted from storage about 3 minutes after they are opened, or after 7 days if never opened. A placeholder stays in the chat.</li>
+  <li><strong>Live location:</strong> see <a href="#location">section 4</a>. Only the latest position, deleted when sharing stops.</li>
+  <li><strong>Uploads that were never sent</strong> are deleted after 24 hours.</li>
+  <li><strong>Device records and push tokens:</strong> until you sign out on that phone or delete your account.</li>
+  <li><strong>Sign-in sessions:</strong> ended when you sign out. The session records are deleted automatically 7 days after they expire (sessions last at most 30 days).</li>
+  <li><strong>Email codes and password reset links:</strong> stored only as hashes, deleted within about a day after they expire.</li>
+  <li><strong>Server logs:</strong> kept by Render for a limited period, at most 30 days.</li>
+  <li><strong>Backups:</strong> We do not keep database backups. Deleted data is gone from the database at once.</li>
+</ul>
+
+<h3>When you unlink</h3>
+<p>Either partner can unlink at any time (Settings → Unlink). Unlinking ends the pairing for both of you and
+<strong>immediately deletes everything the couple created</strong>: messages, pings, gifts, memories, dates,
+lists, games, widget notes, SOS alerts, invitations, the sync log and both people's live location. Photos, voice
+notes, chat wallpapers and profile photos uploaded while you were paired are made unavailable at once and deleted
+from storage in the background, normally within an hour. What remains: a record that the pairing existed (the two
+internal account IDs and the start and end dates, without names or content), and a single “unlinked” notice that
+lets the other phone clean up, deleted after 7 days. This cannot be undone, so export your data first if you want a
+copy.</p>
+
+<h3>When you delete your account</h3>
+<p>See our <a href="/delete-account">account deletion page</a>
+for the steps. In short: deleting your account unlinks you (with everything described above, for both of you),
+signs out every phone, removes your devices and push tokens, live location, codes and widget notes, and deletes
+your files. Your email address, name, password, Google link, birthday, time zone, city and profile photo are
+erased. We keep only an anonymous record with an internal ID, dates and your notification settings, so that
+internal references stay consistent; it cannot be linked back to you. Revoked session records are deleted
+within about 37 days, and server logs within the period stated above.</p>
+
+<h2 id="choices">10. Your choices and rights</h2>
+<ul>
+  <li><strong>See and download your data:</strong> Settings → Privacy → “Export my data (JSON)”. The file includes your account, the couple, pings, messages, memories, dates, lists, SOS alerts, games, widget notes and your current live location, if any. Each list is limited to the newest 1,000 items; the file says when something was left out. Photos and voice notes are listed, but the files themselves are not included. Write to us for a complete copy.</li>
+  <li><strong>Correct your data:</strong> edit your name, photo, birthday and city in your profile at any time.</li>
+  <li><strong>Limit what your partner sees:</strong> switch off local time and weather sharing; choose what widgets show; hide previews in notifications.</li>
+  <li><strong>Stop location sharing</strong> at any time from the notification or in the app.</li>
+  <li><strong>Delete:</strong> delete messages you sent, memories you added and lists, unlink, or delete your account in Settings → Privacy → “Delete my account”.</li>
+  <li><strong>Ask us:</strong> you can also write to <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a> to access, correct or delete your data, or to complain about how we handle it. Please write from the email address of your account. We answer within 30 days.</li>
+</ul>
+<p>Depending on where you live, data protection law (for example India's Digital Personal Data Protection Act,
+2023, or the GDPR in the EU and UK) may give you further rights, including complaining to your data protection
+authority. We will honour these rights. For grievances, contact {{DEVELOPER_NAME}} at <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.</p>
+
+<h2 id="children">11. Children</h2>
+<p>Risaina is meant for adults aged 18 and over. It is not directed at children, and we do not knowingly collect
+data from anyone under 18. If you believe a child is using Risaina, write to <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>
+and we will delete the account.</p>
+
+<h2 id="transfers">12. Where data is stored</h2>
+<p>Our server runs on Render, the database on MongoDB Atlas and files on Cloudflare R2, in data centres these
+providers run, which may be outside your country. Google's Firebase services may process push tokens in other
+countries. This means your data may be stored or processed outside the country where you live.
+We use only providers that protect data with industry-standard security.</p>
+
+<h2 id="changes">13. Changes to this policy</h2>
+<p>If we change this policy, we will update the date at the top. If a change affects what we collect or who
+receives it, we will tell you in the app before it takes effect.</p>
+
+<h2 id="contact">14. Contact</h2>
+<p>{{DEVELOPER_NAME}}<br>
+Email: <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></p>
+<p>To report a problem, abuse or content that breaks the law, write to the same address. In the app, Settings →
+Unlink ends all contact with your partner at once.</p>
+
+<footer class="muted">
+  <p>Risaina's trivia questions come from Open Trivia Database (opentdb.com), licensed under
+  <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.</p>
+</footer>
+
+</main>
+</body>
+</html>

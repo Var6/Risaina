@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delete Your Risaina Account</title>
+<meta name="description" content="How to delete your Risaina account and data, what is deleted, and what is kept and for how long.">
+<style>
+  :root {
+    --bg: #fbf8f6; --surface: #ffffff; --text: #2a2024; --muted: #6b5d63;
+    --accent: #9c3d5a; --border: #e8dfe2; --warn-bg: #fdecef; --warn-border: #f2c3ce;
+    --mark-bg: #fff1b8; --mark-text: #4a3b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17121a; --surface: #211a24; --text: #f1e9ee; --muted: #b8a9b1;
+      --accent: #f09ab4; --border: #3a2f3d; --warn-bg: #3a1d27; --warn-border: #6a3446;
+      --mark-bg: #5a4a00; --mark-text: #fff3c4;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17121a; --surface: #211a24; --text: #f1e9ee; --muted: #b8a9b1;
+    --accent: #f09ab4; --border: #3a2f3d; --warn-bg: #3a1d27; --warn-border: #6a3446;
+    --mark-bg: #5a4a00; --mark-text: #fff3c4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 4px; }
+  h2 { font-size: 1.25rem; margin: 2em 0 0.5em; padding-top: 0.6em; border-top: 1px solid var(--border); }
+  p, li { max-width: 66ch; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px 20px 12px; margin: 1em 0; }
+  .warn { background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 12px; padding: 12px 20px; margin: 1em 0; }
+  ol.steps li { margin: 0.4em 0; }
+  mark.ph { background: var(--mark-bg); color: var(--mark-text); padding: 0 4px; border-radius: 4px; font-weight: 600; }
+  .table-wrap { overflow-x: auto; margin: 0.8em 0; }
+  table { border-collapse: collapse; width: 100%; min-width: 520px; background: var(--surface); }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid var(--border); font-size: 0.95rem; }
+  th { font-weight: 600; }
+  kbd { font-family: inherit; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Delete your Risaina account</h1>
+<p class="muted">Risaina, by {{DEVELOPER_NAME}} · Last updated: 26 October 2026</p>
+
+<p>You can delete your Risaina account and its data at any time, in the app or by email. Deleting is permanent
+and cannot be undone.</p>
+
+<div class="warn">
+  <strong>Deleting your account also deletes what you shared with your partner.</strong>
+  Risaina's chat, photos, voice notes, memories, lists, dates and games belong to the two of you together.
+  When either partner deletes their account, the pairing ends and all of this is deleted for both of you.
+  If you want a copy, export it first (Settings → Privacy → “Export my data (JSON)”).
+</div>
+
+<h2>Option 1: Delete in the app (fastest)</h2>
+<div class="card">
+<ol class="steps">
+  <li>Open <strong>Risaina</strong> and sign in.</li>
+  <li>On Home, tap <strong>Settings</strong> (the gear at the top).</li>
+  <li>Tap <strong>Privacy</strong>.</li>
+  <li>Scroll to <strong>Danger zone</strong> and tap <strong>Delete my account</strong>.</li>
+  <li>Enter your password. If you signed up with Google and have no password, type <kbd>DELETE</kbd>.</li>
+  <li>Tap <strong>Delete forever</strong>. Your account is deleted straight away and every phone is signed out.</li>
+</ol>
+</div>
+
+<h2>Option 2: Ask us by email</h2>
+<div class="card">
+<p>If you no longer have the app or cannot sign in, email <a href="mailto:{{CONTACT_EMAIL}}?subject=Delete%20my%20Risaina%20account">{{CONTACT_EMAIL}}</a>
+with the subject <strong>“Delete my Risaina account”</strong>.</p>
+<ul>
+  <li>Send it from the email address you use for Risaina, so we know the request is yours. If that is not possible,
+  tell us the address and we will send a confirmation to it first.</li>
+  <li>We delete the account, exactly as the in-app option does, within 7 days and reply
+  to confirm.</li>
+</ul>
+</div>
+
+<h2>Deleting some data without deleting your account</h2>
+<ul>
+  <li><strong>A message you sent:</strong> long-press it in the chat and tap <strong>Delete</strong>. Its text, photo or voice note is removed for both of you.</li>
+  <li><strong>A memory you added, or a list:</strong> open it and tap the <strong>Delete</strong> (bin) icon.</li>
+  <li><strong>Your live location:</strong> stop sharing. Your position is deleted from the server at once.</li>
+  <li><strong>Everything you share as a couple:</strong> Settings → <strong>Unlink</strong>. This deletes all shared data for both of you, and keeps your account.</li>
+  <li><strong>Profile details:</strong> clear your birthday or city in your profile, and switch off time and weather sharing in Settings → Privacy.</li>
+  <li>Or email <a href="mailto:{{CONTACT_EMAIL}}?subject=Delete%20my%20Risaina%20account">{{CONTACT_EMAIL}}</a> and tell us what you want deleted.</li>
+</ul>
+<p class="muted">The <a href="/privacy">privacy policy</a>
+explains how long hidden copies of deleted memories, lists and messages stay on the server.</p>
+
+<h2>What is deleted</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Data</th><th>When it is deleted</th></tr></thead>
+  <tbody>
+    <tr><td>Your email address, name, password, Google sign-in link, birthday, time zone, city and profile photo</td><td>Immediately</td></tr>
+    <tr><td>Everything you and your partner shared: messages, photos, view-once photos, voice notes, pings, gifts, memories, notes and checklists, dates and countdowns, games and truth-or-dare texts, widget notes, chat wallpaper, SOS alerts, pairing invitations and the sync log</td><td>Immediately, for both of you</td></tr>
+    <tr><td>Photo and voice-note files in storage</td><td>Made unavailable immediately; the files are erased in the background, normally within an hour</td></tr>
+    <tr><td>Live location</td><td>Immediately (there is no location history)</td></tr>
+    <tr><td>Your phones' push tokens and device records, email codes and password reset links</td><td>Immediately</td></tr>
+    <tr><td>Sign-ins on every phone</td><td>Signed out immediately</td></tr>
+    <tr><td>Chat, games and widget content stored on your phone</td><td>Immediately on the phone you delete from; on your other phones the next time Risaina connects</td></tr>
+    <tr><td>Cached photo and voice-note files on your phone</td><td>Kept in Risaina's private storage (other apps cannot read it) until you uninstall Risaina or clear its storage in Android Settings → Apps → Risaina → Storage</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>What is kept, and for how long</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Data</th><th>Why</th><th>How long</th></tr></thead>
+  <tbody>
+    <tr><td>An anonymous account record: an internal ID, dates, and notification settings. No email, name or content</td><td>Keeps internal references consistent. It cannot be linked back to you</td><td>Indefinitely</td></tr>
+    <tr><td>A record that a pairing existed: the two internal account IDs and the dates it started and ended. No names or content</td><td>Same reason</td><td>Indefinitely</td></tr>
+    <tr><td>One “unlinked” notice</td><td>Lets your partner's phone clean up its local copy</td><td>7 days</td></tr>
+    <tr><td>Ended sign-in session records (install ID, your phone's user-agent string, dates)</td><td>Security</td><td>Deleted automatically within about 37 days</td></tr>
+    <tr><td>Server logs (IP address, request path, time; never content)</td><td>Security and fixing errors</td><td>At most 30 days</td></tr>
+    <tr><td>Database backups</td><td>Recovery from failures</td><td>None are kept</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>You can create a new account later with the same email address or Google account. It will start empty.</p>
+
+<h2>Questions</h2>
+<p>Email <a href="mailto:{{CONTACT_EMAIL}}?subject=Delete%20my%20Risaina%20account">{{CONTACT_EMAIL}}</a>. Our full <a href="/privacy">privacy policy</a>
+explains what Risaina collects and why.</p>
+
+</main>
+</body>
+</html>

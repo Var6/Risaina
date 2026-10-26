@@ -34,6 +34,7 @@ import { eventRoutes } from './modules/events/routes.js';
 import { gameRoutes } from './modules/games/routes.js';
 import { healthRoutes } from './modules/health/routes.js';
 import { invitationRoutes } from './modules/invitations/routes.js';
+import { legalRoutes } from './modules/legal/routes.js';
 import { listRoutes } from './modules/lists/routes.js';
 import { locationRoutes } from './modules/location/routes.js';
 import { meRoutes } from './modules/me/routes.js';
@@ -232,6 +233,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
   });
 
   // --- routes ------------------------------------------------------------------------------
+  // Privacy policy and account deletion: public pages outside the API (Google Play links to them).
+  await app.register(legalRoutes);
   await app.register(
     async (api) => {
       await api.register(healthRoutes, ctx);
