@@ -49,7 +49,12 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
     val snackbar = LocalSnackbar.current
     val scope = rememberCoroutineScope()
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
-    val back: () -> Unit = { navController.popBackStack() }
+    // A screen alone on the back stack (opened by a link with nothing under it) goes to Home instead
+    // of popping to an empty NavHost. previousBackStackEntry skips graph entries, so it is null then.
+    val back: () -> Unit = {
+        if (navController.previousBackStackEntry != null) navController.popBackStack()
+        else navController.navigate(Home) { popUpTo(0) { inclusive = true }; launchSingleTop = true }
+    }
 
     NavHost(
         navController = navController,

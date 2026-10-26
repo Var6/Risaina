@@ -66,10 +66,7 @@ fun RisainaAppUi(state: AppUiState, deepLinks: Flow<android.net.Uri>) {
         deepLinks.collect { uri ->
             // Wait until the user is on the paired part of the app, then navigate.
             androidx.compose.runtime.snapshotFlow { currentGate }.first { it == Gate.HOME }
-            run {
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
-                navController.handleDeepLink(intent)
-            }
+            navController.openDeepLink(uri)
         }
     }
 
@@ -82,6 +79,27 @@ fun RisainaAppUi(state: AppUiState, deepLinks: Flow<android.net.Uri>) {
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
         }
     }
+}
+
+/**
+ * Opens a link that reached the running app (MainActivity is singleTask, so it comes through
+ * onNewIntent): its screen opens on top of where the person is, and back returns there. It used to go
+ * through handleDeepLink() with a plain intent, which clears the whole back stack and leaves the
+ * link's screen alone on it, so its back arrow showed an empty screen (the SOS alarm's "see where
+ * they are", the live-location notifications). Adding NEW_TASK | CLEAR_TASK is no answer either: that
+ * rebuilds the stack from the graph's start destination, which is Welcome or PairingIntro for the
+ * rest of the session in which the person signed in or paired. A link to Home goes back to Home.
+ * A link with no screen is ignored, as handleDeepLink did.
+ */
+internal fun NavHostController.openDeepLink(uri: android.net.Uri) {
+    if (!graph.hasDeepLink(uri)) return
+    if (graph.findNode<Home>()?.hasDeepLink(uri) == true) {
+        if (runCatching { getBackStackEntry<Home>() }.isSuccess) popBackStack<Home>(inclusive = false)
+        else navigate(Home) { popUpTo(0) { inclusive = true } }
+        return
+    }
+    // Single top: tapping the same notification twice does not stack the same screen twice.
+    navigate(uri, androidx.navigation.navOptions { launchSingleTop = true })
 }
 
 private fun routeName(route: Any): String = route::class.qualifiedName ?: route.toString()
