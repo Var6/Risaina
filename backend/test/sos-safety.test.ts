@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { ObjectId } from 'mongodb';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toSosDto } from '../src/modules/shared/dto.js';
+import { SOS_RAISE_LEASE_MS } from '../src/modules/sos/service.js';
 import {
   SOS_REPUSH_MAX,
   SOS_REPUSH_MIN_GAP_MS,
@@ -110,6 +111,76 @@ describe('SOS: panic flag and retries', () => {
     expect((await post(sender, '/sos', {})).statusCode).toBe(201);
     expect((await post(sender, '/sos', {})).statusCode).toBe(429);
     expect((await post(sender, '/sos', { idempotencyKey: 'x'.repeat(65) })).statusCode).toBe(400);
+  });
+});
+
+describe('SOS: an alarm event that never went out', () => {
+  const raisedCount = (sosId: string) =>
+    t.db.events.countDocuments({ type: 'sos.raised', 'payload.sos.id': sosId });
+
+  it('a failed emit is raised by the retry with the same key, exactly once', async () => {
+    const { sender } = await couple('e1');
+    const key = randomUUID();
+    const emit = t.ctx.events.emit.bind(t.ctx.events);
+    let failNext = true;
+    const spy = vi.spyOn(t.ctx.events, 'emit').mockImplementation(async (input) => {
+      if (failNext && input.type === 'sos.raised') {
+        failNext = false;
+        throw new Error('primary stepped down');
+      }
+      return emit(input);
+    });
+    try {
+      const first = await post(sender, '/sos', { message: 'help', idempotencyKey: key });
+      expect(first.statusCode).toBe(500);
+      const stored = await t.db.sos.findOne({ senderId: new ObjectId(sender.user.id), idempotencyKey: key });
+      expect(stored).not.toBeNull();
+      expect(stored).not.toHaveProperty('raisedSeq');
+      expect(await raisedCount(stored!._id.toHexString())).toBe(0);
+
+      // The client retries with the same key: same SOS, and now the event (and the push) go out.
+      const again = await post(sender, '/sos', { message: 'help', idempotencyKey: key });
+      expect(again.statusCode).toBe(201);
+      expect(again.json().sos.id).toBe(stored!._id.toHexString());
+      expect(await raisedCount(stored!._id.toHexString())).toBe(1);
+      const raised = await t.db.sos.findOne({ _id: stored!._id });
+      expect(raised).toMatchObject({ raisedSeq: expect.any(Number) });
+      expect(raised).not.toHaveProperty('raiseLeaseUntil');
+
+      // Further retries change nothing.
+      expect((await post(sender, '/sos', { message: 'help', idempotencyKey: key })).statusCode).toBe(201);
+      expect(await raisedCount(stored!._id.toHexString())).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a retry while the first request may still be emitting is told to retry; after the lease it raises it', async () => {
+    const { sender, recipient, coupleId } = await couple('e2');
+    const key = randomUUID();
+    const id = new ObjectId();
+    // What a request that died (a redeploy) between its insert and its event leaves behind.
+    await t.db.sos.insertOne({
+      _id: id,
+      coupleId: new ObjectId(coupleId),
+      senderId: new ObjectId(sender.user.id),
+      recipientId: new ObjectId(recipient.user.id),
+      message: null,
+      createdAt: t.clock.now(),
+      acknowledgedAt: null,
+      idempotencyKey: key,
+      raiseLeaseUntil: new Date(t.clock.now().getTime() + SOS_RAISE_LEASE_MS),
+    });
+    const busy = await post(sender, '/sos', { idempotencyKey: key });
+    expect(busy.statusCode).toBe(503);
+    expect(busy.headers['retry-after']).toBe('5');
+    expect(await raisedCount(id.toHexString())).toBe(0);
+
+    t.clock.advance(SOS_RAISE_LEASE_MS + 1);
+    const later = await post(sender, '/sos', { idempotencyKey: key });
+    expect(later.statusCode).toBe(201);
+    expect(later.json().sos.id).toBe(id.toHexString());
+    expect(await raisedCount(id.toHexString())).toBe(1);
   });
 });
 

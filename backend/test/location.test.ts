@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import type { EventType } from '../src/db/types.js';
 import { REDACT_PATHS } from '../src/lib/logger.js';
-import { LIVE_LOCATION_IDLE_PURGE_MS } from '../src/modules/location/service.js';
+import type { LocationRepo } from '../src/modules/location/repo.js';
+import { LIVE_LOCATION_IDLE_PURGE_MS, LocationService } from '../src/modules/location/service.js';
 import {
   API,
   bearer,
@@ -266,6 +267,30 @@ describe('live location: start, fixes, stop', () => {
     expect(await t.db.liveLocations.countDocuments({ userId: new ObjectId(a.user.id), live: true })).toBe(0);
   });
 
+  it('a start that lands between the stop’s two reads is still stopped', async () => {
+    const id = oid();
+    const service = new LocationService(t.ctx);
+    const repo = (service as unknown as { repo: LocationRepo }).repo;
+    const byId = repo.byId.bind(repo);
+    let raced = false;
+    repo.byId = async (sessionId) => {
+      if (!raced) {
+        raced = true;
+        // The matching start is handled right here: after end() found nothing, before byId() reads.
+        expect((await start(a, { sessionId: id, mode: 'until_off', fix: fixAt() })).statusCode).toBe(201);
+      }
+      return byId(sessionId);
+    };
+    await service.stop(a.user.id, { sessionId: id, reason: 'stopped' });
+    expect(raced).toBe(true);
+    expect(await t.db.liveLocations.findOne({ _id: new ObjectId(id) })).toMatchObject({
+      live: false,
+      fix: null,
+    });
+    expect((await state(a)).mine).toBeNull();
+    expect((await state(b)).partner).toBeNull();
+  });
+
   it('a stale stop never ends a newer session; a stop without an id ends every live session', async () => {
     const first = oid();
     expect((await start(a, { sessionId: first, mode: 'until_off' })).statusCode).toBe(201);
@@ -450,6 +475,24 @@ describe('live location: sign-out, unlink and account deletion', () => {
       .find({ coupleId: new ObjectId(xyCouple), type: 'location.stopped' })
       .toArray();
     expect(stopped.map((e) => e.payload.reason)).toEqual(['signed_out']);
+    expect((await state(y)).partner).toBeNull();
+  });
+
+  it('a refresh-token reuse that signs the sharer out also ends the sharing', async () => {
+    const x = await register(t.app, 'Xola');
+    const y = await register(t.app, 'Yann');
+    await pair(t.app, x, y);
+    expect((await start(x, { sessionId: oid(), mode: 'until_off', fix: fixAt() })).statusCode).toBe(201);
+    const refresh = () =>
+      t.app.inject({
+        method: 'POST',
+        url: `${API}/auth/refresh`,
+        payload: { refreshToken: x.tokens.refreshToken },
+      });
+    expect((await refresh()).statusCode).toBe(200);
+    // The same refresh token again: reuse, the whole family is revoked and the phone is signed out.
+    expect((await refresh()).statusCode).toBe(401);
+    expect(await t.db.liveLocations.countDocuments({ userId: new ObjectId(x.user.id) })).toBe(0);
     expect((await state(y)).partner).toBeNull();
   });
 

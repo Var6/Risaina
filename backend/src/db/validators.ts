@@ -420,6 +420,7 @@ export const VALIDATORS: Record<string, Document> = {
         raisedSeq: { bsonType: ['int', 'long', 'double'], minimum: 1 },
         pushCount: { bsonType: ['int', 'long', 'double'], minimum: 0 },
         lastPushAt: nullableDate,
+        raiseLeaseUntil: nullableDate,
       },
     },
   },

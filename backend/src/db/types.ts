@@ -366,6 +366,7 @@ export interface SosDoc {
   idempotencyKey?: string; // client retry key (unique per sender when present)
   raisedEventId?: ObjectId; // the sos.raised event, set right after it is emitted (re-push)
   raisedSeq?: number;
+  raiseLeaseUntil?: Date | null; // one request is emitting sos.raised until then (unset once raised)
   pushCount?: number; // re-pushes sent by SosRepushWorker (the outbox's first push is not counted)
   lastPushAt?: Date | null;
 }

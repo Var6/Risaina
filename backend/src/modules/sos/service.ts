@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import type { AppContext } from '../../app-context.js';
-import type { CoupleDoc, SosDeliveryInfo, SosDoc } from '../../db/types.js';
-import { errors } from '../../lib/errors.js';
+import type { CoupleDoc, EventDoc, SosDeliveryInfo, SosDoc } from '../../db/types.js';
+import { AppError, errors } from '../../lib/errors.js';
 import { newId } from '../../lib/ids.js';
 import { LocationService } from '../location/service.js';
 import { toSosDto } from '../shared/dto.js';
@@ -11,6 +11,11 @@ import type { SosDeliveredInput } from './schemas.js';
 
 export const SOS_MAX_PER_WINDOW = 3;
 export const SOS_WINDOW_MS = 10 * 60_000;
+/**
+ * How long one request may take to emit `sos.raised` for a stored SOS before a retry may do it
+ * instead (the first request crashed or was killed by a redeploy between the insert and the event).
+ */
+export const SOS_RAISE_LEASE_MS = 20_000;
 
 const isDuplicateKey = (err: unknown) =>
   typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
@@ -36,10 +41,14 @@ export class SosService {
     const sender = new ObjectId(senderId);
     const now = this.ctx.now();
     // A retry of an SOS that already went through (lost response, offline retry) returns the first
-    // one: no duplicate alarm, and it does not use up the rate limit.
+    // one: no duplicate alarm, and it does not use up the rate limit. If the first request stored it
+    // but never emitted its event, the retry emits it now (see ensureRaised).
     if (input.idempotencyKey) {
       const first = await this.repo.findByIdempotency(sender, input.idempotencyKey);
-      if (first) return { sos: toSosDto(first) };
+      if (first) {
+        await this.ensureRaised(couple, first);
+        return { sos: toSosDto(first) };
+      }
     }
     // Durable (DB-backed) limit: survives restarts and follows the injected clock.
     const recent = await this.repo.recentBySender(sender, new Date(now.getTime() - SOS_WINDOW_MS));
@@ -59,6 +68,8 @@ export class SosService {
       // optional fields are written only when set, so ordinary alerts look exactly as before
       ...(input.panic ? { panic: true } : {}),
       ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+      // This request emits the event; removed once it did (setRaised)
+      raiseLeaseUntil: new Date(now.getTime() + SOS_RAISE_LEASE_MS),
     };
     try {
       await this.repo.insert(doc);
@@ -66,18 +77,48 @@ export class SosService {
       if (!(isDuplicateKey(err) && input.idempotencyKey)) throw err;
       const winner = await this.repo.findByIdempotency(sender, input.idempotencyKey);
       if (!winner) throw err;
+      await this.ensureRaised(couple, winner);
       return { sos: toSosDto(winner) };
     }
-    const dto = toSosDto(doc);
-    const event = await this.ctx.events.emit({
-      coupleId: couple._id,
-      type: 'sos.raised',
-      actorId: sender,
-      payload: { sos: dto },
-    });
+    await this.raise(couple, doc, now);
+    return { sos: toSosDto(doc) };
+  }
+
+  /** Emits `sos.raised` (what pushes and rings the partner's phone) for a stored SOS. */
+  private async raise(couple: CoupleDoc, doc: SosDoc, now: Date): Promise<void> {
+    let event: EventDoc;
+    try {
+      event = await this.ctx.events.emit({
+        coupleId: couple._id,
+        type: 'sos.raised',
+        actorId: doc.senderId,
+        payload: { sos: toSosDto(doc) },
+      });
+    } catch (err) {
+      // Free the claim, so the client's retry with the same idempotencyKey can raise it at once.
+      await this.repo.releaseRaise(doc._id).catch(() => undefined);
+      throw err;
+    }
     // The event id and seq exist only after emit, so they are stored in a second write.
     await this.repo.setRaised(doc._id, event._id, event.seq, now);
-    return { sos: dto };
+  }
+
+  /**
+   * A retry found its SOS stored. If the first request died between the insert and the event (the
+   * emit failed, a restart, a redeploy), nothing would ever push it, and the sender would read
+   * "sent" while the partner's phone never rings: raise it now. Only one request emits (an atomic
+   * claim with a lease); one that finds another request emitting right now gets a retryable 503
+   * rather than a "sent" for an alarm that may not go out.
+   */
+  private async ensureRaised(couple: CoupleDoc, doc: SosDoc): Promise<void> {
+    if (doc.raisedSeq !== undefined) return;
+    const now = this.ctx.now();
+    const claimed = await this.repo.claimRaise(doc._id, now, new Date(now.getTime() + SOS_RAISE_LEASE_MS));
+    if (claimed) return this.raise(couple, claimed, now);
+    if ((await this.repo.findById(doc._id))?.raisedSeq !== undefined) return;
+    throw new AppError(503, 'internal', 'This SOS is still being sent. Try again in a moment.', {
+      headers: { 'retry-after': '5' },
+    });
   }
 
   async list(couple: CoupleDoc, limit: number): Promise<{ items: SosDto[] }> {

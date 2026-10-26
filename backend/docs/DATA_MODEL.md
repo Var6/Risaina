@@ -262,6 +262,7 @@ unlink purge); `{purgeAt:1}` TTL.
 | `idempotencyKey: string` | absent | client retry key |
 | `raisedEventId: ObjectId`, `raisedSeq: int` | absent (no re-push) | the `sos.raised` event, written right after emit |
 | `pushCount: int`, `lastPushAt: date` | `0`, never | re-push bookkeeping |
+| `raiseLeaseUntil: date` | absent | while set (and until `raisedSeq` is written), one request is emitting `sos.raised`; a retry with the same `idempotencyKey` after it lapses emits it instead |
 
 Extra `sos` indexes: `{createdAt:-1}` (re-push scan); `{senderId:1, idempotencyKey:1}` unique partial
 `{idempotencyKey: {$type: 'string'}}`. `{deliveredAt: null}` and `{resolvedAt: null}` filters also match

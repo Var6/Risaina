@@ -45,7 +45,8 @@ export const sosRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
         summary: 'Raise an SOS to the partner (always pushed, even in quiet hours)',
         description:
           'At most 3 per sender per 10 minutes (429 rate_limited with Retry-After). A repeat with the same ' +
-          'idempotencyKey returns the first SOS (no new event, not counted).',
+          'idempotencyKey returns the first SOS (not counted); if that first request stored it but never ' +
+          'emitted sos.raised, the repeat emits it. 503 (Retry-After) while another request is emitting it.',
         security,
         body: CreateSosBody,
         response: {
@@ -54,6 +55,7 @@ export const sosRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
           401: ErrorEnvelope,
           409: ErrorEnvelope,
           429: ErrorEnvelope,
+          503: ErrorEnvelope,
         },
       },
     },

@@ -719,7 +719,7 @@ in events or pushes.
 
 | Method | Path | Body | Success |
 |---|---|---|---|
-| POST | `/sos` | `{ message?, panic?: boolean, idempotencyKey?: string (1–64) }` (strict) | `201 { sos }`. A repeat with the same `idempotencyKey` returns the first SOS, emits nothing and does not count against the limit |
+| POST | `/sos` | `{ message?, panic?: boolean, idempotencyKey?: string (1–64) }` (strict) | `201 { sos }`. A repeat with the same `idempotencyKey` returns the first SOS and does not count against the limit; it emits `sos.raised` only if the first request stored the SOS but never emitted it (a failed emit, a restart). `503` with `Retry-After` while another request is emitting it |
 | POST | `/sos/:id/delivered` | optional device state (below) | `200 { sos }`, recipient only, idempotent: sets `deliveredAt` once, emits `sos.delivered` and stops re-pushes |
 | POST | `/sos/:id/resolve` | | `200 { sos }`, sender only ("I'm safe now"), idempotent: sets `resolvedAt`, emits `sos.resolved` once and ends live sharing linked to that SOS (`location.stopped`, reason `resolved`) |
 | POST | `/sos/test` | `{ delaySeconds?: 0–60 }` (default 15) | `202 { queued, devices }`: a high-priority `{ type: 'sos.test' }` push to **my own** phones after the delay. No database write, no event. 3 per user per 10 minutes. Bearer only (no couple needed) |

@@ -260,8 +260,16 @@ export class LocationService {
       return;
     }
     const id = new ObjectId(query.sessionId);
-    if (await this.end(id, query.reason, meId, now)) return;
-    if (await this.repo.byId(id)) return; // already stopped (idempotent), or not mine
+    // end() and byId() are two reads: the matching start can insert the live session in between.
+    // A live session of mine found by byId() is therefore ended on the next pass (it cannot turn
+    // live again once ended, so the second pass always settles it).
+    let found: LiveLocationDoc | null = null;
+    for (let pass = 0; pass < 2; pass++) {
+      if (await this.end(id, query.reason, meId, now)) return;
+      found = await this.repo.byId(id);
+      if (!found?.live || !found.userId.equals(meId)) break;
+    }
+    if (found) return; // already stopped (idempotent), or not mine
     const user = await this.ctx.db.users.findOne({ _id: meId }, { projection: { activeCoupleId: 1 } });
     const couple = user?.activeCoupleId
       ? await this.ctx.db.couples.findOne({ _id: user.activeCoupleId, status: 'active' })

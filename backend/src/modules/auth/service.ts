@@ -226,6 +226,12 @@ export class AuthService {
     const ids = await this.repo.familySessionIds(familyId);
     await this.repo.revokeFamily(familyId, reason, this.ctx.now());
     for (const id of ids) this.ctx.hub.revokeSession(id.toHexString());
+    if (reason === 'refresh_reuse') {
+      // The phone is signed out and can no longer stop its own live location (each person has one
+      // phone): end it here, as sign-out does, so the last position is not left on the server.
+      const member = await this.ctx.db.sessions.findOne({ familyId }, { projection: { userId: 1 } });
+      if (member) await new LocationService(this.ctx).endAllForUser(member.userId);
+    }
   }
 
   async revokeAllForUser(userId: ObjectId, reason: string): Promise<void> {

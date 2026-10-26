@@ -8972,7 +8972,7 @@
         "tags": [
           "SOS"
         ],
-        "description": "At most 3 per sender per 10 minutes (429 rate_limited with Retry-After). A repeat with the same idempotencyKey returns the first SOS (no new event, not counted).",
+        "description": "At most 3 per sender per 10 minutes (429 rate_limited with Retry-After). A repeat with the same idempotencyKey returns the first SOS (not counted); if that first request stored it but never emitted sos.raised, the repeat emits it. 503 (Retry-After) while another request is emitting it.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9057,6 +9057,16 @@
             }
           },
           "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Default Response",
             "content": {
               "application/json": {
