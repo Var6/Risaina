@@ -65,11 +65,14 @@ class WidgetSnapshotUpdater @Inject constructor(
         if (sessionStore.current() == null) return
         store.markSeen(System.currentTimeMillis())
         if (clearAlerts) notifier.clearPartnerAlerts()
+        // Widgets and the lock card calm down from the local "seen" mark at once; the server's "Seen"
+        // receipt (a network round trip) follows. It used to come first, so after leaving the app the
+        // card kept saying "reached out" for as long as that request took.
+        recompute()
         if (ackServer) {
             val me = sessionStore.current()?.userId
             pingDao.recent(50).first().firstOrNull { it.senderId != me }?.takeIf { it.seenAt == null }?.let { pingRepository.markSeen(it.id) }
         }
-        recompute()
     }
 
     /**
@@ -213,8 +216,9 @@ class WidgetSnapshotUpdater @Inject constructor(
         }
         // Each on its own: a widget error must not stop the lock card, and neither may swallow a
         // cancellation (runCatching would), which has to reach the caller.
-        try { refresher.refreshAll() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) {}
+        // The lock card first: one cheap notification, while drawing the widgets can take a couple of seconds.
         try { lockScreenCard.update(store.current()) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) {}
+        try { refresher.refreshAll() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) {}
     }
 
     private companion object {
