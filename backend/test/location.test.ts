@@ -317,7 +317,8 @@ describe('live location: validation, limits, indexes, privacy', () => {
     const bad = [
       { sessionId: oid(), mode: 'timed' },
       { sessionId: oid(), mode: 'until_off', durationMinutes: 60 },
-      { sessionId: oid(), mode: 'timed', durationMinutes: 5 },
+      { sessionId: oid(), mode: 'timed', durationMinutes: 0 },
+      { sessionId: oid(), mode: 'timed', durationMinutes: 1441 },
       { sessionId: oid(), mode: 'timed', durationMinutes: 60, sosId: oid() },
       { sessionId: oid(), mode: 'timed', durationMinutes: 60, extra: true },
       { sessionId: 'nope', mode: 'until_off' },

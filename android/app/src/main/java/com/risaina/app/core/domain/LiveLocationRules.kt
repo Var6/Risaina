@@ -95,6 +95,16 @@ object LiveLocationRules {
 
     fun isActive(expiresAt: Instant?, now: Instant): Boolean = expiresAt == null || now.isBefore(expiresAt)
 
+    /**
+     * The duration to send when (re-)registering a timed session: the time LEFT until the end the user
+     * chose, never the original length. The server sets its end to "now + duration", so sending the
+     * original length on a retry, a Resume or a re-register would push the end later every time.
+     * Rounded to the nearest minute (a retry must not move the end by more than the server's one-minute
+     * "really changed" threshold), at least 1 and at most the server's 24 h.
+     */
+    fun requestMinutes(expiresAtMs: Long, nowMs: Long): Int =
+        ((expiresAtMs - nowMs + 30_000L) / 60_000L).coerceIn(1L, 1_440L).toInt()
+
     /** Always '.' as the decimal mark: a German or French locale must not produce "geo:25,59…". */
     fun geoUri(lat: Double, lng: Double, label: String): String =
         String.format(Locale.US, "geo:%.6f,%.6f?q=%.6f,%.6f(%s)", lat, lng, lat, lng, URLEncoder.encode(label, "UTF-8").replace("+", "%20"))

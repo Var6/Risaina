@@ -4,6 +4,7 @@ import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.common.map
 import com.risaina.app.core.common.onSuccess
 import com.risaina.app.core.network.LiveLocationDto
+import com.risaina.app.core.network.LiveLocationStateDto
 import com.risaina.app.core.network.PutFixRequest
 import com.risaina.app.core.network.PutFixResponse
 import com.risaina.app.core.network.RisainaApi
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import java.time.Instant
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,12 +41,21 @@ class LiveLocationRepository @Inject constructor(private val api: RisainaApi) {
     /** Sessions the partner stopped: a late frame for one of them must not bring it back. */
     private val stopped: MutableSet<String> = Collections.synchronizedSet(LinkedHashSet())
 
-    suspend fun refresh(): AppResult<Unit> = apiCall { api.locationSharing() }.onSuccess { r ->
-        _state.update { s ->
-            val partner = r.partner?.takeUnless { it.sessionId in stopped }
-            s.copy(mine = r.mine, partner = partner, partnerStoppedAt = if (partner != null) null else s.partnerStoppedAt)
+    /** Bumped by every answer about my own session, so an older GET cannot overwrite a newer answer. */
+    private val mineVersion = AtomicLong()
+
+    /** GET /location/sharing. Returns what the server said (my session as well as the partner's). */
+    suspend fun refresh(): AppResult<LiveLocationStateDto> {
+        val before = mineVersion.get()
+        return apiCall { api.locationSharing() }.onSuccess { r ->
+            _state.update { s ->
+                val partner = r.partner?.takeUnless { it.sessionId in stopped }
+                // A start or stop answered while this GET was on its way is newer than what the GET saw.
+                val mine = if (mineVersion.get() == before) r.mine else s.mine
+                s.copy(mine = mine, partner = partner, partnerStoppedAt = if (partner != null) null else s.partnerStoppedAt)
+            }
         }
-    }.map { }
+    }
 
     fun onLiveFrame(dto: LiveLocationDto) {
         if (dto.sessionId in stopped) return
@@ -69,7 +80,10 @@ class LiveLocationRepository @Inject constructor(private val api: RisainaApi) {
         _state.update { s -> if (s.partner?.sessionId == sessionId) s.copy(partner = null, partnerStoppedAt = at ?: Instant.now()) else s }
     }
 
-    fun onMine(dto: LiveLocationDto?) = _state.update { it.copy(mine = dto) }
+    fun onMine(dto: LiveLocationDto?) {
+        mineVersion.incrementAndGet()
+        _state.update { it.copy(mine = dto) }
+    }
 
     fun clear() {
         stopped.clear()

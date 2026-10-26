@@ -23,13 +23,14 @@ export const LocationFixInput = z
  * Start (or extend) sharing. `mode` is explicit rather than `durationMinutes: null` because the
  * Android client drops null keys (explicitNulls = false): a missing duration must never mean
  * "until I turn it off". The phone generates `sessionId` so a stop sent right after a start can
- * name it, even while the start is still in flight.
+ * name it, even while the start is still in flight. A retry, Resume or re-register sends the time
+ * LEFT as `durationMinutes` (the server sets end = now + duration), which can be a few minutes.
  */
 export const StartSharingBody = z
   .object({
     sessionId: IdString,
     mode: z.enum(['timed', 'until_off']),
-    durationMinutes: z.number().int().min(15).max(1440).optional(),
+    durationMinutes: z.number().int().min(1).max(1440).optional(),
     reason: LiveLocationReason.default('manual'),
     sosId: IdString.optional().meta({ description: 'Panic only: the SOS this sharing belongs to' }),
     fix: LocationFixInput.optional(),

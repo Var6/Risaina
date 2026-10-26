@@ -23,7 +23,6 @@ import com.risaina.app.core.database.CoupleDao
 import com.risaina.app.core.domain.LiveLocationRules
 import com.risaina.app.core.network.LocationFixInput
 import com.risaina.app.core.network.PutFixRequest
-import com.risaina.app.core.network.StartSharingRequest
 import com.risaina.app.core.notifications.NotificationChannels
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CompletableDeferred
@@ -127,42 +126,57 @@ class LiveLocationService : Service() {
         launch {
             while (true) {
                 delay(15_000)
+                val now = currentPlan(p)
                 if (expired()) { controller.endFromService("expired", tellServer = true); return@launch }
                 if (registered.isCompleted) heartbeat()
-                post(plan ?: p)
+                post(now)
             }
         }
     }
 
+    /** The controller's plan (it may have taken the server's session id or end meanwhile), kept in [plan]. */
+    private fun currentPlan(p: SessionPlan): SessionPlan = (controller.currentPlan() ?: plan ?: p).also { plan = it }
+
     private fun expired(): Boolean = plan?.expiresAtMs?.let { System.currentTimeMillis() >= it } == true
 
-    /** Registers the session (with the last known position if it is recent), retrying until it works. */
+    /**
+     * Registers the session (with the last known position if it is recent), retrying until it works.
+     * Every failure waits before the next try: this loop can run for the whole panic share.
+     */
     private suspend fun register(p: SessionPlan, done: CompletableDeferred<Unit>) {
         var attempt = 0
         var withFix = true
         while (true) {
-            val current = controller.currentPlan()?.takeIf { it.sessionId == p.sessionId } ?: p
+            // The controller's plan, not [p]: it may have taken the server's id meanwhile. Gone means
+            // the sharing was stopped and this service is on its way out.
+            val current = controller.currentPlan() ?: return
+            // A stop still waiting for the network goes first, or the server would merge this start
+            // into the session that stop is about to end.
+            if (!controller.deliverPendingStops(enqueueOnFailure = false)) {
+                delay(backoff(attempt++))
+                continue
+            }
             val last = if (withFix) client.lastLocation()?.takeIf { ageOf(it) < 2 * 60_000L } else null
-            val req = StartSharingRequest(
-                sessionId = current.sessionId,
-                mode = if (current.minutes > 0) "timed" else "until_off",
-                durationMinutes = current.minutes.takeIf { it > 0 },
-                reason = if (current.panic) "panic" else "manual",
-                sosId = current.sosId,
-                fix = last?.let { fixOf(it) },
-            )
+            val req = current.startRequest(System.currentTimeMillis(), last?.let { fixOf(it) })
             when (val r = repo.start(req)) {
                 is AppResult.Success -> {
-                    controller.onServiceRegistered(r.value)
-                    plan = controller.currentPlan() ?: current
+                    plan = controller.onServiceRegistered(req.sessionId, r.value) ?: return
                     signInNeeded = false
                     done.complete(Unit)
                     return
                 }
                 is AppResult.Failure -> when (val e = r.error) {
                     is AppError.Conflict, is AppError.NotFound -> { controller.endFromService("stopped", tellServer = false); return }
-                    is AppError.Validation -> withFix = false
-                    is AppError.Unauthorized -> if (!current.panic) { controller.endFromService("stopped", tellServer = false); return } else markSignInNeeded()
+                    // A refused fix (bad accuracy, too old) is dropped once; refused again, keep trying slowly.
+                    is AppError.Validation -> if (withFix) withFix = false else delay(backoff(attempt++))
+                    is AppError.Unauthorized -> if (!current.panic) {
+                        controller.endFromService("stopped", tellServer = false); return
+                    } else {
+                        // Panic keeps sharing locally and asks to sign in again. Each try also tries a
+                        // token refresh, so wait as the uploader does instead of looping at once.
+                        markSignInNeeded()
+                        delay(SIGN_IN_RETRY_MS)
+                    }
                     is AppError.RateLimited -> delay((e.retryAfterSeconds ?: 60) * 1000L)
                     else -> delay(backoff(attempt++))
                 }
@@ -194,7 +208,9 @@ class LiveLocationService : Service() {
             var attempt = 0
             while (true) {
                 if (ageOf(location) >= LiveLocationRules.MAX_FIX_AGE_MS) break // too old to show as live
-                when (val r = repo.putFix(PutFixRequest(p.sessionId, fixOf(location)))) {
+                // Read on every PUT: the session id can change to the server's while sharing runs.
+                val sessionId = currentPlan(p).sessionId
+                when (val r = repo.putFix(PutFixRequest(sessionId, fixOf(location)))) {
                     is AppResult.Success -> {
                         lastUploaded = LiveLocationRules.Uploaded(location.latitude, location.longitude, accuracyOf(location), SystemClock.elapsedRealtime())
                         signInNeeded = false
@@ -205,7 +221,7 @@ class LiveLocationService : Service() {
                         // location_not_sharing / not_paired: the server ended it (expiry, unlink, "I'm safe now")
                         is AppError.Conflict -> { controller.endFromService("stopped", tellServer = false); return }
                         is AppError.Validation -> break // drop this fix, keep sharing
-                        is AppError.Unauthorized -> if (!p.panic) { controller.endFromService("stopped", tellServer = false); return } else { markSignInNeeded(); delay(60_000) }
+                        is AppError.Unauthorized -> if (!p.panic) { controller.endFromService("stopped", tellServer = false); return } else { markSignInNeeded(); delay(SIGN_IN_RETRY_MS) }
                         is AppError.RateLimited -> delay((e.retryAfterSeconds ?: 30) * 1000L)
                         else -> delay(backoff(attempt++)) // offline, timeout, server waking up
                     }
@@ -283,6 +299,8 @@ class LiveLocationService : Service() {
 
     companion object {
         const val NOTIFICATION_ID = 9200
+        /** After a 401 in a panic share: wait this long before trying again (each try also refreshes the token). */
+        private const val SIGN_IN_RETRY_MS = 60_000L
         private const val ACTION_START = "com.risaina.app.location.START"
         private const val ACTION_STOP = "com.risaina.app.location.STOP"
         private const val ACTION_SAFE = "com.risaina.app.location.SAFE"

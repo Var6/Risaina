@@ -127,4 +127,17 @@ class LiveLocationRulesTest {
         assertEquals("4 min ago", LiveLocationRules.ago(Instant.EPOCH, Instant.EPOCH.plusSeconds(4 * 60 + 5)))
         assertEquals("2 h ago", LiveLocationRules.ago(Instant.EPOCH, Instant.EPOCH.plusSeconds(2 * 3600 + 5)))
     }
+
+    @Test fun `a re-register asks for the time left, so the end never moves later`() {
+        val now = 1_000_000_000L
+        // Shared for 1 hour at 9:00, resumed at 9:55: 5 minutes left, not another hour.
+        assertEquals(5, LiveLocationRules.requestMinutes(now + 5 * 60_000L, now))
+        // Rounded to the nearest minute (a retry moves the end by at most 30 s).
+        assertEquals(5, LiveLocationRules.requestMinutes(now + 5 * 60_000L + 29_000L, now))
+        assertEquals(6, LiveLocationRules.requestMinutes(now + 5 * 60_000L + 31_000L, now))
+        // Never 0 or negative (the server takes 1 to 1440), never over 24 h.
+        assertEquals(1, LiveLocationRules.requestMinutes(now + 10_000L, now))
+        assertEquals(1, LiveLocationRules.requestMinutes(now - 60_000L, now))
+        assertEquals(1440, LiveLocationRules.requestMinutes(now + 3L * 24 * 3_600_000, now))
+    }
 }

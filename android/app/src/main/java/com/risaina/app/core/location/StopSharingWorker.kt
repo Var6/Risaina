@@ -28,16 +28,19 @@ class StopSharingWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val api: RisainaApi,
+    private val controller: LiveLocationController,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val sessionId = inputData.getString(KEY_SESSION)
         val reason = inputData.getString(KEY_REASON) ?: "stopped"
         return when (val r = apiCall { api.stopSharing(sessionId, reason) }) {
-            is AppResult.Success -> Result.success()
+            is AppResult.Success -> Result.success().also { controller.onStopDelivered(sessionId) }
             is AppResult.Failure -> when {
-                r.error is AppError.Unauthorized -> Result.success() // signed out: the server ended it at sign-out
+                // signed out: the server ended it at sign-out
+                r.error is AppError.Unauthorized -> Result.success().also { controller.onStopDelivered(sessionId) }
                 r.error.isRetryable && runAttemptCount < 20 -> Result.retry()
-                else -> Result.failure()
+                // Given up: a later start must not wait for it (the server purges an idle share in 12 h).
+                else -> Result.failure().also { controller.onStopDelivered(sessionId) }
             }
         }
     }

@@ -11118,7 +11118,7 @@
                   },
                   "durationMinutes": {
                     "type": "integer",
-                    "minimum": 15,
+                    "minimum": 1,
                     "maximum": 1440
                   },
                   "reason": {

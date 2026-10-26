@@ -746,7 +746,7 @@ already rang, acknowledged or saw resolved, or one older than 6 hours.
 | Method | Path | Guards | Input | Success | Errors |
 |---|---|---|---|---|---|
 | GET | `/location/sharing` | couple | | `200 { mine: LiveLocation\|null, partner: LiveLocation\|null }` (expired sessions are null) | 401, 409 `not_paired` |
-| POST | `/location/sharing` | couple; 20 manual starts per user per hour (panic exempt) | `{ sessionId, mode: 'timed'\|'until_off', durationMinutes? (15–1440, required iff timed), reason?: 'manual'\|'panic', sosId? (panic only), fix? }` | `201 { sharing }` new, `200` extended | 400; 404 (`sosId` not my SOS); 409 `location_not_sharing` (that `sessionId` was stopped), `not_paired`; 429 |
+| POST | `/location/sharing` | couple; 20 manual starts per user per hour (panic exempt) | `{ sessionId, mode: 'timed'\|'until_off', durationMinutes? (1–1440, required iff timed; a retry or Resume sends the time left), reason?: 'manual'\|'panic', sosId? (panic only), fix? }` | `201 { sharing }` new, `200` extended | 400; 404 (`sosId` not my SOS); 409 `location_not_sharing` (that `sessionId` was stopped), `not_paired`; 429 |
 | PUT | `/location/sharing/fix` | couple; 12 per user per minute | `{ sessionId, fix }` | `200 { accepted }` | 400; 409 `location_not_sharing`, `not_paired`; 429 |
 | DELETE | `/location/sharing` | bearer only (stopping always works) | query `sessionId?`, `reason?: 'stopped'\|'expired'` | `204` always | 401 |
 
