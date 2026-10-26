@@ -134,3 +134,46 @@ the app process killed for every "closed app" check. Backend 177/177 tests; Andr
 - ✅ Home shows gifts as "A gift" with their line, not "A ping"/"Custom". New game cards scroll into view; read receipts no longer mark the wrong messages when game cards are in the chat.
 - ⚠️ Atlas: the DB user cannot change an existing collection's validator (`collMod`). Production had no `games` collection, so it is created with the new rules on deploy. Grant `dbAdmin` to avoid this class of problem.
 - ❌ Not verified on real phones: OS lock-screen widgets (this emulator's launcher has them disabled; the opt-in lock-screen card works everywhere); vibration on Realme/ColorOS, which may need "Allow background activity" (the Widgets screen links to App info).
+
+## Delivery round: widgets and alerts with the app closed, false gift alerts (2026-10-26)
+Goal: on a realme/ColorOS phone with Risaina closed, the partner's widgets and notifications change as
+promptly as a notification does. Checked with unit tests (backend Vitest, Android JUnit) only: not yet
+on the real phones.
+
+- ✅ **Widgets are drawn inside the push handler**: each placed widget is composed with Glance
+  `runComposition` and handed to `AppWidgetManager` directly ("Us" first, one 2.5 s deadline for all,
+  per-widget fallback to the queued Glance update). Before, `updateAll()` only queued a job that ColorOS
+  could freeze until the app was opened.
+- ✅ **Push handler order**: SOS first (unchanged), then the safety-net SyncWorker (inside FCM's expedited
+  exemption), then a network-free alert for a ping or message, then a sync bounded to 4 s. Each
+  notification is posted as its event is applied, so a timeout or a later error never loses one. Photo
+  downloads, delivered receipts and game refreshes moved out of the push handler (to the worker).
+- ✅ **One sync at a time**: the push handler and the workers share a sync instead of fetching side by
+  side, but never one that started before their push arrived. Widget recomputes run one at a time, so an
+  older one cannot overwrite a newer snapshot.
+- ✅ **Push priority per event type** (backend): only events that end in a visible notification are high;
+  receipts, lists, memories and other silent changes are normal with one collapse key; game answered,
+  cancelled and ended are not pushed. "Their widget" changes stay high and post a quiet "updated your
+  widget". Notifications off now sends a silent push (widgets still update) instead of nothing; quiet hours
+  now only make the phone silent. (FCM lowers an app whose high pushes rarely show anything.)
+- ✅ **Delivery health** card on the Widgets screen: notification permission and channels, battery
+  optimisation (one-tap exemption request), background restriction, standby bucket, Data Saver, Play
+  services, recent swipe-kills/freezes (Android 11+), force-stop (Android 15+), realme/ColorOS steps and a
+  phone-maker settings chain ending at App info, the last push this phone received (with an FCM downgrade
+  warning), when the partner's phone last received one, the build id, and "Send me a test push".
+- ✅ **Build id**: `versionName` is `0.2.0+<git sha>` and `versionCode` the commit count; shown in Settings
+  and in Delivery health, and sent to the server as the device's `appVersion`.
+- ✅ **No sign-outs from a killed refresh**: the token refresh and storing its answer cannot be cut in half
+  by a caller's timeout, and the server accepts a retry of a just-rotated token for 60 s from the same install
+  while the new session is unused.
+- ✅ **False gift alerts (on top of 6619f22)**: the calm lock card never shows a gift through the emoji
+  fields; it is re-posted only when its content changes (a swipe is respected, a reboot or force-stop brings
+  it back) with a stable time; a sign-in or re-pair replays history without notifying, buzzing or revealing
+  old gifts (persisted high-water mark, used by both the sync and the socket); opening the app clears the
+  gift/ping, game and widget-update notifications (not chat messages); the detailed alert after a quick one
+  for the same item is silent; a quick alert never overwrites a notification an earlier sync already posted.
+- ❌ Not verified on real phones yet. Main-session device checks: build id on Raina's Realme; with the app
+  swiped away and the screen off, a text, a photo and a gift each update the "Us" widget within seconds;
+  `dumpsys package com.risaina.app | grep stopped`; Delivery health on ColorOS (which settings screens open;
+  "Allow" for the battery exemption); the test push; the lock card on a PIN-locked ColorOS lock screen;
+  Glance responsive sizes drawn by `runComposition` on the realme launcher.
