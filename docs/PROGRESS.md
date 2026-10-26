@@ -203,8 +203,8 @@ yet**, and the emulator was not used (the main session needed it).
   SosRepositoryTest, ring-removal and requestMinutes tests; backend tests for the emit retry, the
   stop/start race and refresh reuse. Docs: COUNCIL_DECISIONS D-12 (D-10 was taken), PRIVACY_POLICY_DRAFT,
   SECURITY, KNOWN_LIMITATIONS, TESTING.
-- ⚠️ **Release order**: backend first. The APK sends `durationMinutes` under 15 on a Resume, which the
-  previous version of this branch's server refused.
+- ⚠️ **Release order**: backend first. Live location exists only on the new server, and on an older
+  one a panic alert goes out as a plain SOS (no panic flag, no retry key).
 - ⚠️ **Merging**: `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` is now declared exactly as the delivery stream
   declares it, so the manifests merge into one element. Dtos.kt, RisainaMessagingService.kt, API.md,
   PROGRESS.md (and errors.ts against games) conflict as before: both sides' additions are kept.

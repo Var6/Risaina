@@ -268,12 +268,13 @@ class LiveLocationController @Inject constructor(
                     plan == null -> planFrom(mine).withServer(mine).copy(registered = true)
                     plan.sessionId == mine.sessionId -> plan.withServer(mine).copy(registered = true)
                     // The server keeps one live session per person: this phone's own start (not sent
-                    // yet) will extend that one, so take its id and keep what was asked for.
-                    !plan.registered -> plan.copy(sessionId = mine.sessionId)
+                    // yet) will extend that one, so take its id and keep what was asked for (a panic
+                    // on either side stays a panic: the server never downgrades one).
+                    !plan.registered -> plan.copy(sessionId = mine.sessionId, panic = plan.panic || mine.reason == "panic")
                     else -> planFrom(mine).withServer(mine).copy(registered = true)
                 }
                 savePlan(p)
-                if ((p.panic || mine.reason == "panic") && client.hasPermission()) startService(p)
+                if (p.panic && client.hasPermission()) startService(p)
                 else _state.value = ShareState.Paused(p.sessionId, p.panic, p.expiresAtMs?.let(Instant::ofEpochMilli))
             }
             else -> syncMine(mine, Source.SERVER_STATE)

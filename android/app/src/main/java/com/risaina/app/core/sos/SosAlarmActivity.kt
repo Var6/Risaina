@@ -101,7 +101,7 @@ class SosAlarmActivity : ComponentActivity() {
             finish()
         }
         val km = getSystemService(KeyguardManager::class.java)
-        if (Build.VERSION.SDK_INT >= 26 && km != null && km.isKeyguardLocked) {
+        if (km != null && km.isKeyguardLocked) {
             km.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
                 override fun onDismissSucceeded() = open()
                 // Not unlocked: the alarm is already acknowledged, so there is nothing left to show.
