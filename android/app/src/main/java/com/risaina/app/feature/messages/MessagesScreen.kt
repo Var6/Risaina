@@ -80,6 +80,7 @@ import com.risaina.app.feature.common.PlayIcon
 import com.risaina.app.feature.common.SendIcon
 import com.risaina.app.feature.messages.games.GameActions
 import com.risaina.app.feature.messages.games.GameCard
+import com.risaina.app.feature.messages.games.GamePickerChoices
 import com.risaina.app.feature.messages.games.GamePickerSheet
 import com.risaina.app.feature.messages.games.isMyTurn
 import com.risaina.app.feature.voice.VoiceRecorderSheet
@@ -102,6 +103,10 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> pendingPhoto = uri }
     var toDelete by remember { mutableStateOf<Message?>(null) }
     var showWallpaper by remember { mutableStateOf(false) }
+    // Games stream: held here, not in the sheet, so the picker's last options outlast the sheet.
+    var pickerChoices by androidx.compose.runtime.saveable.rememberSaveable(stateSaver = GamePickerChoices.Saver) {
+        mutableStateOf(GamePickerChoices())
+    }
     val gameActions = remember(vm) {
         GameActions(
             move = vm::gameMove, tttPlay = vm::tttPlay, triviaAnswer = vm::triviaAnswer,
@@ -240,6 +245,7 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
             openGame = s.games.firstOrNull { it.status !in setOf("completed", "cancelled") },
             myId = s.myId, partner = s.partner?.displayName?.substringBefore(" ") ?: "your partner",
             startingKind = s.gameUi.startingKind,
+            choices = pickerChoices, onChoicesChange = { pickerChoices = it },
             onStart = vm::startGame, onEndAndStart = vm::endAndStart, onEndOpen = vm::gameCancel,
             onGoTo = { id ->
                 vm.closeGamePicker()

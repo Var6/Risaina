@@ -1,5 +1,9 @@
 package com.risaina.app.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -18,6 +22,7 @@ import com.risaina.app.core.network.QuizItemDto
 import com.risaina.app.core.network.TttDto
 import com.risaina.app.feature.messages.games.GameActions
 import com.risaina.app.feature.messages.games.GameCard
+import com.risaina.app.feature.messages.games.GamePickerChoices
 import com.risaina.app.feature.messages.games.GamePickerSheet
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -55,9 +60,11 @@ class GameCardsTest {
         var endedAndStarted: Pair<String, String>? = null
         rule.setContent {
             RisainaTheme {
+                var choices by remember { mutableStateOf(GamePickerChoices()) }
                 GamePickerSheet(
                     catalog = GameRepository.DEFAULT_CATALOG, openGame = open, myId = me, partner = "Bea",
-                    startingKind = null, onStart = {}, onEndAndStart = { id, opts -> endedAndStarted = id to opts.kind },
+                    startingKind = null, choices = choices, onChoicesChange = { choices = it },
+                    onStart = {}, onEndAndStart = { id, opts -> endedAndStarted = id to opts.kind },
                     onEndOpen = {}, onGoTo = {}, onDismiss = {},
                 )
             }
@@ -71,6 +78,32 @@ class GameCardsTest {
         rule.onNodeWithText("End the current game?").assertIsDisplayed()
         rule.onNodeWithText("End and start").performClick()
         assertEquals("g1" to GameKinds.TICTACTOE, endedAndStarted)
+    }
+
+    @Test
+    fun picker_remembersTheLastChoices_afterClosing() {
+        var show by mutableStateOf(true)
+        var started: com.risaina.app.core.data.GameStartOptions? = null
+        rule.setContent {
+            RisainaTheme {
+                // Held outside the sheet, as MessagesScreen does.
+                var choices by remember { mutableStateOf(GamePickerChoices()) }
+                if (show) {
+                    GamePickerSheet(
+                        catalog = GameRepository.DEFAULT_CATALOG, openGame = null, myId = me, partner = "Bea",
+                        startingKind = null, choices = choices, onChoicesChange = { choices = it },
+                        onStart = { started = it }, onEndAndStart = { _, _ -> }, onEndOpen = {}, onGoTo = {}, onDismiss = { show = false },
+                    )
+                }
+            }
+        }
+        rule.onNodeWithText("Trivia duel").performScrollTo().performClick()
+        rule.onNodeWithText("History").performScrollTo().performClick()
+        rule.runOnIdle { show = false }
+        rule.runOnIdle { show = true }
+        rule.onNodeWithText("Let's play").performScrollTo().performClick()
+        assertEquals(GameKinds.TRIVIA, started?.kind)
+        assertEquals(23, started?.category)
     }
 
     @Test

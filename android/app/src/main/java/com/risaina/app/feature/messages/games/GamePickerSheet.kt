@@ -27,10 +27,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +52,36 @@ import com.risaina.app.core.network.GameDto
 import com.risaina.app.core.network.GameKindDto
 
 /**
+ * The picker's last choices. The screen holds them (in rememberSaveable, outside the sheet), so
+ * they outlast the sheet closing: "another round, same settings" is one tap for the session.
+ */
+data class GamePickerChoices(
+    val kind: String = GameKinds.TICTACTOE,
+    val withPrize: Boolean = true,
+    /** Trivia category id, or -1 for any. */
+    val category: Int = -1,
+    /** Trivia difficulty, or "" for any. */
+    val difficulty: String = "",
+    val deck: String = "mix",
+) {
+    /** What starting [k] with these choices asks for. An older server ([legacy]) takes no options. */
+    fun startOptions(k: GameKindDto, legacy: Boolean) = GameStartOptions(
+        kind = k.kind,
+        justForFun = !withPrize && k.competitive && !legacy,
+        category = category.takeIf { it >= 0 },
+        difficulty = difficulty.ifEmpty { null },
+        deck = deck.takeIf { it != "mix" },
+    )
+
+    companion object {
+        val Saver: Saver<GamePickerChoices, Any> = listSaver<GamePickerChoices, Any>(
+            save = { listOf(it.kind, it.withPrize, it.category, it.difficulty, it.deck) },
+            restore = { GamePickerChoices(it[0] as String, it[1] as Boolean, it[2] as Int, it[3] as String, it[4] as String) },
+        )
+    }
+}
+
+/**
  * Pick a game and its options. One game can be open at a time, so with one going the sheet says so
  * up front, and starting another first asks to end it.
  */
@@ -62,31 +92,21 @@ fun GamePickerSheet(
     myId: String?,
     partner: String,
     startingKind: String?,
+    choices: GamePickerChoices,
+    onChoicesChange: (GamePickerChoices) -> Unit,
     onStart: (GameStartOptions) -> Unit,
     onEndAndStart: (String, GameStartOptions) -> Unit,
     onEndOpen: (String) -> Unit,
     onGoTo: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // The last choices are kept for the session, so "another round, same settings" is one tap.
-    var kind by rememberSaveable { mutableStateOf(GameKinds.TICTACTOE) }
-    var withPrize by rememberSaveable { mutableStateOf(true) }
-    var category by rememberSaveable { mutableIntStateOf(-1) } // -1 = any
-    var difficulty by rememberSaveable { mutableStateOf("") } // "" = any
-    var deck by rememberSaveable { mutableStateOf("mix") }
     var confirm by remember { mutableStateOf<GameStartOptions?>(null) }
     var confirmEndOnly by remember { mutableStateOf(false) }
 
     val kinds = catalog?.kinds.orEmpty()
-    val selected = kinds.firstOrNull { it.kind == kind } ?: kinds.firstOrNull()
+    val selected = kinds.firstOrNull { it.kind == choices.kind } ?: kinds.firstOrNull()
     val legacy = catalog?.legacyServer == true
-    fun options(k: GameKindDto) = GameStartOptions(
-        kind = k.kind,
-        justForFun = !withPrize && k.competitive && !legacy,
-        category = category.takeIf { it >= 0 },
-        difficulty = difficulty.ifEmpty { null },
-        deck = deck.takeIf { it != "mix" },
-    )
+    fun options(k: GameKindDto) = choices.startOptions(k, legacy)
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(horizontal = 20.dp).navigationBarsPadding().verticalScroll(rememberScrollState())) {
@@ -112,13 +132,13 @@ fun GamePickerSheet(
                 CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(24.dp))
             } else {
                 kinds.forEach { k ->
-                    KindTile(k, selected?.kind == k.kind) { kind = k.kind }
+                    KindTile(k, selected?.kind == k.kind) { onChoicesChange(choices.copy(kind = k.kind)) }
                     if (selected?.kind == k.kind && !legacy) {
                         KindOptions(
-                            k, catalog, withPrize = withPrize, onPrize = { withPrize = it },
-                            category = category, onCategory = { category = it },
-                            difficulty = difficulty, onDifficulty = { difficulty = it },
-                            deck = deck, onDeck = { deck = it },
+                            k, catalog, withPrize = choices.withPrize, onPrize = { onChoicesChange(choices.copy(withPrize = it)) },
+                            category = choices.category, onCategory = { onChoicesChange(choices.copy(category = it)) },
+                            difficulty = choices.difficulty, onDifficulty = { onChoicesChange(choices.copy(difficulty = it)) },
+                            deck = choices.deck, onDeck = { onChoicesChange(choices.copy(deck = it)) },
                         )
                     }
                     Spacer(Modifier.height(8.dp))
