@@ -5,6 +5,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.data.SosRepository
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.location.LiveLocationController
@@ -46,6 +47,7 @@ class SafetyLifecycle @Inject constructor(
     private val sessionStore: SessionStore,
     private val sosRepository: SosRepository,
     private val syncManager: dagger.Lazy<EventSyncManager>,
+    private val notifier: SafetyNotifier,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -64,7 +66,10 @@ class SafetyLifecycle @Inject constructor(
                     launch { sosRepository.refresh() }
                 }
                 syncManager.get().socketState.map { it == SocketState.LIVE }.distinctUntilChanged().collect { live ->
-                    if (live) liveRepo.refresh()
+                    // A share the server purged without an event (12 h with no fix: the partner's
+                    // phone died) must not keep saying "is sharing": its notification goes once the
+                    // server confirms there is no partner session.
+                    if (live && liveRepo.refresh() is AppResult.Success && liveRepo.state.value.partner == null) notifier.cancelPartnerSharing()
                 }
             }
         }
@@ -84,6 +89,8 @@ class SafetyLifecycle @Inject constructor(
     private fun onAccountOrCoupleGone() {
         liveController.stopLocal()
         liveRepo.clear()
+        // No location.stopped comes after an unlink (the server purges the session silently).
+        notifier.cancelPartnerSharing()
         alarm.stopAll()
         sosRepository.clear()
         localState.clear()

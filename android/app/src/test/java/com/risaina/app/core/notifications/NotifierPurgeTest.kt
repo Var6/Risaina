@@ -21,6 +21,22 @@ class NotifierPurgeTest {
         assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.PING_NOTIFICATION_ID, null))
     }
 
+    @Test fun thePartnersLiveLocationAndSosNoticesGo() {
+        // "Raina is sharing their live location" has no timeout for "until I turn it off", and an
+        // unlink purges the session without a location.stopped event.
+        val loc = com.risaina.app.core.safety.SafetyNotifier.PARTNER_LOCATION_ID
+        assertTrue(RisainaNotifier.clearedOnPurge(loc, NotificationChannels.PARTNER_LOCATION))
+        assertTrue(RisainaNotifier.clearedOnPurge(loc, NotificationChannels.PARTNER_LOCATION_QUIET))
+        assertTrue(RisainaNotifier.clearedOnPurge(loc, null))
+        assertTrue(RisainaNotifier.clearedOnPurge(SosAlert.MISSED_ID, NotificationChannels.SOS_UPDATES))
+        assertTrue(RisainaNotifier.clearedOnPurge(SosAlert.SAFE_ID, NotificationChannels.SOS_UPDATES))
+        assertTrue(RisainaNotifier.clearedOnPurge(SosAlert.RESPOND_ID, NotificationChannels.SOS_UPDATES))
+        // This person's own "couldn't be sent, please call" advice stays.
+        assertFalse(RisainaNotifier.clearedOnPurge(SosAlert.NOT_SENT_ID, NotificationChannels.SOS_UPDATES))
+        // So does their own "You're sharing your location" service notification.
+        assertFalse(RisainaNotifier.clearedOnPurge(com.risaina.app.core.location.LiveLocationService.NOTIFICATION_ID, NotificationChannels.LOCATION_SHARING))
+    }
+
     @Test fun aRingingSosStays() {
         assertFalse(RisainaNotifier.clearedOnPurge(SosAlert.ID, "sos"))
         assertFalse(RisainaNotifier.clearedOnPurge(SosAlert.ID, "sos_dnd"))

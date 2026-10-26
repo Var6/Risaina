@@ -77,7 +77,8 @@ class RisainaNotifier @Inject constructor(
     fun clearAllPartnerNotifications() {
         clearPartnerAlerts()
         val nm = NotificationManagerCompat.from(context)
-        nm.cancel(TEST_NOTIFICATION_ID)
+        // The known ids first, without relying on activeNotifications (which can fail or lag).
+        PARTNER_IDS.forEach { nm.cancel(it) }
         runCatching {
             context.getSystemService(android.app.NotificationManager::class.java)?.activeNotifications
                 ?.filter { clearedOnPurge(it.id, it.notification.channelId) }
@@ -270,11 +271,23 @@ class RisainaNotifier @Inject constructor(
         /** One notification per chat message; the quick and the detailed post share it. */
         fun messageNotificationId(messageId: String): Int = messageId.hashCode()
 
+        /**
+         * The safety stream's "is sharing their live location" has no timeout for an "until I turn it
+         * off" share, and an unlink purges the session without a location.stopped event, so it must
+         * go with the rest. The partner's missed / "safe now" / "tap to respond" SOS notices go too.
+         * Not "Your SOS couldn't be sent" (SosAlert.NOT_SENT_ID): that one is this person's own
+         * emergency advice, not something the partner sent.
+         */
         private val PARTNER_CHANNELS = setOf(
             NotificationChannels.PINGS, NotificationChannels.PINGS_QUIET,
             NotificationChannels.MESSAGES, NotificationChannels.MESSAGES_QUIET, WIDGET_CHANNEL,
+            NotificationChannels.PARTNER_LOCATION, NotificationChannels.PARTNER_LOCATION_QUIET,
         )
-        private val PARTNER_IDS = setOf(PING_NOTIFICATION_ID, GAME_NOTIFICATION_ID, TEST_NOTIFICATION_ID, WIDGET_NOTIFICATION_ID)
+        private val PARTNER_IDS = setOf(
+            PING_NOTIFICATION_ID, GAME_NOTIFICATION_ID, TEST_NOTIFICATION_ID, WIDGET_NOTIFICATION_ID,
+            com.risaina.app.core.safety.SafetyNotifier.PARTNER_LOCATION_ID,
+            SosAlert.MISSED_ID, SosAlert.SAFE_ID, SosAlert.RESPOND_ID,
+        )
 
         /**
          * Whether [clearAllPartnerNotifications] removes a showing notification: anything on a
