@@ -7,6 +7,7 @@ import type {
   GameDoc,
   InvitationDoc,
   ListDoc,
+  LiveLocationDoc,
   MediaDoc,
   MemoryDoc,
   MessageDoc,
@@ -37,6 +38,7 @@ export const COLLECTION_NAMES = {
   widgetBoards: 'widgetBoards',
   sos: 'sos',
   games: 'games',
+  liveLocations: 'liveLocations', // safety: one overwrite document per sharer, never a history
 } as const;
 
 export interface Collections {
@@ -57,6 +59,7 @@ export interface Collections {
   widgetBoards: Collection<WidgetBoardDoc>;
   sos: Collection<SosDoc>;
   games: Collection<GameDoc>;
+  liveLocations: Collection<LiveLocationDoc>;
 }
 
 export function getCollections(db: Db): Collections {
@@ -78,5 +81,6 @@ export function getCollections(db: Db): Collections {
     widgetBoards: db.collection<WidgetBoardDoc>(COLLECTION_NAMES.widgetBoards),
     sos: db.collection<SosDoc>(COLLECTION_NAMES.sos),
     games: db.collection<GameDoc>(COLLECTION_NAMES.games),
+    liveLocations: db.collection<LiveLocationDoc>(COLLECTION_NAMES.liveLocations),
   };
 }

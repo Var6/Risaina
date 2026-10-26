@@ -145,6 +145,7 @@ export class MeService {
     await this.repo.deletePasswordResets(user._id);
     await this.repo.deleteEmailVerifications(user._id);
     await this.repo.deleteWidgetBoards(user._id);
+    await this.ctx.db.liveLocations.deleteMany({ userId: user._id }); // safety: any session left over
     await this.repo.anonymise(user._id, now);
     await this.auth.revokeAllForUser(user._id, 'account_deleted');
   }

@@ -9,6 +9,7 @@ import { createPushService } from './services/push/index.js';
 import { createStorage } from './services/storage/index.js';
 import { CleanupWorker } from './workers/cleanup.js';
 import { OutboxWorker } from './workers/outbox.js';
+import { SosRepushWorker } from './workers/sos-repush.js';
 
 async function main(): Promise<void> {
   let env: ReturnType<typeof loadEnv>;
@@ -64,10 +65,12 @@ async function main(): Promise<void> {
     viewOnceUnopenedDays: env.viewOnce.unopenedDays,
   });
   ctx.events.onEmitted(() => outbox.wake());
+  const sosRepush = new SosRepushWorker(db, push, now, logger);
 
   await app.listen({ host: env.host, port: env.port });
   outbox.start();
   cleanup.start();
+  sosRepush.start();
   logger.info({ host: env.host, port: env.port, docs: `${env.publicBaseUrl}/docs` }, 'listening');
 
   let shuttingDown = false;
@@ -81,7 +84,7 @@ async function main(): Promise<void> {
     }, 15_000);
     forceExit.unref();
     try {
-      await Promise.all([outbox.stop(), cleanup.stop()]);
+      await Promise.all([outbox.stop(), cleanup.stop(), sosRepush.stop()]);
       ctx.hub.closeAll();
       await app.close();
       await mongo.client.close();

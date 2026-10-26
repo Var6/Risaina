@@ -3,6 +3,7 @@ import type {
   EventDoc,
   GameDoc,
   ListDoc,
+  LiveLocationDoc,
   MediaDoc,
   MemoryDoc,
   MessageDoc,
@@ -20,6 +21,8 @@ import type {
   GameDto,
   GameEventViewDto,
   ListDto,
+  LiveLocationDto,
+  LiveLocationSessionDto,
   MediaDto,
   MemoryDto,
   MessageDto,
@@ -222,6 +225,45 @@ export function toSosDto(s: SosDoc): SosDto {
     message: s.message,
     createdAt: iso(s.createdAt),
     acknowledgedAt: isoOrNull(s.acknowledgedAt),
+    panic: s.panic === true,
+    deliveredAt: isoOrNull(s.deliveredAt ?? null),
+    resolvedAt: isoOrNull(s.resolvedAt ?? null),
+    delivery: s.delivery
+      ? {
+          alarmMuted: s.delivery.alarmMuted ?? null,
+          fgsStarted: s.delivery.fgsStarted ?? null,
+          notificationsEnabled: s.delivery.notificationsEnabled ?? null,
+          interruptionFilter: s.delivery.interruptionFilter ?? null,
+        }
+      : null,
+  };
+}
+
+export function toLiveLocationSessionDto(l: LiveLocationDoc): LiveLocationSessionDto {
+  return {
+    sessionId: l._id.toHexString(),
+    userId: l.userId.toHexString(),
+    reason: l.reason,
+    sosId: l.sosId ? l.sosId.toHexString() : null,
+    startedAt: iso(l.startedAt),
+    expiresAt: isoOrNull(l.expiresAt),
+    updatedAt: iso(l.updatedAt),
+  };
+}
+
+export function toLiveLocationDto(l: LiveLocationDoc): LiveLocationDto {
+  return {
+    ...toLiveLocationSessionDto(l),
+    lastSeenAt: iso(l.lastSeenAt),
+    fix: l.fix
+      ? {
+          lat: l.fix.lat,
+          lng: l.fix.lng,
+          accuracyM: Math.round(l.fix.accuracyM),
+          at: iso(l.fix.at),
+          batteryPct: l.fix.batteryPct,
+        }
+      : null,
   };
 }
 

@@ -100,6 +100,14 @@ export const INDEXES: Record<string, IndexDescription[]> = {
   [COLLECTION_NAMES.sos]: [
     { key: { coupleId: 1, createdAt: -1 }, name: 'coupleId_createdAt_desc' }, // GET /sos
     { key: { senderId: 1, createdAt: -1 }, name: 'senderId_createdAt_desc' }, // 3 per 10 min limit
+    // safety: SosRepushWorker scans recent undelivered alerts; retried POST /sos returns the first
+    { key: { createdAt: -1 }, name: 'createdAt_desc' },
+    {
+      key: { senderId: 1, idempotencyKey: 1 },
+      unique: true,
+      name: 'sender_idempotency_unique',
+      partialFilterExpression: { idempotencyKey: { $type: 'string' } },
+    },
   ],
   [COLLECTION_NAMES.games]: [
     { key: { coupleId: 1, createdAt: -1 }, name: 'coupleId_createdAt_desc' }, // GET /games, export
@@ -110,6 +118,19 @@ export const INDEXES: Record<string, IndexDescription[]> = {
       name: 'coupleId_open_unique',
       partialFilterExpression: { open: true },
     },
+  ],
+  [COLLECTION_NAMES.liveLocations]: [
+    // one live session per sharer per couple; stopped tombstones (live: false) do not count
+    {
+      key: { coupleId: 1, userId: 1 },
+      unique: true,
+      name: 'coupleId_userId_live_unique',
+      partialFilterExpression: { live: true },
+    },
+    { key: { userId: 1 }, name: 'userId' }, // DELETE without a couple, sign-out, account deletion
+    { key: { coupleId: 1 }, name: 'coupleId' }, // GET for both members, unlink purge
+    // TTL backstop: timed expiry, 12 h without a check-in, and the 10-minute tombstone
+    { key: { purgeAt: 1 }, name: 'purgeAt_ttl', expireAfterSeconds: 0 },
   ],
   [COLLECTION_NAMES.events]: [
     { key: { coupleId: 1, seq: 1 }, unique: true, name: 'coupleId_seq_unique' }, // sync replay, GET /events

@@ -59,6 +59,7 @@ const SCOPED = [
   'sos',
   'invitations',
   'media',
+  'liveLocations',
 ] as const;
 
 async function counts(coupleId: ObjectId): Promise<Record<string, number>> {
@@ -98,6 +99,12 @@ async function seed(x: Session, y: Session): Promise<{ coupleId: ObjectId; keys:
   ).toBe(200);
   expect((await req(y, 'POST', '/sos', { message: 'call me' })).statusCode).toBe(201);
   expect((await req(x, 'POST', '/games', { kind: 'rps' })).statusCode).toBe(201);
+  const sharing = await req(x, 'POST', '/location/sharing', {
+    sessionId: new ObjectId().toHexString(),
+    mode: 'until_off',
+    fix: { lat: 12.97, lng: 77.59, accuracyM: 20, ageMs: 0 },
+  });
+  expect(sharing.statusCode).toBe(201);
   const avatar = await uploadPhoto(t, x, undefined, 'avatar');
   expect((await req(x, 'PATCH', '/me', { avatarMediaId: avatar })).statusCode).toBe(200);
   const wallpaper = await uploadPhoto(t, y, undefined, 'wallpaper');

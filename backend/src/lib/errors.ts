@@ -27,6 +27,7 @@ export type ErrorCode =
   | 'game_in_progress'
   | 'already_moved'
   | 'invalid_game_state'
+  | 'location_not_sharing'
   | 'internal';
 
 export class AppError extends Error {
@@ -104,5 +105,7 @@ export const errors = {
     new AppError(409, 'already_moved', 'You already moved this round', { details: { game } }),
   invalidGameState: (message: string, game: unknown) =>
     new AppError(409, 'invalid_game_state', message, { details: { game } }),
+  locationNotSharing: (message = 'Location sharing has ended') =>
+    new AppError(409, 'location_not_sharing', message),
   internal: (message = 'Internal server error') => new AppError(500, 'internal', message),
 };
