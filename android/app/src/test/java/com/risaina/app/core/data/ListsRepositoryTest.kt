@@ -25,6 +25,7 @@ import io.ktor.http.content.OutgoingContent
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -48,6 +49,12 @@ class ListsRepositoryTest {
     /** The partner saves this many times right before each of our PATCHes lands. */
     private var partnerEditsFirst = 0
     private var sendConflictDetails = true
+    /** Runs while GET /lists is "on its way" (after the server answered, before the phone has it). */
+    private var duringGet: suspend () -> Unit = {}
+    /** The next POST makes the list and then the connection drops, so the phone never hears back. */
+    private var losePostReply = false
+    private val listsByKey = HashMap<String, String>()
+    private val postKeys = mutableListOf<String?>()
 
     private fun dto(id: String, version: Int, items: List<ListItemDto> = emptyList(), title: String = "Groceries", kind: String = "checklist", pinned: Boolean = false) =
         SharedListDto(id, "c", "me", null, title, kind, "", items, pinned, version, "2026-10-29T10:00:00.000Z", "2026-10-29T10:00:00.000Z")
@@ -60,12 +67,25 @@ class ListsRepositoryTest {
         fun notFound() = ok("""{"error":{"code":"not_found","message":"List not found"}}""", HttpStatusCode.NotFound)
         val body = when (val b = req.body) { is TextContent -> b.text; is OutgoingContent.ByteArrayContent -> b.bytes().decodeToString(); else -> null }
         when {
-            method == "GET" && path == "lists" -> ok(json.encodeToString(ListsResponse.serializer(), ListsResponse(server.values.toList())))
+            method == "GET" && path == "lists" -> {
+                val answer = json.encodeToString(ListsResponse.serializer(), ListsResponse(server.values.toList()))
+                duringGet()
+                ok(answer)
+            }
             method == "POST" && path == "lists" -> {
                 val r = json.parseToJsonElement(body!!).jsonObject
-                val created = dto("new", 1, title = r["title"]!!.jsonPrimitive.content, pinned = r["pinned"]?.jsonPrimitive?.content == "true")
+                val key = r["clientKey"]?.jsonPrimitive?.content
+                postKeys += key
+                val first = key?.let(listsByKey::get)
+                if (first != null) return@MockEngine server[first]?.let { ok(json.encodeToString(ListResponse.serializer(), ListResponse(it))) } ?: notFound()
+                val created = dto("new${server.size}", 1, title = r["title"]!!.jsonPrimitive.content, pinned = r["pinned"]?.jsonPrimitive?.content == "true")
                 server[created.id] = created
+                if (key != null) listsByKey[key] = created.id
+                if (losePostReply) { losePostReply = false; throw java.io.IOException("connection reset") }
                 ok(json.encodeToString(ListResponse.serializer(), ListResponse(created)), HttpStatusCode.Created)
+            }
+            method == "DELETE" && path.startsWith("lists/") -> {
+                server.remove(path.removePrefix("lists/"))?.let { respond("", HttpStatusCode.NoContent) } ?: notFound()
             }
             method == "GET" && path.startsWith("lists/") -> server[path.removePrefix("lists/")]?.let { ok(json.encodeToString(ListResponse.serializer(), ListResponse(it))) } ?: notFound()
             method == "PATCH" && path.startsWith("lists/") -> {
@@ -173,6 +193,60 @@ class ListsRepositoryTest {
         assertEquals(listOf("GET lists", "POST lists"), requests)
         assertEquals(ListLimits.TODO_LIST_TITLE, made.title)
         assertTrue(made.pinned)
+        assertTrue(postKeys.single()!!.startsWith("todos-"))
+    }
+
+    @Test fun `two quick Add to to-dos make one To-dos list`() = runTest {
+        val a = async { repo.ensureTodoList() }
+        val b = async { repo.ensureTodoList() }
+        assertEquals(a.await().getOrNull()?.id, b.await().getOrNull()?.id)
+        assertEquals(1, requests.count { it == "POST lists" })
+        assertEquals(1, server.size)
+    }
+
+    @Test fun `a To-dos create whose reply was lost is retried with the same key and makes one list`() = runTest {
+        losePostReply = true
+        val made = repo.ensureTodoList()
+        assertTrue(made.isSuccess)
+        assertEquals(2, postKeys.size)
+        assertEquals(postKeys[0], postKeys[1])
+        assertEquals(1, server.size)
+    }
+
+    @Test fun `a To-dos retry answered 404 means it was made and deleted since, so it stops`() = runTest {
+        losePostReply = true
+        // The partner deletes the list between the lost reply and the retry.
+        val key = async { repo.ensureTodoList() }
+        while (server.isEmpty()) kotlinx.coroutines.yield()
+        server.clear()
+        val r = key.await()
+        assertTrue(r.errorOrNull() is AppError.NotFound)
+        assertEquals(2, postKeys.size)
+    }
+
+    @Test fun `a list deleted while GET lists was on its way stays deleted`() = runTest {
+        seed(dto("x", 2))
+        seed(dto("y", 1))
+        duringGet = { repo.forget("x") } // the partner's list.deleted is applied mid-GET
+        assertTrue(repo.refresh().isSuccess)
+        assertNull(dao.byId("x"))
+        assertEquals(1, dao.byId("y")!!.version)
+    }
+
+    @Test fun `deleting a list keeps a later GET from bringing it back, and a list already gone counts as deleted`() = runTest {
+        seed(dto("x", 2))
+        duringGet = { assertTrue(repo.delete("x").isSuccess) }
+        repo.refresh()
+        assertNull(dao.byId("x"))
+        seed(dto("z", 1)); server.remove("z")
+        assertTrue(repo.delete("z").isSuccess)
+        assertNull(dao.byId("z"))
+    }
+
+    @Test fun `refreshIfStale fetches at most once a minute`() = runTest {
+        repo.refreshIfStale()
+        repo.refreshIfStale()
+        assertEquals(listOf("GET lists"), requests)
     }
 
     @Test fun `convert and get by id store the server's copy`() = runTest {

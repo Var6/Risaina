@@ -214,14 +214,18 @@ interface ListDao {
         return true
     }
 
+    suspend fun syncFromServer(items: List<ListEntity>, requestedAtMillis: Long) = syncFromServer(items, requestedAtMillis, emptySet())
+
     /**
      * Applies a GET /lists answer started at [requestedAtMillis] (this phone's clock). Each list is
      * written only if newer; a list missing from the answer is deleted only when it was written before
      * the GET started, because one created or saved while the GET was on its way is missing too.
+     * [deletedMeanwhile]: lists deleted while the GET was on its way (here, or by a list.deleted
+     * event). The answer still has them, and with no row left upsertIfNewer would bring them back.
      */
     @Transaction
-    suspend fun syncFromServer(items: List<ListEntity>, requestedAtMillis: Long) {
-        items.forEach { upsertIfNewer(it) }
+    suspend fun syncFromServer(items: List<ListEntity>, requestedAtMillis: Long, deletedMeanwhile: Set<String>) {
+        items.forEach { if (it.id !in deletedMeanwhile) upsertIfNewer(it) }
         val returned = items.mapTo(HashSet()) { it.id }
         idsSyncedBefore(requestedAtMillis).filterNot { it in returned }.forEach { delete(it) }
     }

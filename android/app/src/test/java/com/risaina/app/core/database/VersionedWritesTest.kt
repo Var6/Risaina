@@ -50,6 +50,15 @@ class VersionedWritesTest {
         assertEquals(1, dao.byId("new")!!.version)
     }
 
+    @Test fun `a list deleted while the GET was on its way is not brought back by it`() = runTest {
+        val dao = FakeListDao()
+        dao.upsert(list("kept", 1, syncedAt = 100))
+        // "gone" was in Room, then deleted after the GET started; the answer still has it.
+        dao.syncFromServer(listOf(list("gone", 3, syncedAt = 300), list("kept", 1, syncedAt = 300)), requestedAtMillis = 200, deletedMeanwhile = setOf("gone"))
+        assertNull(dao.byId("gone"))
+        assertEquals(setOf("kept"), dao.rows.value.keys)
+    }
+
     @Test fun `a list the GET returned is never deleted even if Room kept its newer copy`() = runTest {
         val dao = FakeListDao()
         dao.upsert(list("a", 5, syncedAt = 10))
