@@ -64,6 +64,19 @@ const TABLE: [
   ['calendar.updated', { notify: false }, 'normal', false],
   ['calendar.updated', { notify: true }, 'normal', false],
   ['calendar.deleted', {}, 'normal', false],
+  // Wake together: high only when the server set notify (the partner's phone posts a notice).
+  ['alarm.created', {}, 'normal', false],
+  ['alarm.created', { notify: false }, 'normal', false],
+  ['alarm.created', { notify: true }, 'high', false],
+  ['alarm.created', { notify: 'true' }, 'normal', false],
+  ['alarm.updated', { change: 'edited', notify: false }, 'normal', false],
+  ['alarm.updated', { change: 'edited', notify: true }, 'high', false],
+  ['alarm.updated', { change: 'enabled', notify: true }, 'high', false],
+  ['alarm.updated', { change: 'member', notify: false }, 'normal', false],
+  ['alarm.deleted', {}, 'normal', false],
+  ['alarm.deleted', { notify: true }, 'normal', false],
+  ['alarm.woke', {}, 'normal', false],
+  ['alarm.woke', { notify: true }, 'normal', false],
   ['something.new', {}, 'normal', false],
   // Games: by action.
   ['game.updated', { action: 'created' }, 'high', false],
@@ -106,7 +119,9 @@ describe('pushPolicyFor', () => {
    * deprioritise it. Mirrors the app: EventReducer.kt maps these to Incoming items that
    * RisainaNotifier.kt posts (game.updated: only the notifying actions; widget.updated: the quiet
    * "updated your widget"; sos.*: SosAlert; location.started: SafetyNotifier's "is sharing", which
-   * is posted for every share except a panic linked to its SOS, pushed normal above).
+   * is posted for every share except a panic linked to its SOS, pushed normal above; alarm.created /
+   * alarm.updated: the wake notices "<name> set Wake together …", only with notify, which the server
+   * sets only for a phone that has reported for that alarm, i.e. runs a build that posts them).
    */
   const CLIENT_NOTIFIES: ReadonlySet<string> = new Set([
     'ping.created',
@@ -117,6 +132,8 @@ describe('pushPolicyFor', () => {
     'sos.raised',
     'sos.resolved',
     'location.started',
+    'alarm.created',
+    'alarm.updated',
   ]);
 
   it('only pushes high what the app turns into a visible notification', () => {

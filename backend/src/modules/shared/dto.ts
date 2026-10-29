@@ -1,4 +1,5 @@
 import type {
+  AlarmDoc,
   CalendarEntryDoc,
   CoupleDoc,
   EventDoc,
@@ -21,6 +22,7 @@ import { iso, isoOrNull } from '../../lib/time.js';
 import { OPENTDB_ATTRIBUTION } from '../games/catalog.js';
 import { bothFinished, requestedCategory } from '../games/rules/quiz.js';
 import type {
+  AlarmDto,
   CalendarEntryDto,
   CoupleDto,
   EventDto,
@@ -149,6 +151,43 @@ export function toCalendarEntryDto(e: CalendarEntryDoc): CalendarEntryDto {
     version: e.version,
     createdAt: iso(e.createdAt),
     updatedAt: iso(e.updatedAt),
+  };
+}
+
+export function toAlarmDto(a: AlarmDoc): AlarmDto {
+  return {
+    id: a._id.toHexString(),
+    coupleId: a.coupleId.toHexString(),
+    createdBy: a.createdBy.toHexString(),
+    updatedBy: a.updatedBy.toHexString(),
+    mode: a.mode,
+    label: a.label ?? null,
+    time: a.time,
+    timeZone: a.timeZone,
+    days: [...a.days],
+    onceAt: isoOrNull(a.onceAt),
+    enabled: a.enabled,
+    snoozeMinutes: a.snoozeMinutes,
+    version: a.version,
+    createdAt: iso(a.createdAt),
+    updatedAt: iso(a.updatedAt),
+    members: a.members.map((m) => ({
+      userId: m.userId.toHexString(),
+      ring: m.ring,
+      skips: (m.skips ?? []).map(iso),
+      ready: m.ready ?? null,
+      reason: m.reason ?? null,
+      armedFor: isoOrNull(m.armedFor),
+      reportedAt: isoOrNull(m.reportedAt),
+      lastWake: m.lastWake
+        ? {
+            occurrence: iso(m.lastWake.occurrence),
+            outcome: m.lastWake.outcome,
+            at: iso(m.lastWake.at),
+            snoozes: m.lastWake.snoozes ?? 0,
+          }
+        : null,
+    })),
   };
 }
 

@@ -61,6 +61,7 @@ const SCOPED = [
   'media',
   'liveLocations',
   'calendarEntries',
+  'alarms',
 ] as const;
 
 async function counts(coupleId: ObjectId): Promise<Record<string, number>> {
@@ -97,6 +98,10 @@ async function seed(x: Session, y: Session): Promise<{ coupleId: ObjectId; keys:
   );
   expect(
     (await req(x, 'POST', '/calendar', { kind: 'event', title: 'Dinner', date: '2026-11-14', time: '20:00' }))
+      .statusCode,
+  ).toBe(201);
+  expect(
+    (await req(y, 'POST', '/alarms', { time: '06:30', timeZone: 'Asia/Kolkata', days: [1, 2, 3, 4, 5] }))
       .statusCode,
   ).toBe(201);
   expect(

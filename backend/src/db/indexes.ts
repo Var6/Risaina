@@ -155,6 +155,8 @@ export const INDEXES: Record<string, IndexDescription[]> = {
       partialFilterExpression: { 'source.messageId': { $type: 'objectId' } },
     },
   ],
+  // GET /alarms (oldest first), the 10-per-couple count, export, unlink purge
+  [COLLECTION_NAMES.alarms]: [{ key: { coupleId: 1, createdAt: 1 }, name: 'coupleId_createdAt' }],
   [COLLECTION_NAMES.events]: [
     { key: { coupleId: 1, seq: 1 }, unique: true, name: 'coupleId_seq_unique' }, // sync replay, GET /events
     { key: { 'push.state': 1, 'push.leaseUntil': 1 }, name: 'push_state_leaseUntil' }, // outbox worker lease

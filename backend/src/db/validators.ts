@@ -646,6 +646,76 @@ export const VALIDATORS: Record<string, Document> = {
       },
     },
   },
+  // Wake together: a new collection, created with this validator at boot. Like calendarEntries: no
+  // enums, no additionalProperties, and only the member fields every build writes are required.
+  [COLLECTION_NAMES.alarms]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: [
+        'coupleId',
+        'createdBy',
+        'updatedBy',
+        'mode',
+        'time',
+        'timeZone',
+        'days',
+        'onceAt',
+        'enabled',
+        'snoozeMinutes',
+        'version',
+        'createdAt',
+        'updatedAt',
+        'members',
+      ],
+      properties: {
+        coupleId: objectId,
+        createdBy: objectId,
+        updatedBy: objectId,
+        mode: code,
+        label: { bsonType: ['string', 'null'], maxLength: 40 },
+        time: hhmm,
+        timeZone: { bsonType: 'string', minLength: 1, maxLength: 64 },
+        days: {
+          bsonType: 'array',
+          maxItems: 7,
+          items: { bsonType: ['int', 'long', 'double'], minimum: 1, maximum: 7 },
+        },
+        onceAt: nullableDate,
+        enabled: bool,
+        snoozeMinutes: { bsonType: ['int', 'long', 'double'], minimum: 1 },
+        version: { bsonType: ['int', 'long', 'double'], minimum: 1 },
+        createdAt: date,
+        updatedAt: date,
+        members: {
+          bsonType: 'array',
+          maxItems: 2,
+          items: {
+            bsonType: 'object',
+            required: ['userId', 'ring'],
+            properties: {
+              userId: objectId,
+              ring: bool,
+              skips: { bsonType: 'array', maxItems: 31, items: date },
+              ready: { bsonType: ['bool', 'null'] },
+              reason: { bsonType: ['string', 'null'], maxLength: 32 },
+              armedFor: nullableDate,
+              reportedAt: nullableDate,
+              lastWake: {
+                bsonType: ['object', 'null'],
+                required: ['occurrence', 'outcome', 'at'],
+                properties: {
+                  occurrence: date,
+                  outcome: code,
+                  at: date,
+                  snoozes: { bsonType: ['int', 'long', 'double'], minimum: 0 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
   [COLLECTION_NAMES.events]: {
     $jsonSchema: {
       bsonType: 'object',

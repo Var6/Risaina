@@ -1,6 +1,7 @@
 import type { ObjectId } from 'mongodb';
 import type { Collections } from '../../db/collections.js';
 import type {
+  AlarmDoc,
   CalendarEntryDoc,
   CoupleDoc,
   GameDoc,
@@ -154,5 +155,9 @@ export class MeRepo {
       .sort({ date: 1, time: 1, _id: 1 })
       .limit(limit)
       .toArray();
+  }
+
+  alarms(coupleId: ObjectId, limit: number): Promise<AlarmDoc[]> {
+    return this.db.alarms.find({ coupleId }).sort({ createdAt: 1, _id: 1 }).limit(limit).toArray();
   }
 }

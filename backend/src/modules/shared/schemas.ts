@@ -427,6 +427,60 @@ export const CalendarEntry = z
   })
   .meta({ id: 'CalendarEntry' });
 
+// --- Wake together (shared alarms) ---------------------------------------------------------
+
+export const AlarmWake = z
+  .object({
+    occurrence: IsoDateTime.meta({ description: 'The ring this is about' }),
+    outcome: z.string().meta({ description: "'up' or 'missed'. Clients must tolerate unknown values." }),
+    at: IsoDateTime,
+    snoozes: z.number().int(),
+  })
+  .meta({ id: 'AlarmWake' });
+
+export const AlarmMember = z
+  .object({
+    userId: IdString,
+    ring: z.boolean().meta({ description: 'false: this person turned it off on their phone' }),
+    skips: z.array(IsoDateTime).meta({ description: 'Occurrences this person skips' }),
+    ready: z
+      .boolean()
+      .nullable()
+      .meta({ description: "null: this person's phone never reported for this alarm (an older app)" }),
+    reason: z.string().nullable().meta({ description: "Why not ready, e.g. 'exact_alarms_off'" }),
+    armedFor: IsoDateTimeNullable.meta({ description: 'The next ring this phone has set' }),
+    reportedAt: IsoDateTimeNullable,
+    lastWake: AlarmWake.nullable(),
+  })
+  .meta({ id: 'AlarmMember' });
+
+export const Alarm = z
+  .object({
+    id: IdString,
+    coupleId: IdString,
+    createdBy: IdString,
+    updatedBy: IdString,
+    // A plain string in RESPONSES (tolerant reader). A client that does not know the mode must not
+    // schedule the alarm.
+    mode: z
+      .string()
+      .meta({ description: "'together'. Do not schedule an alarm whose mode you do not know." }),
+    label: z.string().nullable(),
+    time: z.string().meta({ description: 'HH:mm in timeZone' }),
+    timeZone: z
+      .string()
+      .meta({ description: 'IANA zone the time is anchored to (both phones ring together)' }),
+    days: z.array(z.number().int()).meta({ description: 'ISO weekdays, 1 = Monday … 7 = Sunday; [] = once' }),
+    onceAt: IsoDateTimeNullable.meta({ description: 'The single ring of a one-off alarm (days empty)' }),
+    enabled: z.boolean(),
+    snoozeMinutes: z.number().int(),
+    version: z.number().int().min(1),
+    createdAt: IsoDateTime,
+    updatedAt: IsoDateTime,
+    members: z.array(AlarmMember),
+  })
+  .meta({ id: 'Alarm' });
+
 // --- Widget board ---------------------------------------------------------------------------
 
 export const WidgetBoard = z
@@ -717,6 +771,7 @@ export type EventDto = z.infer<typeof Event>;
 export type ListDto = z.infer<typeof List>;
 export type ListItemDto = z.infer<typeof ListItem>;
 export type CalendarEntryDto = z.infer<typeof CalendarEntry>;
+export type AlarmDto = z.infer<typeof Alarm>;
 export type WidgetBoardDto = z.infer<typeof WidgetBoard>;
 export type SosDto = z.infer<typeof Sos>;
 export type ChatWallpaperDto = z.infer<typeof ChatWallpaper>;

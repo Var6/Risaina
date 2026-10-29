@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DisplayName } from '../auth/schemas.js';
 import {
+  Alarm,
   Birthday,
   CalendarEntry,
   CityInput,
@@ -85,5 +86,6 @@ export const ExportResponse = z.object({
     description: "My own live-location session while I share it (never my partner's); no history exists",
   }),
   calendar: z.array(CalendarEntry).meta({ description: 'Shared calendar entries, by date' }),
+  alarms: z.array(Alarm).meta({ description: 'Wake-together alarms, oldest first' }),
   truncated: z.boolean(),
 });

@@ -320,6 +320,11 @@ export const EVENT_TYPES = [
   'calendar.created',
   'calendar.updated',
   'calendar.deleted',
+  // wake together (shared alarms)
+  'alarm.created',
+  'alarm.updated',
+  'alarm.deleted',
+  'alarm.woke',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -412,6 +417,59 @@ export interface CalendarEntryDoc {
   version: number; // starts at 1, +1 per change (optimistic concurrency via expectedVersion)
   createdAt: Date;
   updatedAt: Date;
+}
+
+// --- Wake together (shared alarms) ---------------------------------------------------------
+
+/** 'together': both phones ring at the same instant (the time in the alarm's anchor zone). */
+export const ALARM_MODES = ['together'] as const;
+export type AlarmMode = (typeof ALARM_MODES)[number];
+export const WAKE_OUTCOMES = ['up', 'missed'] as const;
+export type WakeOutcome = (typeof WAKE_OUTCOMES)[number];
+/** What an alarm.updated changed: the shared rule, only `enabled`, or one member's own entry. */
+export type AlarmChange = 'edited' | 'enabled' | 'member';
+
+export interface AlarmWake {
+  occurrence: Date; // the ring this is about
+  outcome: WakeOutcome; // plain string in the validator
+  at: Date; // when the person got up (or the alarm gave up)
+  snoozes: number; // 0..20
+}
+
+/** One person's side of a shared alarm. Only that person changes it (PUT /alarms/:id/me, reports). */
+export interface AlarmMember {
+  userId: ObjectId;
+  ring: boolean; // false: "not on my phone"
+  skips: Date[]; // occurrences this person skips (recent and future only, at most 7)
+  ready: boolean | null; // null: this phone never reported for this alarm (e.g. an older app)
+  reason: string | null; // why not ready, a short code such as 'exact_alarms_off'
+  armedFor: Date | null; // the next ring this phone has set
+  reportedAt: Date | null;
+  lastWake: AlarmWake | null;
+}
+
+/**
+ * A "Wake together" alarm. The server only stores the rule; each phone rings its own copy. Every
+ * occurrence is `time` on one of `days` (ISO weekdays) in the anchor `timeZone`, or the single
+ * instant `onceAt` when `days` is empty, so both phones ring at the same moment.
+ */
+export interface AlarmDoc {
+  _id: ObjectId;
+  coupleId: ObjectId;
+  createdBy: ObjectId;
+  updatedBy: ObjectId;
+  mode: AlarmMode; // plain string in the validator
+  label: string | null; // ≤ 40
+  time: string; // HH:mm in timeZone
+  timeZone: string; // IANA anchor zone (the creator's)
+  days: number[]; // ISO weekdays 1–7, ascending, unique; [] = once
+  onceAt: Date | null; // set exactly when days is empty
+  enabled: boolean;
+  snoozeMinutes: number; // 1–30
+  version: number; // +1 per alarm.created/updated; wake and silent readiness reports keep it
+  createdAt: Date;
+  updatedAt: Date;
+  members: AlarmMember[]; // both couple members
 }
 
 /** What one partner shows on the OTHER partner's home-screen widgets (one per author per couple). */
