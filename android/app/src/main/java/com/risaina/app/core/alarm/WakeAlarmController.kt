@@ -235,6 +235,7 @@ class WakeAlarmController @Inject constructor(
      * time: from the receivers, the sync, the app coming to the foreground and process start.
      */
     fun rearm(now: Instant = Instant.now()) {
+        recoverRing(now)
         val result = scheduler.arm(now)
         for ((id, occurrence) in result.missed) {
             notifier.postMissed(store.current().alarm(id)?.let(WakeAlarmRules::label) ?: WakeAlarmRules.DEFAULT_LABEL, timeText(occurrence), phoneWasOff = true)
@@ -248,6 +249,35 @@ class WakeAlarmController @Inject constructor(
         // Rung at once; its fire() re-arms, and this ring is then handled, so this does not repeat.
         due.lastOrNull()?.let { (id, occurrence) -> fire(id, occurrence, now) }
         report()
+    }
+
+    /**
+     * The ring in the store after a reboot or a force-stop, which drop its timeout or snooze alarm
+     * and its notification: set again, rung again, or ended as missed (WakeAlarmRules.recovery).
+     * Otherwise "Ringing now" or "Snoozed" would stay on Home with nothing left to ring.
+     */
+    private fun recoverRing(now: Instant) {
+        var missed: WakeRing? = null
+        synchronized(store.lock) {
+            val ring = store.current().ring ?: return
+            when (WakeAlarmRules.recovery(ring, now)) {
+                RingRecovery.NONE -> Unit
+                RingRecovery.KEEP_TIMEOUT ->
+                    scheduler.setTimeout(ring.alarmId, ring.occurrence, ring.startedAt, ring.startedAt + if (ring.test) WakeAlarmRules.TEST_RING_MS else WakeAlarmRules.RING_MS)
+                RingRecovery.KEEP_SNOOZE -> ring.until?.let { until ->
+                    scheduler.setSnooze(ring.alarmId, ring.occurrence, until)
+                    // A low, silent channel: posting it again never makes a sound.
+                    notifier.postSnoozed(ring, timeText(Instant.ofEpochMilli(until)), partnerUpLine(ring))
+                }
+                RingRecovery.TIME_OUT -> timeout(ring.alarmId, ring.startedAt, now)
+                RingRecovery.RING_AGAIN -> snoozeFire(ring.alarmId, ring.occurrence, now)
+                RingRecovery.GIVE_UP -> {
+                    finish(ring, WakePhase.MISSED, now)
+                    if (!ring.test) missed = ring
+                }
+            }
+        }
+        missed?.let { notifier.postMissed(it.label, timeText(Instant.ofEpochMilli(it.occurrence)), phoneWasOff = true) }
     }
 
     /** A due ring that cannot ring now: handled here (it never rings later), noticed and reported missed. */

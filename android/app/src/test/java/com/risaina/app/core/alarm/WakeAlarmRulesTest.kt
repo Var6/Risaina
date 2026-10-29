@@ -195,6 +195,29 @@ class WakeAlarmRulesTest {
         assertEquals(ArmPlan(), WakeAlarmRules.plan(off, me(off), occ.plusSeconds(300), armed = occ, handled = null))
     }
 
+    @Test fun `a ring whose own alarms a reboot or force-stop dropped is set again, rung again or given up`() {
+        val start = Instant.parse("2026-10-29T01:00:00Z")
+        val ringing = WakeRing("a1", start.toEpochMilli(), WakePhase.RINGING, "Wake together", startedAt = start.toEpochMilli())
+        fun at(minutes: Long) = start.plusSeconds(minutes * 60)
+        assertEquals(RingRecovery.NONE, WakeAlarmRules.recovery(null, start))
+        assertEquals(RingRecovery.KEEP_TIMEOUT, WakeAlarmRules.recovery(ringing, at(5)))
+        assertEquals(RingRecovery.TIME_OUT, WakeAlarmRules.recovery(ringing, at(12)))
+        assertEquals(RingRecovery.GIVE_UP, WakeAlarmRules.recovery(ringing, at(41)))
+        // The test rings for a minute only.
+        assertEquals(RingRecovery.TIME_OUT, WakeAlarmRules.recovery(ringing.copy(test = true), at(2)))
+
+        val snoozed = ringing.copy(phase = WakePhase.SNOOZED, until = at(10).toEpochMilli())
+        assertEquals(RingRecovery.KEEP_SNOOZE, WakeAlarmRules.recovery(snoozed, at(9)))
+        assertEquals(RingRecovery.RING_AGAIN, WakeAlarmRules.recovery(snoozed, at(10)))
+        assertEquals(RingRecovery.RING_AGAIN, WakeAlarmRules.recovery(snoozed, at(39)))
+        assertEquals(RingRecovery.GIVE_UP, WakeAlarmRules.recovery(snoozed, at(41)))
+        assertEquals(RingRecovery.GIVE_UP, WakeAlarmRules.recovery(snoozed.copy(until = null), at(1)))
+
+        // Over: nothing to recover.
+        assertEquals(RingRecovery.NONE, WakeAlarmRules.recovery(ringing.copy(phase = WakePhase.UP), at(500)))
+        assertEquals(RingRecovery.NONE, WakeAlarmRules.recovery(ringing.copy(phase = WakePhase.MISSED), at(500)))
+    }
+
     // ---- words ------------------------------------------------------------------------------
 
     @Test fun `days, day and time in words`() {

@@ -95,6 +95,27 @@ class WakeAlarmControllerTest {
         verify { notifier.postMissed("Wake together", any(), phoneWasOff = false) }
     }
 
+    @Test fun `a snooze a force-stop dropped rings again, or ends as missed when far too late`() {
+        controller.fire("a1", occ, occ)
+        controller.snooze("a1", occ.plusSeconds(60))
+        val until = ring()!!.until!!
+        // A phone maker's force-stop: every alarm of the app is gone.
+        clock.set.clear()
+        // Opened again before the snooze ends: the snooze is set again.
+        controller.rearm(occ.plusSeconds(300))
+        assertEquals(until, clock.set[WakeActions.SNOOZE_FIRE to "a1"]!!.second)
+        clock.set.clear()
+        // Opened again a few minutes after it: it rings again now.
+        controller.rearm(Instant.ofEpochMilli(until).plusSeconds(120))
+        assertEquals(WakePhase.RINGING, ring()?.phase)
+        verify(exactly = 2) { notifier.postRing(any(), any(), any()) }
+        clock.set.clear()
+        // Then nothing until long after: missed, reported, and Home no longer says it rings.
+        controller.rearm(Instant.ofEpochMilli(until).plusSeconds(3 * 3600))
+        assertEquals(WakePhase.MISSED, ring()?.phase)
+        verify(exactly = 1) { notifier.postMissed("Wake together", any(), phoneWasOff = true) }
+    }
+
     @Test fun `an SOS always wins`() {
         sosState.value = mockk(relaxed = true)
         controller.fire("a1", occ, occ)

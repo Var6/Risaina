@@ -29,6 +29,24 @@ data class ArmPlan(
 /** What the receiver does with a FIRE for one occurrence. */
 enum class FireDecision { RING, MISSED, EARLY, IGNORE }
 
+/**
+ * What re-arming does about the ring in the store, whose own alarms (timeout, snooze) a reboot or a
+ * phone maker's force-stop may have dropped, together with its notification.
+ */
+enum class RingRecovery {
+    NONE,
+    /** Ringing, within its 10 minutes: its timeout is set again (the same alarm, so harmless if it is still there). */
+    KEEP_TIMEOUT,
+    /** Snoozed, not yet due: the snooze alarm and the "Snoozed until" notice are set again. */
+    KEEP_SNOOZE,
+    /** Its 10 minutes ran out and the timeout never came: handled as that timeout now. */
+    TIME_OUT,
+    /** The snooze ran out and its alarm never came: it rings again now. */
+    RING_AGAIN,
+    /** Over [WakeAlarmRules.LATE_LIMIT] past its time: it is not rung so late; missed. */
+    GIVE_UP,
+}
+
 /** One person's side of an alarm, as their chip on the Wake screen says it. */
 enum class MemberStatus { READY, OFF, NOT_SET_YET, PERMISSION_OFF, NOTIFICATIONS_OFF, NOT_READY, NEEDS_UPDATE, DONE }
 
@@ -137,6 +155,32 @@ object WakeAlarmRules {
                 member.lastWake?.occurrence != it
         } ?: return ArmPlan(next = next)
         return if (shouldRing(pending, now)) ArmPlan(ringNow = pending, next = next) else ArmPlan(missed = pending, next = next)
+    }
+
+    /** The ring in the store at [now], when its own alarms may be gone (see [RingRecovery]). */
+    fun recovery(ring: WakeRing?, now: Instant): RingRecovery {
+        if (ring == null || !ring.active) return RingRecovery.NONE
+        fun late(at: Long) = now.isAfter(Instant.ofEpochMilli(at).plus(LATE_LIMIT))
+        val t = now.toEpochMilli()
+        return when (ring.phase) {
+            WakePhase.RINGING -> {
+                val end = ring.startedAt + if (ring.test) TEST_RING_MS else RING_MS
+                when {
+                    t < end -> RingRecovery.KEEP_TIMEOUT
+                    late(end) -> RingRecovery.GIVE_UP
+                    else -> RingRecovery.TIME_OUT
+                }
+            }
+            WakePhase.SNOOZED -> {
+                val until = ring.until ?: return RingRecovery.GIVE_UP
+                when {
+                    t < until -> RingRecovery.KEEP_SNOOZE
+                    late(until) -> RingRecovery.GIVE_UP
+                    else -> RingRecovery.RING_AGAIN
+                }
+            }
+            else -> RingRecovery.NONE
+        }
     }
 
     /** The weekdays the rings fall on in [zone] (they can differ from the anchor's across the date line). */
