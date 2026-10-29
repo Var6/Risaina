@@ -216,10 +216,11 @@ private fun SectionLabel(text: String, top: androidx.compose.ui.unit.Dp) {
 
 @Composable
 private fun MonthHeader(month: YearMonth, onPrevious: () -> Unit, onNext: () -> Unit) {
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onPrevious) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous month") }
         Text(
-            month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())), style = MaterialTheme.typography.headlineSmall,
+            month.format(DateTimeFormatter.ofPattern("MMMM yyyy", locale)), style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center, modifier = Modifier.weight(1f),
         )
         IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next month") }
@@ -228,10 +229,11 @@ private fun MonthHeader(month: YearMonth, onPrevious: () -> Unit, onNext: () -> 
 
 @Composable
 private fun WeekdayLabels(first: java.time.DayOfWeek) {
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         (0L until 7L).forEach { i ->
             Text(
-                first.plus(i).getDisplayName(TextStyle.NARROW, Locale.getDefault()), style = MaterialTheme.typography.labelMedium,
+                first.plus(i).getDisplayName(TextStyle.NARROW, locale), style = MaterialTheme.typography.labelMedium,
                 color = Risaina.colors.textMuted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f),
             )
         }
