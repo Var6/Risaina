@@ -14,7 +14,10 @@ class NotificationGroupsTest {
     @Test fun everyKindHasItsOwnGroup() {
         assertEquals(NotificationGroups.ALL.size, NotificationGroups.ALL.toSet().size)
         assertEquals(
-            setOf("risaina_chat", "risaina_ping", "risaina_game", "risaina_widget", "risaina_system"),
+            setOf(
+                "risaina_chat", "risaina_ping", "risaina_game", "risaina_widget", "risaina_system",
+                "risaina_wake_alarm", "risaina_wake_status", "risaina_wake_missed", "risaina_wake_set", "risaina_wake_partner",
+            ),
             NotificationGroups.ALL.toSet(),
         )
     }

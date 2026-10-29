@@ -18,6 +18,16 @@ object NotificationGroups {
     const val WIDGET = "risaina_widget"
     /** Unlink and the test push. */
     const val SYSTEM = "risaina_system"
+    /** Wake together: the ringing alarm, like the SOS alarm's own group, so its full-screen launch is never bundled. */
+    const val WAKE_ALARM = "risaina_wake_alarm"
+    /** "Snoozed until 6:40" (ongoing). */
+    const val WAKE_STATUS = "risaina_wake_status"
+    /** "Missed: Wake together 6:30". */
+    const val WAKE_MISSED = "risaina_wake_missed"
+    /** "Raina set Wake together for 6:30 am…", with "Not on my phone". */
+    const val WAKE_SET = "risaina_wake_set"
+    /** "Raina is up too · 6:34". */
+    const val WAKE_PARTNER = "risaina_wake_partner"
 
-    val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM)
+    val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM, WAKE_ALARM, WAKE_STATUS, WAKE_MISSED, WAKE_SET, WAKE_PARTNER)
 }
