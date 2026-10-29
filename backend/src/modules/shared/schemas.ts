@@ -633,7 +633,13 @@ export const Event = z
     id: IdString,
     coupleId: IdString,
     seq: z.number().int().min(1),
-    type: EventType,
+    // A plain string in RESPONSES on purpose (tolerant reader): GET /events serializes through this
+    // schema, so an enum would answer 500 for the whole feed once the log holds a type this build
+    // does not know (a rollback after a newer build stored calendar.* or alarm.* events), stalling
+    // sync on both phones. The values on the wire are the same.
+    type: z.string().meta({
+      description: `Event type, e.g. ${EVENT_TYPES.slice(0, 3).join(', ')}. Clients must ignore types they do not know.`,
+    }),
     actorId: IdString,
     payload: z.record(z.string(), z.unknown()),
     createdAt: IsoDateTime,

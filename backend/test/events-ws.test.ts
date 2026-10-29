@@ -118,6 +118,41 @@ describe('events (HTTP)', () => {
     expect(new Set(allSeqs).size).toBe(allSeqs.length);
     expect(allSeqs[allSeqs.length - 1]).toBe(allSeqs.length);
   });
+
+  it('returns a stored event of a type this build does not know (tolerant reader, safe rollback)', async () => {
+    // e.g. calendar.* or alarm.* events written by a newer build, read after rolling back
+    const couple = await t.db.couples.findOneAndUpdate(
+      { _id: new ObjectId(coupleId) },
+      { $inc: { eventSeq: 1 } },
+      { returnDocument: 'after' },
+    );
+    await t.db.events.insertOne({
+      _id: new ObjectId(),
+      coupleId: new ObjectId(coupleId),
+      seq: couple!.eventSeq,
+      type: 'future.thing' as 'ping.created',
+      actorId: new ObjectId(a.user.id),
+      payload: { anything: true },
+      createdAt: new Date(),
+      push: {
+        state: 'skipped',
+        attempts: 0,
+        leaseUntil: null,
+        lastError: null,
+        skipReason: null,
+        sentAt: null,
+      },
+    });
+    const res = await t.app.inject({
+      method: 'GET',
+      url: `${API}/events?since=${couple!.eventSeq - 1}`,
+      headers: bearer(b),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().items).toEqual([
+      expect.objectContaining({ seq: couple!.eventSeq, type: 'future.thing', payload: { anything: true } }),
+    ]);
+  });
 });
 
 describe('websocket', () => {
