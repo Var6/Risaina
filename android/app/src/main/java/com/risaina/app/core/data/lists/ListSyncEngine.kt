@@ -77,8 +77,13 @@ data class EditorSnapshot(
     val loaded: Boolean,
     /** Why the list could not be opened (not on this phone and the server could not be asked). */
     val loadError: String? = null,
+    /** A new list's rows that took the server's ids when it was created: server id → the id they had here. */
+    val rowKeys: Map<String, String> = emptyMap(),
 ) {
     val isLocal: Boolean get() = ListSyncEngine.isLocal(listId)
+
+    /** A row's key on screen, the same before and after its list is created, so the row being typed in keeps focus. */
+    fun keyOf(rowId: String): String = rowKeys[rowId] ?: rowId
 }
 
 /** Queues ListSaveWorker (WorkManager), so unsent drafts go once the network is back, even after the app is closed. */
@@ -141,6 +146,9 @@ class ListSyncEngine @Inject constructor(
         val lastError: String? = null,
         val draftStored: Boolean = false,
         val loadError: String? = null,
+        /** Rows of a list made here: the id they had on this phone → the server's (and back, [rowKeys]). */
+        val rowAliases: Map<String, String> = emptyMap(),
+        val rowKeys: Map<String, String> = emptyMap(),
     ) {
         val dirty: Boolean get() = base != null && !ListWire.same(mine, base)
     }
@@ -192,6 +200,9 @@ class ListSyncEngine @Inject constructor(
 
     /** The open editor's current copy, newest keystroke included (the flow can lag behind it). */
     fun current(id: String): ListDoc? = sessions[resolve(id)]?.state?.value?.mine
+
+    /** A row's id now: the server's for a row of a new list that was created since the screen last drew it. */
+    fun rowId(listId: String, rowId: String): String = sessions[resolve(listId)]?.state?.value?.rowAliases?.get(rowId) ?: rowId
 
     /**
      * Applies an edit at once. [transform] works on the newest copy (rows by id), so an edit never
@@ -647,6 +658,7 @@ class ListSyncEngine @Inject constructor(
             cur.copy(
                 listId = dto.id, base = reply, baseVersion = dto.version, server = dto.meta(),
                 mine = ListMerge.adoptServerMeta(merged.doc, reply), draftStored = false,
+                rowAliases = made.ids, rowKeys = made.ids.entries.associate { (here, there) -> there to here },
             )
         }
         if (conflict) _notices.tryEmit(ListNotice.BothKept(dto.id))
@@ -693,7 +705,7 @@ class ListSyncEngine @Inject constructor(
         return Outcome.DONE
     }
 
-    private fun SessionState.snapshot() = EditorSnapshot(listId, mine, status, server, loaded, loadError)
+    private fun SessionState.snapshot() = EditorSnapshot(listId, mine, status, server, loaded, loadError, rowKeys)
 
     private fun stateOf(st: SessionState) = when {
         st.status is SyncStatus.Orphaned -> STATE_ORPHANED

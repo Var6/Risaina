@@ -266,10 +266,12 @@ private fun EditorBody(
         } else {
             // Text a checklist has (a note's lines past 200, or written as it became a checklist) is never hidden.
             if (doc.body.isNotBlank()) item(key = "text-lines") { TextLinesStrip(doc, vm) }
-            itemsIndexed(doc.items, key = { _, r -> ROW_KEY + r.id }) { i, row ->
+            // Keyed by the row's first id: a new list's rows take the server's ids when it is created,
+            // and a new key would rebuild the row being typed in (focus and keyboard lost mid-word).
+            itemsIndexed(doc.items, key = { _, r -> ROW_KEY + snap.keyOf(r.id) }) { i, row ->
                 RowItem(
-                    row = row, index = i, count = doc.items.size, doc = doc, people = people, vm = vm, reorder = reorder, now = now,
-                    caret = caret?.takeIf { it.rowId == row.id },
+                    row = row, key = ROW_KEY + snap.keyOf(row.id), index = i, count = doc.items.size, doc = doc, people = people, vm = vm, reorder = reorder, now = now,
+                    caret = caret?.takeIf { it.rowId == row.id || it.rowId == snap.keyOf(row.id) },
                     onAddToCalendar = onAddToCalendar?.let { add ->
                         {
                             add(
@@ -451,6 +453,8 @@ private fun AddRowButton(onClick: () -> Unit) {
 @Composable
 private fun LazyItemScope.RowItem(
     row: DocItem,
+    /** The row's key in the list (its first id), for the field's state and the drag. */
+    key: String,
     index: Int,
     count: Int,
     doc: ListDoc,
@@ -462,14 +466,13 @@ private fun LazyItemScope.RowItem(
     onAddToCalendar: (() -> Unit)?,
     onDelete: () -> Unit,
 ) {
-    val key = ROW_KEY + row.id
-    var value by remember(row.id) { mutableStateOf(TextFieldValue(row.text, TextRange(row.text.length))) }
+    var value by remember(key) { mutableStateOf(TextFieldValue(row.text, TextRange(row.text.length))) }
     // A text from elsewhere (a merge, a split, Undo) is taken only while it is the engine's newest:
     // the flow can lag a keystroke behind the field, and taking an older text would drop one.
     LaunchedEffect(row.text) {
         if (row.text != value.text && vm.latestRowText(row.id) == row.text) value = TextFieldValue(row.text, TextRange(value.selection.end.coerceAtMost(row.text.length)))
     }
-    val focus = remember(row.id) { FocusRequester() }
+    val focus = remember(key) { FocusRequester() }
     LaunchedEffect(caret) {
         val c = caret ?: return@LaunchedEffect
         val text = vm.latestRowText(row.id) ?: value.text

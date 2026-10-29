@@ -409,8 +409,13 @@ class ListSyncEngineTest {
         assertEquals(made.id, snap().listId)
         assertEquals("rows take the server's ids", listOf(made.items[0].id, "c2"), snap().doc.items.map { it.id })
         assertTrue(draftDao.rows.value.isEmpty())
+        // On screen a row keeps its key, so the field being typed in is not rebuilt; a keystroke from
+        // a field drawn before the change still finds its row.
+        assertEquals(listOf("c1", "c2"), snap().doc.items.map { snap().keyOf(it.id) })
+        assertEquals(made.items[0].id, e.rowId(id, "c1"))
+        assertEquals("c2", e.rowId(id, "c2"))
 
-        e.edit(id, setText(made.items[0].id!!, "Tickets and passports")) // the old id still works
+        e.edit(id, setText(e.rowId(id, "c1"), "Tickets and passports")) // the old list id still works
         advanceUntilIdle()
         assertEquals(listOf("POST ${server.creates.single().clientKey}", "PATCH ${made.id}@1"), server.calls)
         assertEquals("Tickets and passports", server.lists.getValue(made.id).items.single().text)
