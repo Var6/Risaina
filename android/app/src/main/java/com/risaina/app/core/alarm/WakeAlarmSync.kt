@@ -1,5 +1,6 @@
 package com.risaina.app.core.alarm
 
+import android.util.Log
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.common.TimeProvider
 import com.risaina.app.core.data.WakeAlarmRepository
@@ -12,6 +13,7 @@ import com.risaina.app.core.model.WakeAlarm
 import com.risaina.app.core.network.AlarmDto
 import com.risaina.app.core.network.AlarmWakeDto
 import com.risaina.app.core.network.EventDto
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -42,7 +44,21 @@ class WakeAlarmSync @Inject constructor(
     private val preferencesStore: PreferencesStore,
     private val time: TimeProvider,
 ) {
+    /**
+     * Never throws (but for cancellation): the event's cursor must move on whatever happens here,
+     * and the next GET /alarms puts right anything an error left out.
+     */
     suspend fun apply(event: EventDto, me: String, replay: Boolean) {
+        try {
+            applyOrThrow(event, me, replay)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "alarm event not applied: ${e.javaClass.simpleName}")
+        }
+    }
+
+    private suspend fun applyOrThrow(event: EventDto, me: String, replay: Boolean) {
         identify(me)
         val p = event.payload
         when (event.type) {
@@ -145,6 +161,7 @@ class WakeAlarmSync @Inject constructor(
     private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
 
     private companion object {
+        const val TAG = "RisainaWake"
         /** An "I'm up" older than this is not announced (a late sync). */
         val FRESH: Duration = Duration.ofHours(2)
     }

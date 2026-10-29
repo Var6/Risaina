@@ -138,6 +138,12 @@ class WakeAlarmSyncTest {
         verify(atLeast = 2) { controller.rearm(any()) }
     }
 
+    @Test fun `nothing here can fail the event, so the cursor always moves on`() = runTest {
+        every { controller.rearm(any()) } throws IllegalStateException("AlarmManager said no")
+        sync.apply(alarmEvent(1, "alarm.created", dto()), "me", replay = false)
+        assertEquals(listOf("a1"), store.current().alarms.map { it.id })
+    }
+
     @Test fun `an unreadable alarm is skipped`() = runTest {
         sync.apply(event(1, "alarm.created", mapOf("alarm" to JsonObject(mapOf("id" to JsonPrimitive("x"))))), "me", replay = false)
         assertNull(store.current().alarm("x"))

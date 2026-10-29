@@ -158,7 +158,7 @@ class WakeViewModel @Inject constructor(
     fun onResume() {
         device.value = probe.read()
         controller.report()
-        viewModelScope.launch { sync.refresh() }
+        viewModelScope.launch { runCatching { sync.refresh() } }
     }
 
     fun openFix(fix: ReadinessFix) = fixes.open(fix)
