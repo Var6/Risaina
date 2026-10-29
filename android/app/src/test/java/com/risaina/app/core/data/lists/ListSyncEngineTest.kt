@@ -1,6 +1,7 @@
 package com.risaina.app.core.data.lists
 
 import com.risaina.app.core.common.AppError
+import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.common.FixedTimeProvider
 import com.risaina.app.core.data.ListsRepository
 import com.risaina.app.core.data.toEntity
@@ -61,6 +62,7 @@ class ListSyncEngineTest {
         private val keys = HashMap<String, String>()
         private var n = 0
         var patchDelayMs = 0L
+        var convertDelayMs = 0L
         /** The create lands, then the connection drops before the phone hears back. */
         var loseCreateReply = false
 
@@ -129,6 +131,7 @@ class ListSyncEngineTest {
             val id = firstArg<String>()
             val req = secondArg<ConvertListRequest>()
             server.calls += "CONVERT $id"
+            if (server.convertDelayMs > 0) delay(server.convertDelayMs)
             val cur = server.lists.getValue(id)
             if (req.expectedVersion != null && req.expectedVersion != cur.version) {
                 throw AppError.VersionConflict("changed", JsonObject(mapOf("list" to json.encodeToJsonElement(SharedListDto.serializer(), cur))))
@@ -521,6 +524,25 @@ class ListSyncEngineTest {
         assertEquals(listOf("PATCH n@1", "CONVERT n"), server.calls)
         assertEquals("checklist", snap().doc.kind)
         assertEquals(listOf("milk", "eggs"), snap().doc.items.map { it.text })
+        assertEquals(SyncStatus.Saved, snap().status)
+    }
+
+    @Test fun `what is typed while a note turns into a checklist is kept, as rows`() = runTest {
+        seed("n", 1, kind = "note", body = "• milk")
+        val e = engine()
+        val snap = open(e, "n")
+        server.convertDelayMs = 1_000
+        var result: AppResult<Unit>? = null
+        engineScope().launch { result = e.convert("n", ListKind.CHECKLIST) }
+        advanceTimeBy(500); runCurrent()
+        assertEquals(listOf("CONVERT n"), server.calls)
+        e.edit("n") { it.copy(body = it.body + "\n• bread") } // while the convert is on its way
+        advanceUntilIdle()
+        assertTrue(result!!.isSuccess)
+        assertEquals("checklist", snap().doc.kind)
+        assertEquals(listOf("milk", "bread"), snap().doc.items.map { it.text })
+        assertEquals(listOf("CONVERT n", "PATCH n@2"), server.calls)
+        assertEquals(listOf("milk", "bread"), server.lists.getValue("n").items.map { it.text })
         assertEquals(SyncStatus.Saved, snap().status)
     }
 

@@ -270,8 +270,16 @@ class ListSyncEngine @Inject constructor(
                 is AppResult.Success -> {
                     val e = listDao.byId(st.listId) ?: return AppResult.Success(Unit)
                     val doc = e.toDoc(json)
-                    s.state.update { it.copy(base = doc, mine = doc, baseVersion = e.version, server = e.meta(), status = SyncStatus.Saved) }
+                    var conflict = false
+                    s.state.update { cur ->
+                        // Typed while it was on its way (editing is never blocked): that goes onto the
+                        // converted copy, a note's new lines as rows and a checklist's new rows as lines.
+                        val mine = if (cur.mine == st.mine) doc else ListMerge.merge3(st.mine, cur.mine, doc).also { conflict = it.bodyConflict }.doc
+                        cur.copy(base = doc, mine = mine, baseVersion = e.version, server = e.meta(), status = if (ListWire.same(mine, doc)) SyncStatus.Saved else SyncStatus.Saving)
+                    }
+                    if (conflict) _notices.tryEmit(ListNotice.BothKept(s.id))
                     writeDraft(s)
+                    if (s.state.value.dirty) scheduleSend(s)
                     return AppResult.Success(Unit)
                 }
                 is AppResult.Failure -> {
