@@ -258,10 +258,23 @@ class WakeAlarmRulesTest {
 
     @Test fun `the list says this phone's ring time when it is not the anchor's`() {
         val ring = Instant.parse("2026-10-29T01:00:00Z")
-        assertNull(WakeAlarmRules.localLine(alarm(), ring, india, "Raina", uk))
-        assertEquals("Rings here 1:00 am (6:30 am for Raina)", WakeAlarmRules.localLine(alarm(), ring, london, "Raina", uk))
-        assertEquals("Rings here 1:00 am (6:30 am Kolkata time)", WakeAlarmRules.localLine(alarm(), ring, london, null, uk))
+        assertNull(WakeAlarmRules.localLine(alarm(), ring, india, "Raina", locale = uk))
+        assertNull(WakeAlarmRules.localLine(alarm(), ring, ZoneId.of("Asia/Calcutta"), "Raina", locale = uk))
+        assertEquals("Rings here 1:00 am (6:30 am for Raina)", WakeAlarmRules.localLine(alarm(), ring, london, "Raina", locale = uk))
+        assertEquals("Rings here 1:00 am (6:30 am for Raina)", WakeAlarmRules.localLine(alarm(), ring, london, "Raina", india, uk))
+        assertEquals("Rings here 1:00 am (6:30 am Kolkata time)", WakeAlarmRules.localLine(alarm(), ring, london, null, locale = uk))
+        // Raina set it in Kolkata and is in London with me now: 6:30 am is not her time any more.
+        assertEquals("Rings here 1:00 am (6:30 am Kolkata time)", WakeAlarmRules.localLine(alarm(), ring, london, "Raina", london, uk))
         assertEquals("New York", WakeAlarmRules.zoneName(newYork))
+    }
+
+    @Test fun `the editor says where an alarm was set only when that clock is not this phone's`() {
+        val ring = Instant.parse("2026-10-29T01:00:00Z")
+        assertNull(WakeAlarmRules.anchorNote(ring, india, india))
+        assertNull(WakeAlarmRules.anchorNote(ring, india, ZoneId.of("Asia/Calcutta")))
+        assertEquals("Set in Kolkata time", WakeAlarmRules.anchorNote(ring, india, london))
+        // Lisbon and London tell the same time: nothing to say.
+        assertNull(WakeAlarmRules.anchorNote(ring, ZoneId.of("Europe/Lisbon"), london))
     }
 
     @Test fun `the editor shows both clocks when they differ, and warns about the night`() {
@@ -281,7 +294,29 @@ class WakeAlarmRulesTest {
             ZoneLines("6:00 pm for you · 6:30 am for Raina · the next day for them", null),
             WakeAlarmRules.zoneLines(ring, india, la, india, "Raina", uk),
         )
-        assertEquals(ZoneLines("Rings at the same moment on both phones", null), WakeAlarmRules.zoneLines(ring, india, india, null, "Raina", uk))
+        // Theirs not shared: nothing to compare, unless the alarm was set on another clock.
+        assertNull(WakeAlarmRules.zoneLines(ring, india, india, null, "Raina", uk))
+        assertEquals(
+            ZoneLines("4:30 am for you. Rings at the same moment on both phones", "That's 4:30 am for you"),
+            WakeAlarmRules.zoneLines(londonRing, london, india, null, "Raina", uk),
+        )
+    }
+
+    @Test fun `on one clock the editor shows no second time and no warning for the partner`() {
+        val ring = Instant.parse("2026-10-29T01:00:00Z")
+        val calcutta = ZoneId.of("Asia/Calcutta")
+        assertNull(WakeAlarmRules.zoneLines(ring, india, india, calcutta, "Raina", uk))
+        assertNull(WakeAlarmRules.zoneLines(ring, calcutta, india, india, "Raina", uk))
+        // A 2:00 am ring on one clock: the time was picked on that clock, nothing to warn about.
+        val twoAm = Instant.parse("2026-10-28T20:30:00Z")
+        assertNull(WakeAlarmRules.zoneLines(twoAm, india, india, india, "Raina", uk))
+        // Set in London, both of you in India now: one line for the two of you.
+        val londonRing = Instant.parse("2026-10-29T06:30:00Z")
+        assertEquals(ZoneLines("12:00 pm for you both", null), WakeAlarmRules.zoneLines(londonRing, london, india, calcutta, "Raina", uk))
+        assertEquals(
+            ZoneLines("4:30 am for you both", "That's 4:30 am for you both"),
+            WakeAlarmRules.zoneLines(Instant.parse("2026-10-28T23:00:00Z"), london, india, india, "Raina", uk),
+        )
     }
 
     @Test fun `the partner's chip`() {

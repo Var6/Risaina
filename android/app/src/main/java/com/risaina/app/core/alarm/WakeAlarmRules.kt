@@ -1,5 +1,6 @@
 package com.risaina.app.core.alarm
 
+import com.risaina.app.core.domain.TimeZones
 import com.risaina.app.core.model.AlarmMember
 import com.risaina.app.core.model.WakeAlarm
 import com.risaina.app.core.model.WakeMode
@@ -256,37 +257,43 @@ object WakeAlarmRules {
     /**
      * On the list, when this phone's ring time is not the anchor's: "Rings here 2:00 am (6:30 am for
      * Rishabh)". [creatorName] is the partner's name when they created it, else null (then the
-     * anchor zone's city: "6:30 am Kolkata time").
+     * anchor zone's city: "6:30 am Kolkata time"). The city too once the partner's clock
+     * ([partnerZone]) no longer tells the anchor's time: the alarm was set somewhere else.
      */
-    fun localLine(alarm: WakeAlarm, ring: Instant, zone: ZoneId, creatorName: String?, locale: Locale = Locale.getDefault()): String? {
+    fun localLine(alarm: WakeAlarm, ring: Instant, zone: ZoneId, creatorName: String?, partnerZone: ZoneId? = null, locale: Locale = Locale.getDefault()): String? {
         val anchor = alarm.zone ?: return null
+        if (TimeZones.sameClock(zone, anchor, ring)) return null
         val here = ring.atZone(zone).toLocalTime()
         val there = ring.atZone(anchor).toLocalTime()
-        if (here == there) return null
-        val whose = creatorName?.let { "for $it" } ?: "${zoneName(anchor)} time"
+        val whose = creatorName?.takeIf { TimeZones.sameClock(anchor, partnerZone, ring) }?.let { "for $it" } ?: "${zoneName(anchor)} time"
         return "Rings here ${timeText(here, locale)} (${timeText(there, locale)} $whose)"
     }
 
     /** "Kolkata" for Asia/Kolkata, "New York" for America/New_York. */
     fun zoneName(zone: ZoneId): String = zone.id.substringAfterLast('/').replace('_', ' ')
 
+    /** The editor's "Set in London time" when the alarm's zone tells another time than this phone at [ring]; null on one clock. */
+    fun anchorNote(ring: Instant, anchor: ZoneId, mine: ZoneId): String? =
+        if (TimeZones.sameClock(mine, anchor, ring)) null else "Set in ${zoneName(anchor)} time"
+
     /**
      * The editor's two-zone line for a ring at [ring] set in [anchor]: "6:30 am for you · 9:00 am for
      * Aanya · tomorrow for them", and a warning when it falls in someone's night (00:00–05:00), as
-     * in "That's 2:00 am for Aanya". Null when it is the same clock time for everyone. With the
-     * partner's zone unknown (they hide their local time), only "the same moment on both phones".
+     * in "That's 2:00 am for Aanya". Null when the two of you are on one clock (or theirs is not
+     * shared) and it is the anchor's time too. Set in a third zone, one line: "12:00 pm for you
+     * both", or, theirs unknown, "12:00 pm for you. Rings at the same moment on both phones".
      */
     fun zoneLines(ring: Instant, anchor: ZoneId, mine: ZoneId, partnerZone: ZoneId?, partnerName: String, locale: Locale = Locale.getDefault()): ZoneLines? {
-        val anchorTime = ring.atZone(anchor).toLocalTime()
         val myTime = ring.atZone(mine).toLocalTime()
-        if (partnerZone == null) {
-            return ZoneLines(
-                if (myTime == anchorTime) "Rings at the same moment on both phones" else "${timeText(myTime, locale)} for you. Rings at the same moment on both phones",
-                nightWarning(myTime, "you", locale),
-            )
+        if (partnerZone == null || TimeZones.sameClock(mine, partnerZone, ring)) {
+            if (TimeZones.sameClock(mine, anchor, ring)) return null
+            return if (partnerZone == null) {
+                ZoneLines("${timeText(myTime, locale)} for you. Rings at the same moment on both phones", nightWarning(myTime, "you", locale))
+            } else {
+                ZoneLines("${timeText(myTime, locale)} for you both", nightWarning(myTime, "you both", locale))
+            }
         }
         val theirTime = ring.atZone(partnerZone).toLocalTime()
-        if (myTime == anchorTime && theirTime == anchorTime) return null
         val dayNote = when (ring.atZone(partnerZone).toLocalDate().compareTo(ring.atZone(mine).toLocalDate())) {
             0 -> null
             in 1..Int.MAX_VALUE -> "the next day for them"
