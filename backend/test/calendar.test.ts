@@ -577,6 +577,51 @@ describe('calendar push, export, purge and the validator', () => {
     expect(theirs.json().calendar.map((e: { id: string }) => e.id)).not.toContain(entry.id);
   });
 
+  it('GET /me/export at the 1000-entry cap has every entry and is not truncated; one more is', async () => {
+    const x = await register(t.app, 'Cap1');
+    const y = await register(t.app, 'Cap2');
+    const capCouple = new ObjectId(await pair(t.app, x, y));
+    const now = t.clock.now();
+    const doc = (i: number): CalendarEntryDoc => ({
+      _id: new ObjectId(),
+      coupleId: capCouple,
+      createdBy: new ObjectId(x.user.id),
+      updatedBy: new ObjectId(x.user.id),
+      kind: 'event',
+      title: `Entry ${i}`,
+      notes: null,
+      emoji: null,
+      date: '2026-12-01',
+      endDate: null,
+      time: null,
+      durationMinutes: null,
+      timeZone: null,
+      repeat: 'none',
+      repeatUntil: null,
+      reminders: [],
+      remindUserIds: [new ObjectId(x.user.id), new ObjectId(y.user.id)],
+      pinned: false,
+      doneAt: null,
+      doneBy: null,
+      source: null,
+      clientKey: null,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await t.db.calendarEntries.insertMany(Array.from({ length: 1000 }, (_, i) => doc(i)));
+    const exportOf = async () =>
+      (await t.app.inject({ method: 'GET', url: `${API}/me/export`, headers: bearer(x) })).json();
+    const full = await exportOf();
+    expect(full.calendar).toHaveLength(1000);
+    expect(full.truncated).toBe(false);
+
+    await t.db.calendarEntries.insertOne(doc(1000)); // past the cap: only a direct write gets here
+    const over = await exportOf();
+    expect(over.calendar).toHaveLength(1000);
+    expect(over.truncated).toBe(true);
+  });
+
   it('unlink deletes the entries; the cleanup worker sweeps one written in the race', async () => {
     const x = await register(t.app, 'Un1');
     const y = await register(t.app, 'Un2');
