@@ -67,30 +67,3 @@ object ConversationLines {
             id != RisainaNotifier.MESSAGES_ID && id != RisainaNotifier.GAME_NOTIFICATION_ID &&
             (group == null || group == NotificationCompat.GROUP_KEY_SILENT)
 }
-
-/**
- * The quick alerts posted for messages the sync has not announced yet (see DeliveryDiagnostics),
- * stored as "id:millis,id:millis". Pure (ConversationLinesTest).
- */
-object QuickMessageRefs {
-    private const val MAX = 16
-
-    fun decode(raw: String?): Map<String, Long> =
-        raw.orEmpty().split(',').mapNotNull { e ->
-            val id = e.substringBeforeLast(':', "")
-            val at = e.substringAfterLast(':', "").toLongOrNull()
-            if (id.isBlank() || at == null) null else id to at
-        }.toMap()
-
-    fun encode(refs: Map<String, Long>): String = refs.entries.joinToString(",") { "${it.key}:${it.value}" }
-
-    /** Only those under FastAlerts.WINDOW_MS old: past that a message is never waited for (nor muted). */
-    fun fresh(refs: Map<String, Long>, now: Long): Map<String, Long> =
-        refs.filterValues { now - it in 0 until FastAlerts.WINDOW_MS }
-
-    fun add(refs: Map<String, Long>, id: String, now: Long): Map<String, Long> {
-        // The separators cannot be in a server id (24 hex); a malformed one is just not remembered.
-        if (id.isBlank() || ',' in id || ':' in id) return fresh(refs, now)
-        return (fresh(refs, now) - id + (id to now)).entries.sortedBy { it.value }.takeLast(MAX).associate { it.key to it.value }
-    }
-}

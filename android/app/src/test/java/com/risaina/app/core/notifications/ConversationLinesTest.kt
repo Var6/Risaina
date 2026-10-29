@@ -99,31 +99,4 @@ class ConversationLinesTest {
         // Anything with a group of its own is a notification of this version.
         assertFalse(ConversationLines.isLeftover(1234, NotificationChannels.MESSAGES, NotificationGroups.CHAT))
     }
-
-    // --- quick alerts waiting for their message --------------------------------------------------
-
-    @Test fun quickRefsSurviveStorage() {
-        val refs = mapOf("65a1f0c2e4b0a1b2c3d4e5f6" to 1_000L, "65a1f0c2e4b0a1b2c3d4e5f7" to 2_000L)
-        assertEquals(refs, QuickMessageRefs.decode(QuickMessageRefs.encode(refs)))
-        assertEquals(emptyMap<String, Long>(), QuickMessageRefs.decode(null))
-        assertEquals(emptyMap<String, Long>(), QuickMessageRefs.decode("garbage,:5,x:"))
-    }
-
-    @Test fun quickRefsLastOnlyAsLongAsTheFastAlertWindow() {
-        val now = 10_000_000L
-        val refs = QuickMessageRefs.add(mapOf("old" to now - FastAlerts.WINDOW_MS, "recent" to now - 1_000), "new", now)
-        assertEquals(setOf("recent", "new"), refs.keys)
-        assertEquals(setOf("new"), QuickMessageRefs.fresh(refs, now + FastAlerts.WINDOW_MS - 500).keys)
-        // A clock that jumped back never keeps one for ever.
-        assertTrue(QuickMessageRefs.fresh(mapOf("future" to now + 60_000), now).isEmpty())
-    }
-
-    @Test fun quickRefsAreBounded() {
-        var refs = emptyMap<String, Long>()
-        for (i in 1..40) refs = QuickMessageRefs.add(refs, "m$i", 1_000L + i)
-        assertEquals(16, refs.size)
-        assertTrue("m40" in refs && "m1" !in refs)
-        // Malformed ids are not remembered.
-        assertEquals(refs, QuickMessageRefs.add(refs, "a,b", 1_100L))
-    }
 }

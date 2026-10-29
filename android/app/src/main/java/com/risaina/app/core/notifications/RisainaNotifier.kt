@@ -89,12 +89,16 @@ class RisainaNotifier @Inject constructor(
      * A generic alert for this very item ([ref]) was posted from its push moments ago. The detailed
      * notification then updates it in place without alerting, or is left out when the person already
      * tapped or dismissed the generic one (FastAlerts.detailedAction). Matched per item, so another
-     * ping that came in the same sync (and had no quick alert of its own) still alerts. A quick alert
-     * from an older server carries no item id and matches any item of its kind.
+     * ping or message that came in the same sync (and had no quick alert of its own) still alerts,
+     * and in a burst each one alerts once. A quick alert from an older server carries no item id and
+     * matches any item of its kind. Called once per item: it forgets the item's quick alert.
      */
-    private fun followsFastAlert(kind: String, ref: String): Boolean {
+    private fun followsQuickAlert(kind: String, ref: String): Boolean {
+        val now = System.currentTimeMillis()
         val (at, fastRef) = diagnostics.lastFastAlert(kind)
-        return FastAlerts.follows(at, fastRef, ref, System.currentTimeMillis())
+        val follows = ref in diagnostics.quickAlerts(kind, now) || (fastRef == null && FastAlerts.follows(at, null, ref, now))
+        diagnostics.forgetQuickAlert(kind, ref)
+        return follows
     }
 
     /**
@@ -151,7 +155,7 @@ class RisainaNotifier @Inject constructor(
                     gift -> com.risaina.app.feature.ping.Expressions.giftLine(p.message)!!
                     else -> p.message ?: p.type.defaultMessage.ifBlank { "Tap to see" }
                 }
-                val action = FastAlerts.detailedAction(followsFastAlert(FAST_PING, p.id), showing(PING_NOTIFICATION_ID))
+                val action = FastAlerts.detailedAction(followsQuickAlert(DeliveryDiagnostics.QUICK_PING, p.id), showing(PING_NOTIFICATION_ID))
                 if (action == DetailedAction.SKIP) return
                 post(
                     id = PING_NOTIFICATION_ID, group = NotificationGroups.PING,
@@ -166,9 +170,7 @@ class RisainaNotifier @Inject constructor(
                 // alert left a placeholder line in it; the rebuild from Room puts the real text in its
                 // place, in the same notification. A message with no quick alert of its own (more of a
                 // burst than pushes so far, the hourly sync) alerts.
-                val id = item.message.id
-                val quick = id in diagnostics.quickMessages()
-                diagnostics.forgetQuickMessage(id)
+                val quick = followsQuickAlert(DeliveryDiagnostics.QUICK_MESSAGE, item.message.id)
                 val action = FastAlerts.detailedAction(quick, conversation.showing())
                 if (action == DetailedAction.SKIP) return
                 conversation.show(conversation.build(prefs.previewInNotifications), partner, quiet, alert = action == DetailedAction.ALERT)
@@ -237,7 +239,8 @@ class RisainaNotifier @Inject constructor(
                 title = "$partner is thinking of you", body = "Tap to see", deepLink = "risaina://app/home",
                 category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
             )
-            diagnostics.recordFastAlert(FAST_PING, pingId)
+            diagnostics.recordFastAlert(DeliveryDiagnostics.QUICK_PING, pingId)
+            pingId?.let { diagnostics.recordQuickAlert(DeliveryDiagnostics.QUICK_PING, it) }
         }
     }
 
@@ -257,7 +260,7 @@ class RisainaNotifier @Inject constructor(
             // Already synced (see notifyPingArrivedFast): its real line was posted, or was left out
             // on purpose; it must not alert again.
             if (messageDao.byId(messageId) != null) return
-            diagnostics.recordQuickMessage(messageId)
+            diagnostics.recordQuickAlert(DeliveryDiagnostics.QUICK_MESSAGE, messageId)
             conversation.show(conversation.build(prefs.previewInNotifications), partner, quiet, alert = true)
         }
     }
@@ -311,7 +314,6 @@ class RisainaNotifier @Inject constructor(
          */
         fun clearedOnPurge(id: Int, channelId: String?): Boolean =
             id != SosAlert.ID && (channelId in PARTNER_CHANNELS || id in PARTNER_IDS)
-        private const val FAST_PING = "ping"
 
         /** "0.8 s", "12 s", "3 min". */
         fun formatLatency(ms: Long): String = when {

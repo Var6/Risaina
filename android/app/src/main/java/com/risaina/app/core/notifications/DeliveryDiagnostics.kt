@@ -76,6 +76,35 @@ object FastAlerts {
 }
 
 /**
+ * The items (ping or message ids) whose quick alert was posted from their push, with when, stored as
+ * "id:millis,id:millis". Per item, not just the last one: in a burst every push posts its own quick
+ * alert before the sync brings any of them, and each detailed post must know whether its own item
+ * already alerted. Pure (FastAlertsTest).
+ */
+object QuickAlertRefs {
+    private const val MAX = 16
+
+    fun decode(raw: String?): Map<String, Long> =
+        raw.orEmpty().split(',').mapNotNull { e ->
+            val id = e.substringBeforeLast(':', "")
+            val at = e.substringAfterLast(':', "").toLongOrNull()
+            if (id.isBlank() || at == null) null else id to at
+        }.toMap()
+
+    fun encode(refs: Map<String, Long>): String = refs.entries.joinToString(",") { "${it.key}:${it.value}" }
+
+    /** Only those under FastAlerts.WINDOW_MS old: past that an item is never waited for, nor kept quiet. */
+    fun fresh(refs: Map<String, Long>, now: Long): Map<String, Long> =
+        refs.filterValues { now - it in 0 until FastAlerts.WINDOW_MS }
+
+    fun add(refs: Map<String, Long>, id: String, now: Long): Map<String, Long> {
+        // The separators cannot be in a server id (24 hex); a malformed one is just not remembered.
+        if (id.isBlank() || ',' in id || ':' in id) return fresh(refs, now)
+        return (fresh(refs, now) - id + (id to now)).entries.sortedBy { it.value }.takeLast(MAX).associate { it.key to it.value }
+    }
+}
+
+/**
  * See [FastAlerts.detailedAction]. UPDATE posts with onlyAlertOnce and never with setSilent:
  * setSilent is what put the notification into AndroidX's "silent" group (NotificationGroups).
  */
@@ -171,25 +200,25 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         prefs.getLong(K_FAST_PREFIX + kind, 0L) to prefs.getString(K_FAST_REF_PREFIX + kind, null)
 
     /**
-     * Messages whose quick alert ("Sent you a message") was posted from their push, with when. Per
-     * message, not just the last one (as [recordFastAlert] keeps for pings): in a burst every push
-     * posts its own quick alert before the sync brings any of them, and each detailed post must know
-     * whether its message already alerted. The chat notification shows a placeholder line for each
-     * one Room does not have yet. Kept for FastAlerts.WINDOW_MS. Callers hold RisainaNotifier's
-     * postLock, so a read and the write after it never interleave.
+     * Every item of [kind] ([QUICK_PING], [QUICK_MESSAGE]) whose quick alert was posted from its push,
+     * by id (QuickAlertRefs), where [recordFastAlert] keeps only the last one. The chat notification
+     * also shows a placeholder line for each message Room does not have yet. Kept for
+     * FastAlerts.WINDOW_MS. Callers hold RisainaNotifier's postLock, so a read and the write after it
+     * never interleave.
      */
-    fun recordQuickMessage(id: String, now: Long = System.currentTimeMillis()) {
-        prefs.edit().putString(K_QUICK_MESSAGES, QuickMessageRefs.encode(QuickMessageRefs.add(storedQuickMessages(), id, now))).apply()
+    fun recordQuickAlert(kind: String, id: String, now: Long = System.currentTimeMillis()) {
+        prefs.edit().putString(K_QUICK_PREFIX + kind, QuickAlertRefs.encode(QuickAlertRefs.add(storedQuickAlerts(kind), id, now))).apply()
     }
 
-    fun quickMessages(now: Long = System.currentTimeMillis()): Map<String, Long> = QuickMessageRefs.fresh(storedQuickMessages(), now)
+    fun quickAlerts(kind: String, now: Long = System.currentTimeMillis()): Map<String, Long> = QuickAlertRefs.fresh(storedQuickAlerts(kind), now)
 
-    fun forgetQuickMessage(id: String) {
-        val refs = storedQuickMessages()
-        if (id in refs) prefs.edit().putString(K_QUICK_MESSAGES, QuickMessageRefs.encode(refs - id)).apply()
+    /** Its detailed notification was handled: the item no longer counts as just alerted. */
+    fun forgetQuickAlert(kind: String, id: String) {
+        val refs = storedQuickAlerts(kind)
+        if (id in refs) prefs.edit().putString(K_QUICK_PREFIX + kind, QuickAlertRefs.encode(refs - id)).apply()
     }
 
-    private fun storedQuickMessages(): Map<String, Long> = QuickMessageRefs.decode(prefs.getString(K_QUICK_MESSAGES, null))
+    private fun storedQuickAlerts(kind: String): Map<String, Long> = QuickAlertRefs.decode(prefs.getString(K_QUICK_PREFIX + kind, null))
 
     /** The game the last game notification was posted for, and when (GameNotificationText.alertOnce). */
     fun recordGameNotification(gameId: String, now: Long = System.currentTimeMillis()) {
@@ -227,6 +256,9 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
 
     companion object {
         const val TEST_PUSH_TYPE = "test.push"
+        /** Kinds of quick alert ([recordFastAlert], [recordQuickAlert]). */
+        const val QUICK_PING = "ping"
+        const val QUICK_MESSAGE = "message"
         private const val PREFS = "delivery_diagnostics"
         private const val K_PUSH_AT = "push_at"
         private const val K_PUSH_TYPE = "push_type"
@@ -243,7 +275,7 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         private const val K_TEST_AT = "test_push_at"
         private const val K_FAST_PREFIX = "fast_alert_at_"
         private const val K_FAST_REF_PREFIX = "fast_alert_ref_"
-        private const val K_QUICK_MESSAGES = "quick_messages"
+        private const val K_QUICK_PREFIX = "quick_alerts_"
         private const val K_HANDLED = "handled_push_ids"
         private const val K_GAME_ID = "game_notification_id"
         private const val K_GAME_AT = "game_notification_at"

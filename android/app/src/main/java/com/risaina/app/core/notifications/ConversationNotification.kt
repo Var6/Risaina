@@ -41,7 +41,7 @@ class ConversationNotification @Inject constructor(
         val items = messageDao.recent(RECENT).first().filter { it.senderId != me }.map { it.toItem() }
         // byId, not the list above: that one leaves deleted messages out, and a message the partner
         // took back must not come back as "Sent you a message".
-        val waiting = diagnostics.quickMessages(now).filterKeys { messageDao.byId(it) == null }
+        val waiting = diagnostics.quickAlerts(DeliveryDiagnostics.QUICK_MESSAGE, now).filterKeys { messageDao.byId(it) == null }
         return ConversationLines.build(items, waiting, previews)
     }
 
