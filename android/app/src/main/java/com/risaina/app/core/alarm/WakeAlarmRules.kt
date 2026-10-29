@@ -197,15 +197,16 @@ object WakeAlarmRules {
     fun noticeText(partnerName: String, alarm: WakeAlarm, change: String, zone: ZoneId, now: Instant, locale: Locale = Locale.getDefault()): String {
         val ring = nextOfRule(alarm, now)
         val time = ring?.let { timeText(it, zone, locale) } ?: timeText(alarm.time, locale)
-        val days = if (alarm.days.isEmpty()) ring?.let { dayText(it, zone, now, locale).lowercase(locale) } ?: "once"
-        else daysText(localDays(alarm, zone, now), locale)
+        // "6:30 am, Mon–Fri" or, once, "6:30 am tomorrow" / "6:30 am on Fri 14 Nov".
+        val schedule = if (alarm.days.isNotEmpty()) "$time, ${daysText(localDays(alarm, zone, now), locale)}"
+        else ring?.let { r -> dayText(r, zone, now, locale).let { d -> if (d == "Today" || d == "Tomorrow") "$time ${d.lowercase(locale)}" else "$time on $d" } } ?: time
         val name = label(alarm)
         val what = when (change) {
             "edited" -> "changed $name to"
             "enabled" -> "turned on $name for"
             else -> "set $name for"
         }
-        return "$partnerName $what $time, $days. It rings on your phone too."
+        return "$partnerName $what $schedule. It rings on your phone too."
     }
 
     /**

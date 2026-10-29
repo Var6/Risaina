@@ -228,7 +228,9 @@ class WakeAlarmRulesTest {
             WakeAlarmRules.noticeText("Raina", alarm(), "enabled", la, now, uk),
         )
         val once = alarm(days = emptyList(), onceAt = Instant.parse("2026-10-30T01:00:00Z"))
-        assertEquals("Raina set Wake together for 6:30 am, tomorrow. It rings on your phone too.", WakeAlarmRules.noticeText("Raina", once, "created", india, now, uk))
+        assertEquals("Raina set Wake together for 6:30 am tomorrow. It rings on your phone too.", WakeAlarmRules.noticeText("Raina", once, "created", india, now, uk))
+        val later = alarm(days = emptyList(), onceAt = Instant.parse("2026-11-06T01:00:00Z"))
+        assertEquals("Raina set Wake together for 6:30 am on Fri 6 Nov. It rings on your phone too.", WakeAlarmRules.noticeText("Raina", later, "created", india, now, uk))
     }
 
     @Test fun `the list says this phone's ring time when it is not the anchor's`() {
