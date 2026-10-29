@@ -73,6 +73,8 @@ import java.time.ZoneId
 @Composable
 fun CalendarEntryScreen(
     onBack: () -> Unit,
+    /** Saved or deleted: leave, then say so (from a scope that outlives this screen). */
+    onDone: (String) -> Unit,
     onOpenChat: () -> Unit,
     onOpenList: (String) -> Unit,
     vm: CalendarEntryViewModel = hiltViewModel(),
@@ -81,7 +83,7 @@ fun CalendarEntryScreen(
     val snackbar = LocalSnackbar.current
     val context = LocalContext.current
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
-    LaunchedEffect(Unit) { vm.closed.collect { msg -> onBack(); snackbar.showSnackbar(msg) } }
+    LaunchedEffect(Unit) { vm.closed.collect(onDone) }
     LifecycleResumeEffect(Unit) {
         vm.recheckExact()
         onPauseOrDispose { }

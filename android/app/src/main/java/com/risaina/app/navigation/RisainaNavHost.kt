@@ -160,6 +160,7 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
         composable<CalendarEntryEdit>(deepLinks = listOf(navDeepLink { uriPattern = "risaina://app/calendar/{id}" })) {
             com.risaina.app.feature.calendar.CalendarEntryScreen(
                 onBack = back,
+                onDone = { message -> back(); toast(message) },
                 onOpenChat = { navController.navigate(Messages()) },
                 onOpenList = { id -> navController.navigate(ListDetail(id)) },
             )

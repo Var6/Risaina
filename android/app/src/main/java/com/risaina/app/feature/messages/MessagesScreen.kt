@@ -180,7 +180,7 @@ fun MessagesScreen(
                 text = vm.composer, onText = vm::onComposer, onSend = vm::send,
                 onPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji, onAdd = { showAdd = true },
-                dateHit = vm.draftHit(vm.composer), onDateChip = { onCalendarEntry(vm.prefillForDraft()) },
+                dateHit = remember(vm.composer, calendarAvailable) { vm.draftHit(vm.composer) }, onDateChip = { onCalendarEntry(vm.prefillForDraft()) },
             )
         },
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
