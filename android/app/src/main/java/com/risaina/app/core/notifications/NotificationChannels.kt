@@ -2,11 +2,11 @@ package com.risaina.app.core.notifications
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ContentResolver
 import android.content.Context
 import android.media.AudioAttributes
 import android.net.Uri
 import android.provider.Settings
-import com.risaina.app.R
 
 object NotificationChannels {
     /**
@@ -105,7 +105,7 @@ object NotificationChannels {
             NotificationChannel(WAKE_ALARM, "Wake together alarm", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "The alarm you set together. Rings at the same moment on both phones."
                 setSound(
-                    Uri.parse("android.resource://${context.packageName}/${R.raw.wake_alarm}"),
+                    wakeToneUri(context.packageName),
                     AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
                 )
                 enableVibration(true)
@@ -130,6 +130,19 @@ object NotificationChannels {
             },
         )
     }
+
+    /**
+     * The bundled tone by name, never by resource id: a channel keeps its sound for good, and raw ids
+     * are handed out anew by every build (a library's raw file sorting before ours shifts them), so
+     * an id stored by one build could point at the SOS siren, or at nothing, in a later one.
+     * res/raw/risaina_keep.xml keeps the file through resource shrinking, since no code names it.
+     */
+    fun wakeToneUri(packageName: String): Uri = Uri.parse(wakeTonePath(packageName))
+
+    internal fun wakeTonePath(packageName: String): String = "${ContentResolver.SCHEME_ANDROID_RESOURCE}://$packageName/raw/$WAKE_TONE"
+
+    /** The bundled tone's file name in res/raw. */
+    const val WAKE_TONE = "wake_alarm"
 
     /**
      * Safety channels, created at app start so they exist before the first SOS (the readiness card can
