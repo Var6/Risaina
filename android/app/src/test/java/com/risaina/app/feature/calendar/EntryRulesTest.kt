@@ -31,10 +31,24 @@ class EntryRulesTest {
     }
 
     @Test fun `the time-zone row shows only when the clocks differ`() {
-        assertTrue(EntryRules.zonesDiffer(kolkata, london, fri))
-        assertFalse(EntryRules.zonesDiffer(kolkata, ZoneId.of("Asia/Calcutta"), fri))
-        assertFalse(EntryRules.zonesDiffer(kolkata, null, fri))
-        assertFalse(EntryRules.zonesDiffer(london, ZoneId.of("Europe/Lisbon"), fri, fri.plusYears(1)))
+        val eight = LocalTime.of(20, 0)
+        assertTrue(EntryRules.zonesDiffer(kolkata, london, fri, eight))
+        assertFalse(EntryRules.zonesDiffer(kolkata, ZoneId.of("Asia/Calcutta"), fri, eight))
+        assertFalse(EntryRules.zonesDiffer(kolkata, null, fri, eight))
+        assertFalse(EntryRules.zonesDiffer(london, ZoneId.of("Europe/Lisbon"), fri, eight))
+    }
+
+    @Test fun `whose time is asked by the moment an entry starts, not its whole day`() {
+        val phoenix = ZoneId.of("America/Phoenix")
+        val denver = ZoneId.of("America/Denver")
+        // Denver leaves summer time at 1:00 am Phoenix time on Sun 1 Nov: two clocks until then, one after.
+        val sevenPm = EntryForm(date = LocalDate.of(2026, 11, 1), allDay = false, time = LocalTime.of(19, 0), timeZone = "America/Phoenix")
+        assertFalse(EntryRules.asksWhoseTime(sevenPm, phoenix, denver))
+        assertTrue(EntryRules.asksWhoseTime(sevenPm.copy(time = LocalTime.of(0, 30)), phoenix, denver))
+        // Every 15 Jan falls in winter, when the two agree: nothing to ask. Weekly, it reaches March.
+        val january = sevenPm.copy(date = LocalDate.of(2027, 1, 15), repeat = CalendarRepeat.YEARLY)
+        assertFalse(EntryRules.asksWhoseTime(january, phoenix, denver))
+        assertTrue(EntryRules.asksWhoseTime(january.copy(repeat = CalendarRepeat.WEEKLY), phoenix, denver))
     }
 
     @Test fun `whose time is asked only when the two of you are on two clocks`() {

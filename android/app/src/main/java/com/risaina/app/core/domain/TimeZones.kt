@@ -2,7 +2,6 @@ package com.risaina.app.core.domain
 
 import java.time.Duration
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 
 /**
@@ -14,7 +13,7 @@ import java.time.ZoneId
  * - Two names for one zone (Asia/Kolkata and Asia/Calcutta) are one clock, and so are two zones that
  *   tell the same time all year (Europe/London and Europe/Lisbon).
  * - Zones that agree only part of the year (America/Phoenix and America/Denver) are one clock only
- *   at the instants and on the days they agree.
+ *   at the instants they agree.
  */
 object TimeZones {
     /** How far a screen looks ahead ([sameClockAllYear]): a whole round of clock changes. */
@@ -39,10 +38,6 @@ object TimeZones {
             t = next
         }
     }
-
-    /** Both clocks tell the same time all through this phone's days [from] to [to]. */
-    fun sameClock(mine: ZoneId, partner: ZoneId?, from: LocalDate, to: LocalDate = from): Boolean =
-        sameClock(mine, partner, from.atStartOfDay(mine).toInstant(), to.plusDays(1).atStartOfDay(mine).toInstant().minusNanos(1))
 
     /**
      * For a whole screen or setting ("show their clock at all"): one clock now and through the next

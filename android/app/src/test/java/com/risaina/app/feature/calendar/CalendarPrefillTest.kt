@@ -68,6 +68,12 @@ class CalendarPrefillTest {
         // Same clock that day: mine, so the zone row stays hidden.
         assertEquals("Asia/Kolkata", CalendarPrefills.zoneFor(eight, sat, kolkata, ZoneId.of("Asia/Calcutta")))
         assertEquals("Europe/London", CalendarPrefills.zoneFor(eight, sat, london, ZoneId.of("Europe/Lisbon")))
+        // Denver leaves summer time at 2:00 am its time on Sun 1 Nov: by 8 pm the two agree, so mine.
+        val phoenix = ZoneId.of("America/Phoenix")
+        val denver = ZoneId.of("America/Denver")
+        val sunday = LocalDate.of(2026, 11, 1)
+        assertEquals("America/Phoenix", CalendarPrefills.zoneFor(eight, sunday, phoenix, denver))
+        assertEquals("America/Denver", CalendarPrefills.zoneFor(LocalTime.of(0, 30), sunday, phoenix, denver))
         assertEquals("Asia/Kolkata", CalendarPrefills.zoneFor(eight, null, kolkata, london))
         assertNull(CalendarPrefills.zoneFor(null, sat, kolkata, london))
     }

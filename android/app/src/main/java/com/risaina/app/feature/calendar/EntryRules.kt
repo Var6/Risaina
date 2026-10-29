@@ -176,21 +176,34 @@ object EntryRules {
         )
     }
 
-    /** Whether the two zones tell a different time on any of this phone's days [from] to [to]. Not when theirs is unknown. */
-    fun zonesDiffer(mine: ZoneId, partner: ZoneId?, from: LocalDate, to: LocalDate = from): Boolean = !TimeZones.sameClock(mine, partner, from, to)
+    /**
+     * Whether the two zones tell a different time when [time] on [date] comes in [anchor] (this
+     * phone's zone for a floating time). At that moment, not over the day: Denver leaves summer time
+     * at 1:00 am Phoenix time on 1 Nov, and 7:00 pm that day is one clock. Not when theirs is unknown.
+     */
+    fun zonesDiffer(mine: ZoneId, partner: ZoneId?, date: LocalDate, time: LocalTime, anchor: ZoneId? = mine): Boolean =
+        !TimeZones.sameClock(mine, partner, ZonedDateTime.of(date, time, anchor ?: mine).toInstant())
 
     /**
      * Whether the editor asks whose clock a timed entry follows ("Whose time"): only when the partner's
-     * clock tells another time on a day it happens, its date or, for a repeat, any day of the year
-     * after it (or up to its end). On one clock nothing is asked and the zone stays as it is: the
-     * creator's for a new entry, which on one clock is the same time for both.
+     * clock tells another time when it starts, on its date or, for a repeat, on any of its dates in
+     * the year after it (or up to its end). On one clock nothing is asked and the zone stays as it is:
+     * the creator's for a new entry, which on one clock is the same time for both.
      */
     fun asksWhoseTime(f: EntryForm, mine: ZoneId, partner: ZoneId?): Boolean {
         val date = f.date ?: return false
-        if (f.allDay || f.time == null) return false
-        val repeats = f.kind != CalendarKind.TODO && f.repeat in REPEATS
-        val last = if (repeats) minOf(f.repeatUntil ?: date.plusYears(1), date.plusYears(1)) else date
-        return zonesDiffer(mine, partner, date, maxOf(date, last))
+        val time = f.time ?: return false
+        if (f.allDay) return false
+        val anchor = TimeZones.zoneOf(f.timeZone)
+        return startDates(f, date).any { zonesDiffer(mine, partner, it, time, anchor) }
+    }
+
+    /** The dates [f] starts on that the editor weighs: [date], and for a repeat each one in the year after it, up to its end. */
+    private fun startDates(f: EntryForm, date: LocalDate): Sequence<LocalDate> {
+        val repeat = if (f.kind == CalendarKind.TODO) CalendarRepeat.NONE else f.repeat
+        if (repeat !in REPEATS) return sequenceOf(date)
+        val last = maxOf(date, minOf(f.repeatUntil ?: date.plusYears(1), date.plusYears(1)))
+        return generateSequence(0L) { it + 1 }.map { CalendarRules.nth(date, repeat, it) }.takeWhile { !it.isAfter(last) }
     }
 
     private val REPEATS = setOf(CalendarRepeat.WEEKLY, CalendarRepeat.MONTHLY, CalendarRepeat.YEARLY)
