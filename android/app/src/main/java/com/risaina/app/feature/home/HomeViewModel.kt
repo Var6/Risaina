@@ -96,7 +96,7 @@ data class HomeUiState(
     val anniversary: com.risaina.app.core.domain.AnniversaryInfo? = null,
     val partnerBirthday: com.risaina.app.core.domain.UpcomingBirthday? = null,
     val myBirthday: com.risaina.app.core.domain.UpcomingBirthday? = null,
-    /** Partner's local time and an optional "tomorrow for them" note, when they share it. */
+    /** Partner's local time and an optional "tomorrow for them" note, when they share it and it is not this phone's time. */
     val partnerClock: Pair<String, String?>? = null,
     val pingsToday: Int = 0,
     val background: String = "GLOW",
