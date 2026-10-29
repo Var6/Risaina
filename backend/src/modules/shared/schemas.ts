@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import {
+  CALENDAR_KINDS,
+  CALENDAR_REPEATS,
   CHALLENGE_KINDS,
   CHAT_WALLPAPER_STYLES,
   EVENT_TYPES,
@@ -7,6 +9,7 @@ import {
   GAME_PRIZES,
   GAME_STATUSES,
   LIST_KINDS,
+  LIST_MARKERS,
   LIVE_LOCATION_REASONS,
   MEDIA_CATEGORIES,
   MESSAGE_TYPES,
@@ -331,6 +334,7 @@ export const Milestone = z
 // --- Lists --------------------------------------------------------------------------------
 
 export const ListKind = z.enum(LIST_KINDS);
+export const ListMarker = z.enum(LIST_MARKERS);
 
 export const ListItem = z
   .object({
@@ -339,6 +343,8 @@ export const ListItem = z
     done: z.boolean(),
     doneBy: IdString.nullable(),
     doneAt: IsoDateTimeNullable,
+    addedBy: IdString.nullable().meta({ description: 'Who added the item; null on items from before' }),
+    addedAt: IsoDateTimeNullable.meta({ description: 'When it was added; null on items from before' }),
   })
   .meta({ id: 'ListItem' });
 
@@ -356,8 +362,124 @@ export const List = z
     version: z.number().int().min(1),
     createdAt: IsoDateTime,
     updatedAt: IsoDateTime,
+    // A plain string in RESPONSES (tolerant reader, as game kinds): an enum here would turn every
+    // GET /lists into a 500 once the database holds a marker this build does not know.
+    marker: z.string().meta({
+      description:
+        "Row marker: 'none' (default), 'number' or 'bullet'. Clients must tolerate unknown values.",
+    }),
+    checkboxes: z.boolean().meta({ description: 'Rows show checkboxes (default true)' }),
   })
   .meta({ id: 'List' });
+
+// --- Calendar -------------------------------------------------------------------------------
+
+export const CalendarKind = z.enum(CALENDAR_KINDS);
+export const CalendarRepeat = z.enum(CALENDAR_REPEATS);
+
+export const CalendarSource = z
+  .object({
+    kind: z
+      .string()
+      .meta({ description: "'message', 'list' or 'list_item'. Clients must tolerate unknown values." }),
+    messageId: IdString.optional().meta({ description: "kind 'message'" }),
+    listId: IdString.optional().meta({ description: "kinds 'list' and 'list_item'" }),
+    itemId: z.string().optional().meta({ description: "kind 'list_item'" }),
+  })
+  .meta({ id: 'CalendarSource', description: 'Where the entry was made from (ids only, never copied text)' });
+
+export const CalendarEntry = z
+  .object({
+    id: IdString,
+    coupleId: IdString,
+    createdBy: IdString,
+    updatedBy: IdString,
+    // Plain strings in RESPONSES (tolerant reader, as game kinds); requests use the enums.
+    kind: z.string().meta({ description: "'event' or 'todo'. Clients must tolerate unknown values." }),
+    title: z.string(),
+    notes: z.string().nullable(),
+    emoji: z.string().nullable(),
+    date: z.string().meta({ description: "YYYY-MM-DD: the first (or only) occurrence; a to-do's due date" }),
+    endDate: z.string().nullable().meta({ description: 'YYYY-MM-DD, all-day entries only' }),
+    time: z.string().nullable().meta({ description: 'HH:mm; null = all day' }),
+    durationMinutes: z.number().int().nullable(),
+    timeZone: z
+      .string()
+      .nullable()
+      .meta({ description: "IANA zone the time is anchored to; null = each phone's own clock" }),
+    repeat: z
+      .string()
+      .meta({ description: "'none', 'weekly', 'monthly' or 'yearly'. Tolerate unknown values." }),
+    repeatUntil: z.string().nullable().meta({ description: 'YYYY-MM-DD, inclusive' }),
+    reminders: z.array(z.number().int()).meta({ description: 'Minutes before, ascending' }),
+    remindUserIds: z
+      .array(IdString)
+      .meta({ description: "Members whose phones remind (a to-do's assignees)" }),
+    pinned: z.boolean(),
+    done: z.boolean().meta({ description: 'To-dos: ticked (doneAt is set)' }),
+    doneAt: IsoDateTimeNullable,
+    doneBy: IdString.nullable(),
+    source: CalendarSource.nullable(),
+    clientKey: z.string().nullable(),
+    version: z.number().int().min(1),
+    createdAt: IsoDateTime,
+    updatedAt: IsoDateTime,
+  })
+  .meta({ id: 'CalendarEntry' });
+
+// --- Wake together (shared alarms) ---------------------------------------------------------
+
+export const AlarmWake = z
+  .object({
+    occurrence: IsoDateTime.meta({ description: 'The ring this is about' }),
+    outcome: z.string().meta({ description: "'up' or 'missed'. Clients must tolerate unknown values." }),
+    at: IsoDateTime,
+    snoozes: z.number().int(),
+  })
+  .meta({ id: 'AlarmWake' });
+
+export const AlarmMember = z
+  .object({
+    userId: IdString,
+    ring: z.boolean().meta({ description: 'false: this person turned it off on their phone' }),
+    skips: z.array(IsoDateTime).meta({ description: 'Occurrences this person skips' }),
+    ready: z
+      .boolean()
+      .nullable()
+      .meta({ description: "null: this person's phone never reported for this alarm (an older app)" }),
+    reason: z.string().nullable().meta({ description: "Why not ready, e.g. 'exact_alarms_off'" }),
+    armedFor: IsoDateTimeNullable.meta({ description: 'The next ring this phone has set' }),
+    reportedAt: IsoDateTimeNullable,
+    lastWake: AlarmWake.nullable(),
+  })
+  .meta({ id: 'AlarmMember' });
+
+export const Alarm = z
+  .object({
+    id: IdString,
+    coupleId: IdString,
+    createdBy: IdString,
+    updatedBy: IdString,
+    // A plain string in RESPONSES (tolerant reader). A client that does not know the mode must not
+    // schedule the alarm.
+    mode: z
+      .string()
+      .meta({ description: "'together'. Do not schedule an alarm whose mode you do not know." }),
+    label: z.string().nullable(),
+    time: z.string().meta({ description: 'HH:mm in timeZone' }),
+    timeZone: z
+      .string()
+      .meta({ description: 'IANA zone the time is anchored to (both phones ring together)' }),
+    days: z.array(z.number().int()).meta({ description: 'ISO weekdays, 1 = Monday … 7 = Sunday; [] = once' }),
+    onceAt: IsoDateTimeNullable.meta({ description: 'The single ring of a one-off alarm (days empty)' }),
+    enabled: z.boolean(),
+    snoozeMinutes: z.number().int(),
+    version: z.number().int().min(1),
+    createdAt: IsoDateTime,
+    updatedAt: IsoDateTime,
+    members: z.array(AlarmMember),
+  })
+  .meta({ id: 'Alarm' });
 
 // --- Widget board ---------------------------------------------------------------------------
 
@@ -622,7 +744,13 @@ export const Event = z
     id: IdString,
     coupleId: IdString,
     seq: z.number().int().min(1),
-    type: EventType,
+    // A plain string in RESPONSES on purpose (tolerant reader): GET /events serializes through this
+    // schema, so an enum would answer 500 for the whole feed once the log holds a type this build
+    // does not know (a rollback after a newer build stored calendar.* or alarm.* events), stalling
+    // sync on both phones. The values on the wire are the same.
+    type: z.string().meta({
+      description: `Event type, e.g. ${EVENT_TYPES.slice(0, 3).join(', ')}. Clients must ignore types they do not know.`,
+    }),
     actorId: IdString,
     payload: z.record(z.string(), z.unknown()),
     createdAt: IsoDateTime,
@@ -642,6 +770,8 @@ export type MilestoneDto = z.infer<typeof Milestone>;
 export type EventDto = z.infer<typeof Event>;
 export type ListDto = z.infer<typeof List>;
 export type ListItemDto = z.infer<typeof ListItem>;
+export type CalendarEntryDto = z.infer<typeof CalendarEntry>;
+export type AlarmDto = z.infer<typeof Alarm>;
 export type WidgetBoardDto = z.infer<typeof WidgetBoard>;
 export type SosDto = z.infer<typeof Sos>;
 export type ChatWallpaperDto = z.infer<typeof ChatWallpaper>;

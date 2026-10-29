@@ -196,6 +196,8 @@ describe('lists', () => {
           done: false,
           doneBy: null,
           doneAt: null,
+          addedBy: a.user.id,
+          addedAt: expect.any(String),
         },
         {
           id: expect.stringMatching(/^[A-Za-z0-9_-]{12}$/),
@@ -203,12 +205,16 @@ describe('lists', () => {
           done: true,
           doneBy: a.user.id,
           doneAt: expect.any(String),
+          addedBy: a.user.id,
+          addedAt: expect.any(String),
         },
       ],
       pinned: false,
       version: 1,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
+      marker: 'none',
+      checkboxes: true,
     });
     const [milk, eggs] = list.items;
     const createdEv = await t.db.events.findOne({ type: 'list.created', 'payload.list.id': list.id });
@@ -241,6 +247,8 @@ describe('lists', () => {
       done: true,
       doneBy: a.user.id,
       doneAt: eggs.doneAt,
+      addedBy: a.user.id,
+      addedAt: eggs.addedAt,
     });
     expect(v2.items[2]).toMatchObject({ text: 'bread', done: false, doneBy: null, doneAt: null });
     expect(v2.items[2].id).toMatch(/^[A-Za-z0-9_-]{12}$/);
@@ -263,7 +271,17 @@ describe('lists', () => {
     const v3 = (await patchList(a, list.id, { items: [{ id: eggs.id, text: 'eggs', done: false }] })).json()
       .list;
     expect(v3.version).toBe(4);
-    expect(v3.items).toEqual([{ id: eggs.id, text: 'eggs', done: false, doneBy: null, doneAt: null }]);
+    expect(v3.items).toEqual([
+      {
+        id: eggs.id,
+        text: 'eggs',
+        done: false,
+        doneBy: null,
+        doneAt: null,
+        addedBy: a.user.id,
+        addedAt: eggs.addedAt,
+      },
+    ]);
 
     // both partners can read it
     expect((await getLists(a)).map((l) => l.id)).toContain(list.id);

@@ -9,6 +9,8 @@ import { AuthService } from '../auth/service.js';
 import { CoupleService } from '../couples/service.js';
 import { isAlive } from '../location/service.js';
 import {
+  toAlarmDto,
+  toCalendarEntryDto,
   toCoupleDto,
   toGameDto,
   toListDto,
@@ -156,7 +158,7 @@ export class MeService {
     const user = await this.mustUser(userId);
     const couple = user.activeCoupleId ? await this.repo.findCouple(user.activeCoupleId) : null;
     const coupleId = couple?._id;
-    const [pings, messages, memories, milestones, lists, boards, sos, games] = coupleId
+    const [pings, messages, memories, milestones, lists, boards, sos, games, calendar, alarms] = coupleId
       ? await Promise.all([
           this.repo.pings(coupleId, EXPORT_LIMIT),
           this.repo.messages(coupleId, EXPORT_LIMIT),
@@ -166,8 +168,10 @@ export class MeService {
           this.repo.widgetBoards(coupleId),
           this.repo.sos(coupleId, EXPORT_LIMIT),
           this.repo.games(coupleId, EXPORT_LIMIT),
+          this.repo.calendar(coupleId, EXPORT_LIMIT),
+          this.repo.alarms(coupleId, EXPORT_LIMIT),
         ])
-      : [[], [], [], [], [], [], [], []];
+      : [[], [], [], [], [], [], [], [], [], []];
     // safety: only my own current session (the server keeps no location history at all)
     const myLive = coupleId
       ? await this.ctx.db.liveLocations.findOne({ coupleId, userId: user._id, live: true })
@@ -186,7 +190,9 @@ export class MeService {
       games: games.map((g) => toGameDto(g, userId)),
       widgetBoards: boards.map(toWidgetBoardDto),
       liveLocation: myLive && isAlive(myLive, this.ctx.now()) ? toLiveLocationDto(myLive) : null,
-      truncated: [pings, messages, memories, milestones, lists, sos, games].some(
+      calendar: calendar.map(toCalendarEntryDto),
+      alarms: alarms.map(toAlarmDto),
+      truncated: [pings, messages, memories, milestones, lists, sos, games, calendar].some(
         (l) => l.length >= EXPORT_LIMIT,
       ),
     };

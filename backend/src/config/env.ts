@@ -85,6 +85,8 @@ const rawSchema = z
     RATE_LIMIT_LIST_WRITES_PER_MIN: intFromEnv(120, 1),
     RATE_LIMIT_WIDGET_WRITES_PER_MIN: intFromEnv(30, 1),
     RATE_LIMIT_GAME_WRITES_PER_MIN: intFromEnv(30, 1),
+    RATE_LIMIT_CALENDAR_WRITES_PER_MIN: intFromEnv(120, 1),
+    RATE_LIMIT_ALARM_WRITES_PER_MIN: intFromEnv(60, 1),
     OUTBOX_POLL_MS: intFromEnv(1000, 50),
     OUTBOX_LEASE_MS: intFromEnv(30_000, 1000),
     OUTBOX_MAX_ATTEMPTS: intFromEnv(5, 1),
@@ -217,6 +219,10 @@ export interface Env {
     widgetWritesPerMinute: number;
     /** POST /games and /games/:id/* per user per minute. */
     gameWritesPerMinute: number;
+    /** POST/PATCH/DELETE /calendar per user per minute (shared budget). */
+    calendarWritesPerMinute: number;
+    /** Every /alarms write (readiness reports and wake reports included) per user per minute. */
+    alarmWritesPerMinute: number;
   };
   outbox: { pollMs: number; leaseMs: number; maxAttempts: number; backoffBaseMs: number };
   cleanup: { intervalMs: number };
@@ -350,6 +356,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       listWritesPerMinute: v.RATE_LIMIT_LIST_WRITES_PER_MIN,
       widgetWritesPerMinute: v.RATE_LIMIT_WIDGET_WRITES_PER_MIN,
       gameWritesPerMinute: v.RATE_LIMIT_GAME_WRITES_PER_MIN,
+      calendarWritesPerMinute: v.RATE_LIMIT_CALENDAR_WRITES_PER_MIN,
+      alarmWritesPerMinute: v.RATE_LIMIT_ALARM_WRITES_PER_MIN,
     },
     outbox: {
       pollMs: v.OUTBOX_POLL_MS,

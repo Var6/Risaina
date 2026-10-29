@@ -77,7 +77,7 @@ Event      { id, coupleId, seq: number, type: string, actorId, payload: object, 
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| PUT | `/devices` | `{ deviceId, platform: 'android', token, appVersion, model? }` | `204` upsert; token never returned |
+| PUT | `/devices` | `{ deviceId, platform: 'android', token, appVersion, model?, sdkInt? }` | `204` upsert; token never returned (`sdkInt`: see "Devices and outbox hardening") |
 | DELETE | `/devices/:deviceId` | | `204` |
 
 ## Pings
@@ -363,6 +363,9 @@ Events (both members, like all events):
 | `list.deleted` | `{ listId }` |
 
 `GET /me/export` adds `lists: List[]` (non-deleted, bounded to 1000, counted in `truncated`).
+
+Later additions (format fields `marker`/`checkboxes`, `addedBy`/`addedAt` on items, `GET /lists/:id`,
+`POST /lists/:id/convert`, `clientKey` on create): see "Lists, calendar, wake together (2026-10-29)".
 
 Note for servers whose MongoDB user lacks `dbAdmin`: a database created by an earlier version keeps
 an `events` validator that rejects `list.*`. The list request still succeeds; the event is sent live
@@ -797,7 +800,8 @@ everything it created**. The response is still `204`; nothing can be recovered a
 `GET /me/export` before unlinking).
 
 - Deleted at once: messages, pings, memories, milestones, lists, games, widget boards, SOS alerts,
-  invitations of the couple, and every event of the couple **except** the final `couple.unlinked`.
+  live-location sessions, calendar entries, wake-together alarms, invitations of the couple, and every
+  event of the couple **except** the final `couple.unlinked`.
 - Media: all of the couple's media becomes unavailable at once; storage objects and then their media
   records are deleted in the background (failures are retried by the cleanup worker). Both members'
   `avatarMediaId` is cleared when the avatar was uploaded in this couple (avatars live under the couple's
@@ -833,9 +837,9 @@ end in a visible notification. So only events the recipient SEES are high.
 
 | Priority | Event types | FCM `android` options |
 |---|---|---|
-| high | `ping.created`, `message.created`, `couple.unlinked`, `widget.updated` (the app posts a quiet "<partner> updated your widget"), `location.started` (except a panic share linked to its SOS), `game.updated` with `action` ∈ created, moved, revealed, draw, rematch, challenged, chosen, done, confirmed, rejected, finished, matched | `priority: high`, ttl 1 h, no collapse key |
+| high | `ping.created`, `message.created`, `couple.unlinked`, `widget.updated` (the app posts a quiet "<partner> updated your widget"), `location.started` (except a panic share linked to its SOS), `game.updated` with `action` ∈ created, moved, revealed, draw, rematch, challenged, chosen, done, confirmed, rejected, finished, matched, `alarm.created` / `alarm.updated` with `notify: true` (see "Wake together") | `priority: high`, ttl 1 h, no collapse key |
 | high, bypasses preferences | `sos.raised`, `sos.resolved` | same |
-| normal (silent: the app syncs and redraws widgets) | `ping.delivered`, `ping.seen`, `message.read`, `message.opened`, `message.deleted`, `media.ready`, `list.*`, `memory.*`, `milestone.*`, `partner.updated`, `couple.updated`, `sos.acknowledged`, `sos.delivered`, `location.stopped`, `location.started` for a panic share with an `sosId` (the app posts nothing for it; the SOS alarm is the alert), `game.updated` with any other or no action, and any type not listed | `priority: normal`, ttl 24 h, `collapseKey: "sync"` (a later silent push replaces an undelivered one) |
+| normal (silent: the app syncs and redraws widgets) | `ping.delivered`, `ping.seen`, `message.read`, `message.opened`, `message.deleted`, `media.ready`, `list.*`, `memory.*`, `milestone.*`, `partner.updated`, `couple.updated`, `sos.acknowledged`, `sos.delivered`, `location.stopped`, `location.started` for a panic share with an `sosId` (the app posts nothing for it; the SOS alarm is the alert), `game.updated` with any other or no action, `calendar.*` (also with `notify: true`: the app posts that notice when the sync applies the event), `alarm.created` / `alarm.updated` without `notify: true`, `alarm.deleted`, `alarm.woke`, and any type not listed | `priority: normal`, ttl 24 h, `collapseKey: "sync"` (a later silent push replaces an undelivered one) |
 | none (stored, never pushed; `push.state: skipped`, `skipReason: not_pushed`) | `game.updated` with `action` ∈ answered, cancelled, ended | |
 
 Recipient preferences (changed): with `notificationsEnabled: false` a high push is sent as a silent
@@ -856,8 +860,8 @@ straight to the caller's own phones (only `deviceId` when given; never the partn
 event; ttl 10 min). The app answers it with a visible "Test notification" even with notifications switched
 off in-app, because the person asked for it. 6 per user per 10 minutes (`429 rate_limited`).
 
-`DeviceHealth`: `{ deviceId (own phones only, else null), model, appVersion, updatedAt, lastPushSentAt,
-lastPushAckAt, lastPushPriority: 'high'|'normal'|null, lastPushDowngraded, healthFlags: string[] }`. Tokens
+`DeviceHealth`: `{ deviceId (own phones only, else null), model, sdkInt: number|null, appVersion, updatedAt,
+lastPushSentAt, lastPushAckAt, lastPushPriority: 'high'|'normal'|null, lastPushDowngraded, healthFlags: string[] }`. Tokens
 are never returned. `appVersion` is the build id (`0.2.0+<git sha>`), so it shows which build a phone runs.
 
 ### Push acknowledgement (on `GET /events`)
@@ -955,3 +959,245 @@ already rang, acknowledged or saw resolved, or one older than 6 hours.
 
 Push priorities are decided by the outbox's policy (delivery stream). The phone treats a push of
 `{ type: 'sos.test' }` as a 5-second test alarm.
+
+## Lists, calendar, wake together (2026-10-29)
+
+Additive. Apps that do not know these features (v75, the current debug APK) keep working: they ignore
+the new response fields and event types, never call the new routes, and every existing route, field and
+event keeps its meaning. All new routes: Bearer + active couple (`409 not_paired` otherwise); a malformed
+`:id` is `400`, an id that is unknown or in another couple is `404 not_found`.
+
+New collections (`calendarEntries`, `alarms`) are created at boot with validators that have no enums and
+no `additionalProperties`: the production DB user cannot change a validator later, so a future kind, mode
+or field must already pass it. Zod in the API is the allow-list.
+
+### Event types are plain strings in responses
+
+`Event.type` in `GET /events` (and in every event frame) is a plain string in the response schema, not an
+enum of the types this build knows. The values on the wire are unchanged. Before, one stored event of a
+type the running build did not know (for example `calendar.created` after rolling the server back) made
+`GET /events` answer 500 for the whole couple. Clients must ignore types they do not know (v75 does).
+
+### Lists additions
+
+```ts
+List     { ...as above,
+           marker: string,       // 'none' (default) | 'number' | 'bullet'; a plain string: tolerate unknown values
+           checkboxes: boolean } // default true
+ListItem { ...as above,
+           addedBy: string|null, // who added the item; null on items from before this field
+           addedAt: string|null }
+```
+
+- `POST /lists` and `PATCH /lists/:id` take optional `marker: 'none'|'number'|'bullet'` and `checkboxes:
+  boolean`. Lists created before read as `'none'` / `true`. A PATCH changes only the fields it sends, so a
+  v75 save (title/items only) keeps them. They are a format, not a new `kind` (`kind` stays
+  `'note'|'checklist'`, and `PATCH { kind }` is still 400).
+- `addedBy` / `addedAt` are server-owned, like `doneBy` / `doneAt`: stamped (caller, now) on POST items and
+  on new items of a PATCH (no `id`, or an `id` the list does not have); an existing item keeps its own.
+  Values sent by a client are ignored. An existing item also keeps any other field stored on it, so a field
+  a later app adds survives a save from an app that sends only `id`/`text`/`done`.
+- `POST /lists` takes an optional `clientKey: string` (1–64), chosen by the phone. A repeat with the same key
+  in the same couple (even from the partner's account) answers `200 { list }` with the list the first request
+  created and emits nothing; if that list has been deleted since: `404`. `clientKey` is not returned.
+- `GET /lists/:id` → `200 { list }`; `404` when the list is deleted or not in the couple.
+- `POST /lists/:id/convert { to: 'note'|'checklist', marker?, checkboxes?, expectedVersion? }` → `200 { list }`
+  (`version` + 1, emits `list.updated { list }`, same 409 `version_conflict` rule as PATCH, same write budget):
+  - note → checklist: each non-blank body line becomes an item, in order, after any items the note already
+    holds. A leading bullet (`- `, `* `, `• `), number (`1.`, `2)`) and checkbox (`[ ]`, `[x]`, `☐`, `☑`, `✓`,
+    `✅`) are stripped, in either order; a ticked box makes the item `done` (doneBy = caller). A line over
+    300 characters becomes several items, cut at spaces. Once 200 items are reached, that line and every
+    line after it stay in `body`, unchanged; otherwise `body` becomes `''`.
+  - checklist → note: the items are written as lines below the existing body, drawn as the list was shown:
+    `1. ` / `• ` by `marker`, then `☐ ` / `☑ ` when `checkboxes`, then the text (`1. ☑ milk`). Items whose line
+    would take the body over 10,000 characters stay in `items`; the others are removed.
+  - `to` = the current kind: only `marker` / `checkboxes` are applied.
+  - `marker` / `checkboxes` in the body set the converted list's format (unchanged when omitted).
+- POST, PATCH, DELETE and convert share the list write budget (`RATE_LIMIT_LIST_WRITES_PER_MIN`).
+
+### Calendar
+
+Events and dated to-dos the couple shares. The server stores wall-clock fields only and never works out
+occurrences or reminder times: each phone expands repeats and schedules its own reminders. Occasions (the
+anniversary, birthdays, the next visit, milestones) are not stored here; the app derives them.
+
+```ts
+CalendarEntry {
+  id, coupleId, createdBy, updatedBy,
+  kind: string,                 // 'event' | 'todo' (plain string in responses: tolerate unknown values)
+  title: string,                // 1–120
+  notes: string|null,           // ≤ 2000
+  emoji: string|null,           // 1–2 emoji
+  date: string,                 // YYYY-MM-DD: the first (or only) occurrence; a to-do's due date
+  endDate: string|null,         // YYYY-MM-DD, all-day only: date ≤ endDate ≤ date + 366 days
+  time: string|null,            // HH:mm; null = all day
+  durationMinutes: number|null, // 1–10080, timed only
+  timeZone: string|null,        // IANA zone the time is anchored to (timed only); null = each phone's own clock
+  repeat: string,               // 'none' | 'weekly' | 'monthly' | 'yearly' (plain string in responses)
+  repeatUntil: string|null,     // YYYY-MM-DD, inclusive, ≥ date
+  reminders: number[],          // minutes before, ascending; all-day: before each phone's own all-day reminder time on the date
+  remindUserIds: string[],      // members whose phones remind (a to-do's assignees); default both
+  pinned: boolean,
+  done: boolean, doneAt: string|null, doneBy: string|null,   // to-dos only
+  source: { kind: 'message'|'list'|'list_item', messageId?, listId?, itemId? } | null,  // ids only, never copied text
+  clientKey: string|null,
+  version: number, createdAt, updatedAt }
+```
+
+| Method | Path | Body | Success |
+|---|---|---|---|
+| GET | `/calendar` | | `200 { items: CalendarEntry[] }`: all entries, by `date`, then `time` (all-day first) |
+| POST | `/calendar` | `{ kind, title, date, notes?, emoji?, endDate?, time?, durationMinutes?, timeZone?, repeat? = 'none', repeatUntil?, reminders? = [], remindUserIds? = both, pinned? = false, source?, clientKey?, notifyPartner? = false }` | `201 { entry }` (`version: 1`); a repeated `clientKey` answers `200 { entry }` with the first entry and emits nothing |
+| PATCH | `/calendar/:id` | any of the POST fields except `clientKey` (nullable ones accept `null` to clear), plus `done?`, `expectedVersion?`, `notifyPartner?` | `200 { entry }` (`version` + 1) |
+| DELETE | `/calendar/:id` | | `204` (hard delete) |
+
+Rules (400 `validation_failed`, with `details: [{ path, message }]`), checked on the entry **as it will be
+stored**, so a PATCH that clears `time` must also clear `timeZone` and `durationMinutes`:
+- `timeZone` and `durationMinutes` need a `time`; `endDate` is for all-day entries only, from `date` to
+  `date` + 366 days; `repeatUntil` ≥ `date`; a to-do cannot repeat (`repeat` must be `'none'`).
+- `date`, `endDate`, `repeatUntil` must be real days (`2026-02-30` is refused). `timeZone` is an IANA id
+  (fixed offsets like `+05:30` are refused); its letter case is fixed as for profiles.
+- `reminders`: at most 4, unique, each 0–40320 (4 weeks); stored ascending. `remindUserIds`: members of the
+  couple, unique. Blank `notes` are stored as `null`.
+- `done` is for to-dos only (`400 'done is only for to-dos'` on an event). `doneBy`/`doneAt` are
+  server-owned: set (caller, now) when a to-do is ticked, kept while it stays ticked (a second `done: true`
+  keeps the first), cleared when unticked or when the entry becomes an event.
+- `source` (strict, by `kind`): `{ kind: 'message', messageId }` must be a message of the couple that is not
+  deleted (`404`) and not a view-once photo (`400`); `{ kind: 'list', listId }` and
+  `{ kind: 'list_item', listId, itemId }` need a list of the couple that is not deleted (`404`); the item id is
+  not looked up. A source that is deleted later stays linked (the app hides or greys the chip).
+
+Concurrency: with `expectedVersion` ≠ current version ⇒
+`409 { error: { code: 'version_conflict', details: { entry: CalendarEntry /* current */ } } }`. Without it,
+the PATCH applies to the latest state.
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | body, rules above, malformed id |
+| 404 | `not_found` | entry, source message or source list not in the couple (or deleted) |
+| 409 | `version_conflict` | stale `expectedVersion` (`details.entry`) |
+| 409 | `conflict` | more than 1000 entries per couple (POST) |
+| 409 | `not_paired` | no active couple |
+| 429 | `rate_limited` | more than 120 calendar writes per user per minute (`RATE_LIMIT_CALENDAR_WRITES_PER_MIN`; POST, PATCH and DELETE share it) |
+
+Events (both members):
+
+| Event type | `payload` |
+|---|---|
+| `calendar.created` | `{ entry: CalendarEntry, notify: boolean }` |
+| `calendar.updated` | `{ entry: CalendarEntry, notify: boolean }` (also for ticking a to-do) |
+| `calendar.deleted` | `{ entryId }` |
+
+`notify` is `true` only when the request carried `notifyPartner: true`. Pushes stay normal (silent) even
+then: the partner's app shows its own "<name> added … to your calendar" notice when it applies an event with
+`notify: true` from the partner.
+
+`GET /me/export` adds `calendar: CalendarEntry[]` (by date, bounded to 1000, counted in `truncated`).
+Unlink and account deletion delete the couple's entries.
+
+### Wake together
+
+One shared alarm rule; each phone rings its own copy and reports back. Every ring is `time` on one of `days`
+in the anchor `timeZone` (the creator's), or the single instant `onceAt` when `days` is empty, so both
+phones ring at the same moment wherever they are.
+
+```ts
+Alarm {
+  id, coupleId, createdBy, updatedBy,
+  mode: string,               // 'together' (plain string in responses): do not schedule an unknown mode
+  label: string|null,         // ≤ 40
+  time: string,               // HH:mm in timeZone
+  timeZone: string,           // IANA anchor zone
+  days: number[],             // ISO weekdays 1 (Mon) … 7 (Sun), ascending; [] = once
+  onceAt: string|null,        // the single ring of a one-off alarm (set exactly when days is [])
+  enabled: boolean,
+  snoozeMinutes: number,      // 1–30
+  version: number,            // +1 on every alarm.created / alarm.updated; wake and silent reports keep it
+  createdAt, updatedAt,
+  members: AlarmMember[] }    // both members
+
+AlarmMember {
+  userId,
+  ring: boolean,              // false: "not on my phone"
+  skips: string[],            // rings this person skips (≤ 7, recent and future)
+  ready: boolean|null,        // null: this phone never reported for this alarm (e.g. an older app)
+  reason: string|null,        // why not ready, a snake_case code such as 'exact_alarms_off'
+  armedFor: string|null,      // the next ring this phone has set
+  reportedAt: string|null,
+  lastWake: { occurrence, outcome: string /* 'up'|'missed' */, at, snoozes } | null }
+```
+
+| Method | Path | Body | Success |
+|---|---|---|---|
+| GET | `/alarms` | | `200 { items: Alarm[] }`, oldest first |
+| POST | `/alarms` | `{ label?, time, timeZone, days, onceAt?, ringOnMyPhone? = true, snoozeMinutes? = 10, mode? = 'together' }` | `201 { alarm }`; the partner starts with `ring: true`, both with `ready: null` |
+| PATCH | `/alarms/:id` | `{ expectedVersion (required), label?, time?, timeZone?, days?, onceAt?, enabled?, snoozeMinutes? }` | `200 { alarm }`; stale version ⇒ `409 version_conflict` with `details.alarm` |
+| DELETE | `/alarms/:id` | | `204` |
+| PUT | `/alarms/:id/me` | `{ ring?, skip?: { occurrence, skip: boolean } }` (at least one) | `200 { alarm }`; changes only the caller's member entry |
+| POST | `/alarms/report` | `{ items: [{ alarmId, ready, reason?: string\|null, armedFor?: string\|null }] }` (≤ 10, unique ids) | `204` |
+| POST | `/alarms/:id/wake` | `{ occurrence, outcome: 'up'\|'missed', at, snoozes: 0–20 }` | `200 { alarm }` |
+
+Timestamps in bodies (`onceAt`, `occurrence`, `armedFor`, `at`) must carry `Z` or an offset
+(`2026-11-02T01:00:00Z`, `2026-11-02T06:30+05:30`).
+
+Rules (400 `validation_failed`):
+- `days`: unique, 1–7. With `days: []`, `onceAt` is required, must be at `time` in `timeZone`, and must lie
+  between a minute ago and 366 days ahead (that window is checked only when `onceAt` is sent, so a past
+  one-off alarm can still be renamed). With days, `onceAt` must be `null` (send `onceAt: null` when switching
+  a one-off alarm to repeating). The rules are checked on the alarm as it will be stored.
+- `timeZone`: IANA only. `label`: ≤ 40, blank ⇒ `null`. `snoozeMinutes`: 1–30. `mode`: `'together'`.
+- `PUT …/me` `skip.occurrence`: from a day ago to 366 days ahead; at most 7 skips per person (skips older than
+  a day are dropped when the entry is written). A request that changes nothing answers 200 without a version
+  or an event.
+- `report` `reason`: a snake_case code of ≤ 32 characters. Unknown or deleted alarm ids, and other couples'
+  alarms, are skipped silently.
+- `wake` `occurrence`: within the last 7 days (up to a day ahead).
+
+Behaviour:
+- `PUT /alarms/:id/me` is the only way to change `ring` or `skips`, and only the caller's own. It emits
+  `alarm.updated` with `change: 'member'`.
+- `report`: the phone sends it after arming. Only a change of `ready` or `reason` emits `alarm.updated`
+  (`change: 'member'`); `armedFor` and `reportedAt` alone are stored silently (no version, no event).
+- `wake` is idempotent per member and occurrence: a repeat, or a report about an earlier ring than the one
+  stored, changes nothing and emits nothing. It never silences the partner's phone. The version stays.
+- `notify` on `alarm.created` / `alarm.updated` is `true` only when ALL hold for the recipient (the member who
+  is not the actor): their `ring` is true, the alarm is `enabled`, the change is a create or a PATCH (never a
+  member change), and their `ready !== null` (their phone reported for this alarm, so it runs a build that
+  shows the notice). Only then is the push high. A new alarm's partner entry starts with `ready: null`, so
+  the create of a brand-new alarm normally pushes as a silent sync; the partner's app shows its "set Wake
+  together" notice when it applies the event.
+
+| Status | `error.code` | When |
+|---|---|---|
+| 400 | `validation_failed` | body, rules above, malformed id |
+| 404 | `not_found` | alarm not in the couple (PATCH, DELETE, PUT me, wake) |
+| 409 | `version_conflict` | stale `expectedVersion` (`details.alarm`) |
+| 409 | `conflict` | more than 10 alarms per couple (POST) |
+| 409 | `not_paired` | no active couple |
+| 429 | `rate_limited` | more than 60 alarm writes per user per minute (`RATE_LIMIT_ALARM_WRITES_PER_MIN`; every POST/PATCH/PUT/DELETE above, reports included) |
+
+Events (both members):
+
+| Event type | `payload` | Push |
+|---|---|---|
+| `alarm.created` | `{ alarm, notify }` | high when `notify`, else normal |
+| `alarm.updated` | `{ alarm, change: 'edited'\|'enabled'\|'member', notify }` (`'enabled'`: a PATCH that changed only `enabled`) | high when `notify`, else normal |
+| `alarm.deleted` | `{ alarmId }` | normal |
+| `alarm.woke` | `{ alarmId, userId, occurrence, outcome, at, snoozes }` | normal |
+
+`GET /me/export` adds `alarms: Alarm[]`. Unlink and account deletion delete the couple's alarms.
+
+### Devices and outbox hardening
+
+- `PUT /devices` accepts an optional `sdkInt` (integer 21–99, the phone's `Build.VERSION.SDK_INT`). It is
+  stored only when sent (a later PUT without it keeps the value) and returned as `sdkInt: number|null` in
+  `GET /devices/health` for my phones and my partner's. The body stays strict otherwise.
+- The cleanup worker deletes a device row of an old install (a reinstall or cleared data registers a new
+  `deviceId`) only when all hold: the row was created more than 3 days ago; pushes were sent to it and none
+  was acknowledged since (it never acked, or its last push is newer than its last ack); its last ack (or,
+  without one, its creation) is more than 3 days old; and another row of the same user acked a push within
+  the last 24 hours. A user's only row is never deleted. A wrongly pruned phone registers again when the app
+  next opens.
+- The outbox stores a random `push.leaseId` when it leases an event and records the result only while the
+  event still carries that id, so a send that outlived its 30 s lease cannot overwrite the result of the
+  worker that leased the event again.

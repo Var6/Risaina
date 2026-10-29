@@ -105,9 +105,16 @@ export function pushPolicyFor(type: string, payload?: Record<string, unknown> | 
     if (action !== null && GAME_NOTIFYING_ACTIONS.has(action)) return { ...HIGH };
     if (action !== null && GAME_UNPUSHED_ACTIONS.has(action)) return { ...NONE };
   }
+  // A wake-together alarm was set or changed on the recipient's phone. The server sets `notify`
+  // only when that phone will show it ("<name> set Wake together for 6:30"): the alarm rings there,
+  // is enabled, and that phone has reported for it, so it runs a build that posts the notice
+  // (AlarmService.notifyFor). Otherwise a silent sync, like alarm.deleted and alarm.woke.
+  if ((type === 'alarm.created' || type === 'alarm.updated') && payload?.notify === true) return { ...HIGH };
   // Receipts, media.ready, lists, memories, milestones, profile/couple changes, the SOS sender's
   // "seen"/"delivered" ticks, location.stopped, a panic share linked to its SOS and anything
-  // unknown: a silent refresh.
+  // unknown: a silent refresh. calendar.* stay here even with `notify: true`: the partner's app
+  // posts its "added to your calendar" notice when this sync applies the event, and a calendar
+  // change is never urgent enough to spend the high-priority budget the SOS depends on.
   return { ...NORMAL };
 }
 

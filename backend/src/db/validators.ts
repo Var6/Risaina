@@ -26,6 +26,11 @@ const bool = { bsonType: 'bool' } as const;
 const nullableInt = { bsonType: ['int', 'long', 'double', 'null'] } as const;
 
 const hhmm = { bsonType: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' } as const;
+/**
+ * A short snake_case value (a kind, a mode, an outcome) in collections created after the live
+ * database stopped accepting collMod: a pattern, never an enum, so a later value passes as it is.
+ */
+const code = { bsonType: 'string', pattern: '^[a-z][a-z0-9_]{0,31}$' } as const;
 
 const preferences = {
   bsonType: 'object',
@@ -306,6 +311,7 @@ export const VALIDATORS: Record<string, Document> = {
         lastPushPriority: { enum: ['high', 'normal', null] },
         lastPushDowngraded: bool,
         healthFlags: { bsonType: 'array', maxItems: 16, items: { bsonType: 'string', maxLength: 40 } },
+        sdkInt: nullableInt, // optional (Android API level, added later)
       },
     },
   },
@@ -379,6 +385,9 @@ export const VALIDATORS: Record<string, Document> = {
               done: bool,
               doneBy: nullableObjectId,
               doneAt: nullableDate,
+              // optional (item attribution, added later; never in `required`)
+              addedBy: nullableObjectId,
+              addedAt: nullableDate,
             },
           },
         },
@@ -387,6 +396,12 @@ export const VALIDATORS: Record<string, Document> = {
         createdAt: date,
         updatedAt: date,
         deletedAt: nullableDate,
+        // Format and retry key: OPTIONAL and never in `required`. Only fresh databases get these
+        // rules: the live validator cannot change (no collMod), and it accepts them as extra fields.
+        // marker is a plain string so a new marker never needs collMod (Zod is the allow-list).
+        marker: { bsonType: 'string', minLength: 1, maxLength: 20 },
+        checkboxes: bool,
+        clientKey: { bsonType: 'string', minLength: 1, maxLength: 64 },
       },
     },
   },
@@ -571,6 +586,137 @@ export const VALIDATORS: Record<string, Document> = {
       },
     },
   },
+  // A new collection, so it is created with this validator at boot (no collMod needed). No enums and
+  // no additionalProperties: the production DB user can never change this validator afterwards, so
+  // a new kind, repeat or field must already pass it (Zod is the allow-list).
+  [COLLECTION_NAMES.calendarEntries]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: [
+        'coupleId',
+        'createdBy',
+        'updatedBy',
+        'kind',
+        'title',
+        'date',
+        'repeat',
+        'reminders',
+        'remindUserIds',
+        'version',
+        'createdAt',
+        'updatedAt',
+      ],
+      properties: {
+        coupleId: objectId,
+        createdBy: objectId,
+        updatedBy: objectId,
+        kind: code,
+        title: { bsonType: 'string', minLength: 1, maxLength: 120 },
+        notes: { bsonType: ['string', 'null'], maxLength: 2000 },
+        emoji: { bsonType: ['string', 'null'], minLength: 1, maxLength: 16 },
+        date: { bsonType: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        endDate: { bsonType: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        time: { bsonType: ['string', 'null'], pattern: hhmm.pattern },
+        durationMinutes: { bsonType: ['int', 'long', 'double', 'null'], minimum: 1 },
+        timeZone: { bsonType: ['string', 'null'], minLength: 1, maxLength: 64 },
+        repeat: code,
+        repeatUntil: { bsonType: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        reminders: {
+          bsonType: 'array',
+          maxItems: 16,
+          items: { bsonType: ['int', 'long', 'double'], minimum: 0 },
+        },
+        remindUserIds: { bsonType: 'array', maxItems: 2, items: objectId },
+        pinned: bool,
+        doneAt: nullableDate,
+        doneBy: nullableObjectId,
+        source: {
+          bsonType: ['object', 'null'],
+          required: ['kind'],
+          properties: {
+            kind: code,
+            messageId: objectId,
+            listId: objectId,
+            itemId: { bsonType: 'string', minLength: 1, maxLength: 32 },
+          },
+        },
+        clientKey: { bsonType: ['string', 'null'], minLength: 1, maxLength: 64 },
+        version: { bsonType: ['int', 'long', 'double'], minimum: 1 },
+        createdAt: date,
+        updatedAt: date,
+      },
+    },
+  },
+  // Wake together: a new collection, created with this validator at boot. Like calendarEntries: no
+  // enums, no additionalProperties, and only the member fields every build writes are required.
+  [COLLECTION_NAMES.alarms]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: [
+        'coupleId',
+        'createdBy',
+        'updatedBy',
+        'mode',
+        'time',
+        'timeZone',
+        'days',
+        'onceAt',
+        'enabled',
+        'snoozeMinutes',
+        'version',
+        'createdAt',
+        'updatedAt',
+        'members',
+      ],
+      properties: {
+        coupleId: objectId,
+        createdBy: objectId,
+        updatedBy: objectId,
+        mode: code,
+        label: { bsonType: ['string', 'null'], maxLength: 40 },
+        time: hhmm,
+        timeZone: { bsonType: 'string', minLength: 1, maxLength: 64 },
+        days: {
+          bsonType: 'array',
+          maxItems: 7,
+          items: { bsonType: ['int', 'long', 'double'], minimum: 1, maximum: 7 },
+        },
+        onceAt: nullableDate,
+        enabled: bool,
+        snoozeMinutes: { bsonType: ['int', 'long', 'double'], minimum: 1 },
+        version: { bsonType: ['int', 'long', 'double'], minimum: 1 },
+        createdAt: date,
+        updatedAt: date,
+        members: {
+          bsonType: 'array',
+          maxItems: 2,
+          items: {
+            bsonType: 'object',
+            required: ['userId', 'ring'],
+            properties: {
+              userId: objectId,
+              ring: bool,
+              skips: { bsonType: 'array', maxItems: 31, items: date },
+              ready: { bsonType: ['bool', 'null'] },
+              reason: { bsonType: ['string', 'null'], maxLength: 32 },
+              armedFor: nullableDate,
+              reportedAt: nullableDate,
+              lastWake: {
+                bsonType: ['object', 'null'],
+                required: ['occurrence', 'outcome', 'at'],
+                properties: {
+                  occurrence: date,
+                  outcome: code,
+                  at: date,
+                  snoozes: { bsonType: ['int', 'long', 'double'], minimum: 0 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
   [COLLECTION_NAMES.events]: {
     $jsonSchema: {
       bsonType: 'object',
@@ -595,6 +741,7 @@ export const VALIDATORS: Record<string, Document> = {
             lastError: nullableString,
             skipReason: nullableString,
             sentAt: nullableDate,
+            leaseId: nullableString, // optional (outbox lease id, added later)
           },
         },
       },

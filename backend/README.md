@@ -57,7 +57,7 @@ prints values.
 | `MAILER` | no | `console` (default) or `resend` |
 | `RESEND_API_KEY`, `MAIL_FROM` | when `resend` | `MAIL_FROM` like `Risaina <hello@yourdomain>` (domain verified in Resend) |
 | `GOOGLE_CLIENT_IDS` | no | comma separated Google OAuth **Web** client ID(s) (the Android app's `serverClientId`). Absent ⇒ `POST /auth/google` returns 503 and `/health` shows `google: disabled` |
-| limits | no | see `.env.example` for every knob and its default (ping cooldown 15 s, 40 pings/h, media sizes, invitation TTL 24 h, token TTLs, email-code TTL 30 min / resend cooldown 60 s / 5 per hour, rate limits incl. `RATE_LIMIT_LIST_WRITES_PER_MIN` (120 list writes per user per minute) and `RATE_LIMIT_WIDGET_WRITES_PER_MIN` (30), `RATE_LIMIT_GAME_WRITES_PER_MIN` (30 game writes per user per minute), view-once `VIEW_ONCE_URL_TTL_SECONDS` (120) / `VIEW_ONCE_UNOPENED_DAYS` (7), outbox/cleanup intervals, WS timeouts) |
+| limits | no | see `.env.example` for every knob and its default (ping cooldown 15 s, 40 pings/h, media sizes, invitation TTL 24 h, token TTLs, email-code TTL 30 min / resend cooldown 60 s / 5 per hour, rate limits incl. `RATE_LIMIT_LIST_WRITES_PER_MIN` (120 list writes per user per minute) and `RATE_LIMIT_WIDGET_WRITES_PER_MIN` (30), `RATE_LIMIT_GAME_WRITES_PER_MIN` (30 game writes per user per minute), `RATE_LIMIT_CALENDAR_WRITES_PER_MIN` (120 calendar writes per user per minute), `RATE_LIMIT_ALARM_WRITES_PER_MIN` (60 alarm writes, reports included, per user per minute), view-once `VIEW_ONCE_URL_TTL_SECONDS` (120) / `VIEW_ONCE_UNOPENED_DAYS` (7), outbox/cleanup intervals, WS timeouts) |
 
 ## Scripts
 
