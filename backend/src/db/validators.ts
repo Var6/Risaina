@@ -311,6 +311,7 @@ export const VALIDATORS: Record<string, Document> = {
         lastPushPriority: { enum: ['high', 'normal', null] },
         lastPushDowngraded: bool,
         healthFlags: { bsonType: 'array', maxItems: 16, items: { bsonType: 'string', maxLength: 40 } },
+        sdkInt: nullableInt, // optional (Android API level, added later)
       },
     },
   },

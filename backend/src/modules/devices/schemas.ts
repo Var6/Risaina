@@ -8,6 +8,12 @@ export const DeviceUpsertBody = z
     token: z.string().min(1).max(4096),
     appVersion: z.string().trim().min(1).max(40),
     model: z.string().trim().max(80).optional(),
+    sdkInt: z
+      .int()
+      .min(21)
+      .max(99)
+      .optional()
+      .meta({ description: "The phone's Android API level (Build.VERSION.SDK_INT); kept when omitted" }),
   })
   .strict();
 
@@ -51,6 +57,7 @@ export const DeviceHealth = z
   .object({
     deviceId: z.string().nullable().meta({ description: "Only for the caller's own phones" }),
     model: z.string().nullable(),
+    sdkInt: z.int().nullable().meta({ description: 'Android API level; null until the app sends it' }),
     appVersion: z.string(),
     updatedAt: IsoDateTime,
     lastPushSentAt: IsoDateTimeNullable,

@@ -254,6 +254,7 @@ export interface DeviceTokenDoc {
   lastPushPriority?: 'high' | 'normal' | null; // priority that push arrived with on the phone
   lastPushDowngraded?: boolean; // sent high, arrived normal: FCM deprioritised this phone
   healthFlags?: string[]; // short codes the app reports, e.g. 'battery_optimized', 'standby_rare'
+  sdkInt?: number | null; // Android API level, sent by newer apps on PUT /devices (absent: unknown)
 }
 
 export interface MemoryDoc {

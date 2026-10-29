@@ -23,7 +23,14 @@ export class DeviceService {
 
   async upsert(
     userId: string,
-    input: { deviceId: string; platform: 'android'; token: string; appVersion: string; model?: string },
+    input: {
+      deviceId: string;
+      platform: 'android';
+      token: string;
+      appVersion: string;
+      model?: string;
+      sdkInt?: number;
+    },
   ): Promise<void> {
     await this.repo.upsert(
       new ObjectId(userId),
@@ -33,6 +40,7 @@ export class DeviceService {
         token: input.token,
         appVersion: input.appVersion,
         model: input.model ?? null,
+        ...(input.sdkInt !== undefined ? { sdkInt: input.sdkInt } : {}),
       },
       this.ctx.now(),
     );
@@ -133,6 +141,7 @@ function toHealth(d: Omit<DeviceTokenDoc, 'token'>, own: boolean): z.infer<typeo
   return {
     deviceId: own ? d.deviceId : null,
     model: d.model ?? null,
+    sdkInt: d.sdkInt ?? null,
     appVersion: d.appVersion,
     updatedAt: d.updatedAt.toISOString(),
     lastPushSentAt: d.lastPushSentAt?.toISOString() ?? null,
