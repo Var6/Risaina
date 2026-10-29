@@ -1,5 +1,7 @@
 package com.risaina.app.core.notifications
 
+import androidx.core.app.NotificationCompat
+
 /**
  * One explicit group per kind of partner notification, the same fix as the SOS alarm, the live
  * location and the lock card. Without a group, Android 15+ and ColorOS bundle an app's notifications
@@ -20,4 +22,13 @@ object NotificationGroups {
     const val SYSTEM = "risaina_system"
 
     val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM)
+
+    /**
+     * For a post that must not sound, buzz or pop up even when it creates the notification.
+     * onlyAlertOnce only quiets an update of one already in the shade, and setSilent is what moved a
+     * notification into the "silent" group. GROUP_ALERT_SUMMARY mutes a notification that is not a
+     * summary and leaves it in its own group; none of these groups has a summary to alert instead.
+     */
+    fun alertBehavior(muted: Boolean): Int =
+        if (muted) NotificationCompat.GROUP_ALERT_SUMMARY else NotificationCompat.GROUP_ALERT_ALL
 }

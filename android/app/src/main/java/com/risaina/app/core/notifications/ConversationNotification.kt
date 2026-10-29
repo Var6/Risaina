@@ -54,21 +54,20 @@ class ConversationNotification @Inject constructor(
      */
     fun show(c: Conversation, partner: String, quiet: Boolean, alert: Boolean) {
         cancelLeftovers(active())
-        if (c.isEmpty) cancel() else post(c, partner, quiet, alert)
+        if (c.isEmpty) cancel() else post(c, partner, quiet, if (alert) ConversationPost.ALERT else ConversationPost.UPDATE)
     }
 
     /**
      * After a read or a delete: rebuilt from what is still unread, and removed when nothing is. Never
-     * alerts, and never brings back a conversation the person swiped away (only one that is showing
-     * is updated). [mayPost] is false while notifications are off: it can then only be removed.
+     * alerts, and never brings back a conversation the person swiped away (ConversationLines.refreshPost).
+     * It stands in for old per-message notifications it just removed, posted muted, since this is a
+     * new post. [mayPost] is false while notifications are off: it can then only be removed.
      */
     fun refresh(c: Conversation, partner: String, quiet: Boolean, mayPost: Boolean) {
         val active = active()
         val leftovers = cancelLeftovers(active)
         if (c.isEmpty) { cancel(); return }
-        // Old per-message notifications just removed: the conversation stands in for them.
-        val showing = active == null || active.any { it.id == ID } || leftovers > 0
-        if (showing && mayPost) post(c, partner, quiet, alert = false)
+        ConversationLines.refreshPost(active?.any { it.id == ID }, leftovers, mayPost)?.let { post(c, partner, quiet, it) }
     }
 
     fun cancel() = NotificationManagerCompat.from(context).cancel(ID)
@@ -84,7 +83,7 @@ class ConversationNotification @Inject constructor(
         return leftovers.size
     }
 
-    private fun post(c: Conversation, partner: String, quiet: Boolean, alert: Boolean) {
+    private fun post(c: Conversation, partner: String, quiet: Boolean, how: ConversationPost) {
         val channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES
         val them = Person.Builder().setName(partner).setKey(PARTNER_KEY).build()
         val style = NotificationCompat.MessagingStyle(Person.Builder().setName("You").setKey(ME_KEY).build())
@@ -107,8 +106,9 @@ class ConversationNotification @Inject constructor(
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
-            .setOnlyAlertOnce(!alert)
+            .setOnlyAlertOnce(how.onlyAlertOnce)
             .setGroup(NotificationGroups.CHAT)
+            .setGroupAlertBehavior(NotificationGroups.alertBehavior(how.muted))
             .setContentIntent(open)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(
