@@ -432,3 +432,33 @@ were made on the phone (`dup-notifications.md`). Checked with unit tests only: n
   notification goes when the chat is opened or read on the other phone and loses a deleted message's line;
   upgrading with old per-message notifications showing replaces them silently; two device rows for one user
   show the warning.
+
+## Lists, calendar, wake together and chat actions (2026-10-29)
+Plan and design: `docs/specs/2026-10-29-next-round.md` (reports in `docs/specs/2026-10-29-reports/`). Built as a server
+foundation, an Android foundation (Room 6 with a real 5 → 6 migration), and three feature packages, each reviewed
+and fixed before merging.
+
+- **Lists.** Local first: what is typed is stored on the phone at once and sent when possible (ListSyncEngine,
+  drafts in Room, ListSaveWorker), so a failed or offline save loses nothing. Two people editing at once are
+  merged three ways (ListMerge.merge3). Editor rows with checkboxes, numbers or bullets, Enter splits, Backspace
+  joins, drag to reorder, undo on delete, "✓ Aanya · 3m" on ticked rows, notes that turn into checklists and back.
+  Overview: card grid with previews, Pinned / Others, filters and search. The cause of "I cannot see my saved
+  item": text typed into the old "Add item" field without pressing Enter was dropped on leaving.
+- **Calendar.** Shared entries (events and dated to-dos) on the new `calendarEntries` collection; the anniversary,
+  both birthdays, the next visit and milestones appear without being stored twice. Reminders are local on both
+  phones (one next-due alarm, re-armed on boot, time and zone changes); defaults: anniversary 7 days before and on
+  the day, partner's birthday 7 days, 1 day and on the day. Month and Upcoming views; Home "Calendar" tile and a
+  "Coming up" card; "Also add to my phone's calendar".
+- **Chat.** Long-press a text message: Add to calendar (date and time read from the text, relative to when it was
+  sent), Make it a to-do (dated: calendar; undated: the shared pinned "To-dos" list), Copy, Delete. A "+" in the
+  composer, and a suggestion chip when the draft holds a date ("📅 Fri 30 Oct, 8:00 pm · Add to calendar").
+- **Wake together.** One alarm on both phones at the same moment (anchored to the creator's time zone), with
+  per-person opt-out and skip, "I'm up" reported to the partner, a full-screen alarm screen and an insistent
+  alarm-channel notification via setAlarmClock (no foreground service), re-armed after a restart.
+
+Checks: backend 495/495, Android 688 unit tests, lint 0 errors, the Room 5 → 6 migration test on the emulator.
+Emulator against a local server running this code: calendar occasions and month view, the chat date chip and
+long-press sheet, Make it a to-do, an item typed without Enter kept, Wake together's test ring over a sleeping
+screen in silent mode, and two messages + a ping giving one chat and one ping notification.
+Next Play upload: update the full-screen-intent declaration (Wake together also uses full-screen alerts) and the
+Data safety answers for calendar entries and alarms.
