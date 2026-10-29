@@ -181,7 +181,8 @@ fun MilestoneEntity.toDomain() = Milestone(id, coupleId, createdBy, title, Local
 fun CalendarSourceDto.toDomain() = CalendarSource(CalendarSourceKind.fromWire(kind), messageId, listId, itemId)
 fun CalendarSource.toDto() = CalendarSourceDto(kind.wire, messageId, listId, itemId)
 
-fun CalendarEntryDto.toEntity() = CalendarEntryEntity(
+/** [syncedAt]: this phone's clock now; CalendarDao.syncFromServer compares it with when its GET started. */
+fun CalendarEntryDto.toEntity(syncedAt: Long = System.currentTimeMillis()) = CalendarEntryEntity(
     id = id, coupleId = coupleId, createdBy = createdBy, updatedBy = updatedBy, kind = kind, title = title,
     notes = notes, emoji = emoji, date = date, endDate = endDate, time = time, durationMinutes = durationMinutes,
     timeZone = timeZone, repeat = repeat, repeatUntil = repeatUntil,
@@ -190,6 +191,7 @@ fun CalendarEntryDto.toEntity() = CalendarEntryEntity(
     sourceKind = source?.kind, sourceMessageId = source?.messageId, sourceListId = source?.listId, sourceItemId = source?.itemId,
     clientKey = clientKey, version = version,
     createdAt = createdAt.toInstantOrNull()?.toEpochMilli() ?: 0L, updatedAt = updatedAt.toInstantOrNull()?.toEpochMilli() ?: 0L,
+    syncedAt = syncedAt,
 )
 
 /** Null only for an entry with no readable date, which cannot be placed anywhere: it is skipped. */
@@ -214,7 +216,7 @@ fun CalendarEntryDto.toDomain(): CalendarEntry? = toEntity().toDomain()
  * Back to a row, e.g. for an optimistic tick before the server confirms it. An UNKNOWN kind or
  * repeat is written as "" and reads back as UNKNOWN again; such an entry is never sent to the server.
  */
-fun CalendarEntry.toEntity() = CalendarEntryEntity(
+fun CalendarEntry.toEntity(syncedAt: Long = System.currentTimeMillis()) = CalendarEntryEntity(
     id = id, coupleId = coupleId, createdBy = createdBy, updatedBy = updatedBy, kind = kind.wire, title = title,
     notes = notes, emoji = emoji, date = date.toString(), endDate = endDate?.toString(), time = time?.format(HH_MM),
     durationMinutes = durationMinutes, timeZone = timeZone, repeat = repeat.wire, repeatUntil = repeatUntil?.toString(),
@@ -222,6 +224,7 @@ fun CalendarEntry.toEntity() = CalendarEntryEntity(
     done = done, doneAt = doneAt?.toEpochMilli(), doneBy = doneBy,
     sourceKind = source?.kind?.wire, sourceMessageId = source?.messageId, sourceListId = source?.listId, sourceItemId = source?.itemId,
     clientKey = clientKey, version = version, createdAt = createdAt.toEpochMilli(), updatedAt = updatedAt.toEpochMilli(),
+    syncedAt = syncedAt,
 )
 
 // ---- wake together ----

@@ -74,6 +74,7 @@ class EventReducer @Inject constructor(
     private val calendarDao: CalendarDao,
     /** Only for the chat notification after a read or a delete: local, no network (see refreshConversation). */
     private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
+    private val calendarDeletions: com.risaina.app.core.data.CalendarDeletions,
 ) {
     /** [replay]: the event is old history being re-applied (ReplayGuard); its receipts are not re-sent. */
     suspend fun apply(event: EventDto, replay: Boolean = false): List<Incoming> {
@@ -154,7 +155,7 @@ class EventReducer @Inject constructor(
                 //  Incoming.CalendarShared ("Raina added … to your calendar"); after any calendar,
                 //  couple or partner event, queue a local reminder re-arm.
             }
-            "calendar.deleted" -> p.str("entryId")?.let { calendarDao.delete(it) } // TODO(P2): re-arm reminders.
+            "calendar.deleted" -> p.str("entryId")?.let { calendarDeletions.record(it); calendarDao.delete(it) } // TODO(P2): re-arm reminders.
             // Wake together is applied by its own package (store, re-arm, partner notices). Until
             // then these are passed over like any unknown type, and the cursor still moves on.
             "alarm.created", "alarm.updated", "alarm.deleted", "alarm.woke" -> Unit // TODO(P3): WakeAlarmRepository/WakeAlarmStore.apply(event, me).

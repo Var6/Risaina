@@ -1,5 +1,6 @@
 package com.risaina.app.core.sync
 
+import com.risaina.app.core.data.CalendarDeletions
 import com.risaina.app.core.data.toEntity
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.model.Session
@@ -42,6 +43,7 @@ class NextRoundEventsTest {
         json, session, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
         mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), listDao,
         mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao, mockk(relaxed = true),
+        CalendarDeletions(),
     )
 
     private fun event(seq: Long, type: String, payload: Map<String, JsonElement>, actor: String = "bea") =

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 6,
-    "identityHash": "341c3c49b27b10c660bdf7f92045dde8",
+    "identityHash": "190636784cda52a24eb0c8d785b00673",
     "entities": [
       {
         "tableName": "pings",
@@ -806,7 +806,7 @@
       },
       {
         "tableName": "calendar_entries",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `coupleId` TEXT NOT NULL, `createdBy` TEXT NOT NULL, `updatedBy` TEXT, `kind` TEXT NOT NULL, `title` TEXT NOT NULL, `notes` TEXT, `emoji` TEXT, `date` TEXT NOT NULL, `endDate` TEXT, `time` TEXT, `durationMinutes` INTEGER, `timeZone` TEXT, `repeat` TEXT NOT NULL, `repeatUntil` TEXT, `reminders` TEXT NOT NULL, `remindUserIds` TEXT NOT NULL, `pinned` INTEGER NOT NULL, `done` INTEGER NOT NULL, `doneAt` INTEGER, `doneBy` TEXT, `sourceKind` TEXT, `sourceMessageId` TEXT, `sourceListId` TEXT, `sourceItemId` TEXT, `clientKey` TEXT, `version` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `coupleId` TEXT NOT NULL, `createdBy` TEXT NOT NULL, `updatedBy` TEXT, `kind` TEXT NOT NULL, `title` TEXT NOT NULL, `notes` TEXT, `emoji` TEXT, `date` TEXT NOT NULL, `endDate` TEXT, `time` TEXT, `durationMinutes` INTEGER, `timeZone` TEXT, `repeat` TEXT NOT NULL, `repeatUntil` TEXT, `reminders` TEXT NOT NULL, `remindUserIds` TEXT NOT NULL, `pinned` INTEGER NOT NULL, `done` INTEGER NOT NULL, `doneAt` INTEGER, `doneBy` TEXT, `sourceKind` TEXT, `sourceMessageId` TEXT, `sourceListId` TEXT, `sourceItemId` TEXT, `clientKey` TEXT, `version` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `syncedAt` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -966,6 +966,13 @@
             "columnName": "updatedAt",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "syncedAt",
+            "columnName": "syncedAt",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -1031,7 +1038,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '341c3c49b27b10c660bdf7f92045dde8')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '190636784cda52a24eb0c8d785b00673')"
     ]
   }
 }
