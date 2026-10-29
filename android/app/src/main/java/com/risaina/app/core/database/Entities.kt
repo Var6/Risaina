@@ -174,6 +174,11 @@ data class CalendarEntryEntity(
     val version: Int,
     val createdAt: Long,
     val updatedAt: Long,
+    /**
+     * This phone's clock when the row was last written from the server, as on lists: CalendarDao.syncFromServer
+     * only deletes rows written before its GET started, so an entry saved or received meanwhile survives.
+     */
+    @ColumnInfo(defaultValue = "0") val syncedAt: Long = 0,
 )
 
 /**

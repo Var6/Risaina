@@ -28,7 +28,12 @@ object NotificationGroups {
      */
     const val SAFETY = "risaina_safety"
 
-    val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM, SAFETY)
+    /** Calendar reminders, posted on this phone at their time (ReminderNotifier). */
+    const val REMINDER = "risaina_reminder"
+    /** "Bea added … to your calendar". */
+    const val CALENDAR = "risaina_calendar"
+
+    val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM, SAFETY, REMINDER, CALENDAR)
 
     /**
      * For a post that must not sound, buzz or pop up even when it creates the notification.

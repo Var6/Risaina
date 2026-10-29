@@ -45,6 +45,8 @@ sealed interface Incoming {
      * replay skip old ones, [topic] is the trivia category for "5 questions on History".
      */
     data class Game(val id: String, val action: String, val kind: String = "rps", val createdAt: Instant? = null, val topic: String? = null) : Incoming
+    /** The partner added (or changed) a calendar entry and ticked "Let me know": "Bea added … to your calendar". */
+    data class CalendarShared(val entry: com.risaina.app.core.model.CalendarEntry, val updated: Boolean) : Incoming
 }
 
 /**
@@ -76,6 +78,9 @@ class EventReducer @Inject constructor(
     private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
     /** list.deleted: Room only (the list, its tombstone, an orphaned draft); no network. */
     private val listSync: com.risaina.app.core.data.lists.ListSyncEngine,
+    private val calendarDeletions: com.risaina.app.core.data.CalendarDeletions,
+    /** Calendar reminders are worked out again after anything they depend on changes (local, debounced). */
+    private val reminders: com.risaina.app.core.reminders.ReminderRearm,
 ) {
     /** [replay]: the event is old history being re-applied (ReplayGuard); its receipts are not re-sent. */
     suspend fun apply(event: EventDto, replay: Boolean = false): List<Incoming> {
@@ -125,8 +130,11 @@ class EventReducer @Inject constructor(
             "media.ready" -> p.obj("media")?.let { mediaRepository.remember(json.decodeFromJsonElement(MediaDto.serializer(), it)) }
             "memory.updated" -> p.obj("memory")?.let { memoryDao.upsert(json.decodeFromJsonElement(MemoryDto.serializer(), it).toEntity()) }
             "memory.deleted" -> p.str("memoryId")?.let { memoryDao.markDeleted(it, p.instant("deletedAt") ?: Instant.now().toEpochMilli()) }
-            "milestone.created", "milestone.updated" -> p.obj("milestone")?.let { milestoneDao.upsert(json.decodeFromJsonElement(MilestoneDto.serializer(), it).toEntity()) }
-            "milestone.deleted" -> p.str("milestoneId")?.let { milestoneDao.delete(it) }
+            "milestone.created", "milestone.updated" -> {
+                p.obj("milestone")?.let { milestoneDao.upsert(json.decodeFromJsonElement(MilestoneDto.serializer(), it).toEntity()) }
+                reminders.request() // a yearly milestone can remind
+            }
+            "milestone.deleted" -> { p.str("milestoneId")?.let { milestoneDao.delete(it) }; reminders.request() }
             "couple.updated" -> p.obj("couple")?.let {
                 val couple = json.decodeFromJsonElement(CoupleDto.serializer(), it)
                 val partner = coupleDao.partner()
@@ -138,10 +146,12 @@ class EventReducer @Inject constructor(
                     sessionStore.adoptActiveCoupleId(couple.id)
                     if (partner == null) deferred.refreshMe()
                 }
+                reminders.request() // the anniversary and the next visit live on the couple
             }
             "partner.updated" -> p.obj("partner")?.let {
                 val partner = json.decodeFromJsonElement(PartnerDto.serializer(), it)
                 if (partner.id != me) coupleDao.replace(coupleDao.couple(), partner.toEntity())
+                reminders.request() // their birthday and time zone
             }
             // Newer copy wins: this phone's own older saves come back by replay after its newer reply.
             "list.created", "list.updated" -> p.obj("list")?.let {
@@ -150,14 +160,20 @@ class EventReducer @Inject constructor(
             // Remembered so a slow GET /lists cannot bring it back; unsent edits to it become orphaned.
             "list.deleted" -> p.str("listId")?.let { listSync.onDeleted(it) }
             // An entry that does not decode is skipped, not thrown: the next GET /calendar has it.
-            "calendar.created", "calendar.updated" -> p.obj("entry")?.let {
-                runCatching { json.decodeFromJsonElement(CalendarEntryDto.serializer(), it) }.getOrNull()
-                    ?.let { entry -> calendarDao.upsertIfNewer(entry.toEntity()) }
-                // TODO(P2): when payload.notify == true, event.actorId != me and !replay, add
-                //  Incoming.CalendarShared ("Raina added … to your calendar"); after any calendar,
-                //  couple or partner event, queue a local reminder re-arm.
+            "calendar.created", "calendar.updated" -> {
+                p.obj("entry")?.let { obj -> runCatching { json.decodeFromJsonElement(CalendarEntryDto.serializer(), obj) }.getOrNull() }?.let { entry ->
+                    calendarDao.upsertIfNewer(entry.toEntity())
+                    // Only when the partner asked to let me know, and never for history being replayed.
+                    if (!replay && event.actorId != me && p.bool("notify") == true) {
+                        entry.toDomain()?.let { out += Incoming.CalendarShared(it, updated = event.type == "calendar.updated") }
+                    }
+                }
+                reminders.request()
             }
-            "calendar.deleted" -> p.str("entryId")?.let { calendarDao.delete(it) } // TODO(P2): re-arm reminders.
+            "calendar.deleted" -> {
+                p.str("entryId")?.let { calendarDeletions.record(it); calendarDao.delete(it) }
+                reminders.request()
+            }
             // Wake together is applied by its own package (store, re-arm, partner notices). Until
             // then these are passed over like any unknown type, and the cursor still moves on.
             "alarm.created", "alarm.updated", "alarm.deleted", "alarm.woke" -> Unit // TODO(P3): WakeAlarmRepository/WakeAlarmStore.apply(event, me).
@@ -201,5 +217,6 @@ class EventReducer @Inject constructor(
     private fun rank(status: String) = when (status.uppercase()) { "PENDING" -> 0; "ACCEPTED" -> 1; "DELIVERED" -> 2; "SEEN" -> 3; else -> -1 }
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
     private fun JsonObject.str(key: String): String? = (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+    private fun JsonObject.bool(key: String): Boolean? = (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
     private fun JsonObject.instant(key: String): Long? = str(key)?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
 }

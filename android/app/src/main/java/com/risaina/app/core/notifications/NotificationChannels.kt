@@ -21,6 +21,12 @@ object NotificationChannels {
     const val MESSAGES_QUIET = "messages_quiet"
     const val RITUALS = "rituals"
     const val SYSTEM = "system"
+    /** Calendar reminders: heads-up with sound, like an alarm the person asked for. */
+    const val REMINDERS = "reminders"
+    /** Reminders and calendar notices during quiet hours, shown silently. */
+    const val REMINDERS_QUIET = "reminders_quiet"
+    /** "Bea added … to your calendar". */
+    const val CALENDAR_UPDATES = "calendar_updates"
 
     // safety stream: SOS alarm and live location channels
     /** The ringing SOS (foreground service + full-screen alert). Silent: the service plays the alarm itself. */
@@ -77,6 +83,24 @@ object NotificationChannels {
         nm.createNotificationChannel(
             NotificationChannel(SYSTEM, "Account", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Pairing and account changes"
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(REMINDERS, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Calendar reminders you set, and the dates that matter to you both"
+                enableVibration(true)
+                setSound(Settings.System.DEFAULT_NOTIFICATION_URI, audio)
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(REMINDERS_QUIET, "Calendar (quiet hours)", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Reminders and calendar changes during your quiet hours, shown silently"
+                enableVibration(false); setSound(null, null)
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CALENDAR_UPDATES, "Calendar updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "When your partner adds something to your calendar and asks to let you know"
             },
         )
         ensureSafety(context)

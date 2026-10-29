@@ -15,6 +15,7 @@ import com.risaina.app.core.network.PatchCalendarRequest
 import com.risaina.app.core.network.RisainaApi
 import com.risaina.app.core.network.apiCall
 import com.risaina.app.core.network.entry
+import com.risaina.app.core.reminders.ReminderRearm
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,8 @@ class CalendarRepository @Inject constructor(
     private val dao: CalendarDao,
     private val coupleDao: CoupleDao,
     private val json: Json,
+    private val deletions: CalendarDeletions,
+    private val reminders: ReminderRearm,
 ) {
     val all: Flow<List<CalendarEntry>> = dao.all().map { l -> l.mapNotNull { it.toDomain() } }
     fun observe(id: String): Flow<CalendarEntry?> = dao.observe(id).map { it?.toDomain() }
@@ -50,13 +53,31 @@ class CalendarRepository @Inject constructor(
      */
     val available: StateFlow<Boolean?> = _available.asStateFlow()
 
-    /** Every entry (the server caps a couple at 1000), so the table simply becomes the server's list. */
+    @Volatile private var refreshedAt = 0L
+
+    /**
+     * The calendar's own GET, at most every [maxAgeMs] in this process: the SyncWorker runs it, so
+     * calendar events that reached this phone only live (a stale events validator, calendar.md §10)
+     * still arrive within the hour.
+     */
+    suspend fun refreshIfStale(maxAgeMs: Long = 30 * 60_000L): AppResult<Unit> {
+        if (_available.value == false || System.currentTimeMillis() - refreshedAt < maxAgeMs) return AppResult.Success(Unit)
+        return refresh()
+    }
+
+    /**
+     * Every entry (the server caps a couple at 1000), so the table becomes the server's list, except
+     * for what changed while the GET was on its way: an entry saved or received meanwhile is kept
+     * (CalendarDao.syncFromServer), and one deleted meanwhile is not written back from the older answer.
+     */
     suspend fun refresh(): AppResult<Unit> {
+        val requestedAt = System.currentTimeMillis()
         val r = apiCall { api.calendar() }
         when (r) {
             is AppResult.Success -> {
                 _available.value = true
-                dao.replaceAll(r.value.items.map { it.toEntity() })
+                refreshedAt = System.currentTimeMillis()
+                dao.syncFromServer(r.value.items.filterNot { deletions.deletedSince(it.id, requestedAt) }.map { it.toEntity() }, requestedAt)
                 onChanged()
             }
             is AppResult.Failure -> if (r.error is AppError.NotFound) _available.value = false
@@ -94,6 +115,7 @@ class CalendarRepository @Inject constructor(
     suspend fun delete(id: String): AppResult<Unit> {
         val r = apiCall { api.deleteCalendar(id) }
         if (r is AppResult.Failure && r.error !is AppError.NotFound) return r
+        deletions.record(id)
         dao.delete(id)
         onChanged()
         return AppResult.Success(Unit)
@@ -108,7 +130,7 @@ class CalendarRepository @Inject constructor(
                     e.entry(json)?.let { dao.upsertIfNewer(it.toEntity()); onChanged() } ?: refresh()
                     AppResult.Failure(AppError.VersionConflict(changedMeanwhile(), e.details))
                 }
-                is AppError.NotFound -> { dao.delete(id); onChanged(); r }
+                is AppError.NotFound -> { deletions.record(id); dao.delete(id); onChanged(); r }
                 else -> r
             }
         }
@@ -122,9 +144,30 @@ class CalendarRepository @Inject constructor(
 
     private suspend fun changedMeanwhile(): String = "${coupleDao.partner()?.displayName ?: "Your partner"} changed this meanwhile"
 
-    /** After every change to the stored entries. */
-    private fun onChanged() {
-        // TODO(P2): ask the ReminderScheduler to re-arm (debounced, local only, no network).
+    /** After every change to the stored entries: the reminders are worked out again (debounced, local only). */
+    private fun onChanged() = reminders.request()
+}
+
+/**
+ * Entries deleted lately (here, or by the partner's calendar.deleted), with when. A GET /calendar
+ * that started before a delete still lists the entry; [CalendarRepository.refresh] skips it so it
+ * does not come back (and get reminded). Memory only: a GET never outlives the process, and a few
+ * minutes cover the slowest one.
+ */
+@Singleton
+class CalendarDeletions @Inject constructor() {
+    private val deleted = LinkedHashMap<String, Long>()
+
+    @Synchronized fun record(id: String, atMillis: Long = System.currentTimeMillis()) {
+        deleted.entries.removeAll { atMillis - it.value > KEEP_MS }
+        deleted[id] = atMillis
+    }
+
+    /** Whether [id] was deleted at or after [sinceMillis]. */
+    @Synchronized fun deletedSince(id: String, sinceMillis: Long): Boolean = deleted[id]?.let { it >= sinceMillis } == true
+
+    private companion object {
+        const val KEEP_MS = 10 * 60_000L
     }
 }
 

@@ -42,6 +42,8 @@ class CalendarRepositoryTest {
     private val requests = mutableListOf<String>()
     private var oldServer = false
     private val server = linkedMapOf<String, CalendarEntryDto>()
+    /** Runs while GET /calendar is "on its way": after the request started, before its answer is applied. */
+    private var getHook: suspend () -> Unit = {}
 
     private fun dto(id: String, version: Int, title: String = "Dinner") = CalendarEntryDto(
         id = id, coupleId = "c", createdBy = "me", kind = "event", title = title, date = "2026-11-14", time = "20:00",
@@ -59,7 +61,12 @@ class CalendarRepositoryTest {
         if (oldServer) return@MockEngine ok(notFound, HttpStatusCode.NotFound)
         val id = path.removePrefix("calendar/")
         when {
-            method == "GET" && path == "calendar" -> ok(json.encodeToString(CalendarListResponse.serializer(), CalendarListResponse(server.values.toList())))
+            method == "GET" && path == "calendar" -> {
+                val answer = json.encodeToString(CalendarListResponse.serializer(), CalendarListResponse(server.values.toList()))
+                Thread.sleep(2) // the hook's writes land strictly after the GET started
+                getHook()
+                ok(answer)
+            }
             method == "POST" && path == "calendar" -> {
                 val e = dto("new", 1, title = "Picnic"); server[e.id] = e
                 ok(json.encodeToString(CalendarEntryResponse.serializer(), CalendarEntryResponse(e)), HttpStatusCode.Created)
@@ -89,14 +96,52 @@ class CalendarRepositoryTest {
     }
     private val dao = FakeCalendarDao()
     private val coupleDao = mockk<CoupleDao>().also { coEvery { it.partner() } returns PartnerEntity("bea", "Bea", null) }
-    private val repo = CalendarRepository(RisainaApi(client, client), dao, coupleDao, json)
+    private val deletions = CalendarDeletions()
+    private var rearms = 0
+    private val repo = CalendarRepository(RisainaApi(client, client), dao, coupleDao, json, deletions) { rearms++ }
 
     @Test fun `refresh makes Room the server's list and marks the calendar available`() = runTest {
-        dao.upsert(dto("stale", 1).toEntity())
+        dao.upsert(dto("stale", 1).toEntity(syncedAt = 0))
         server["a"] = dto("a", 2)
         assertTrue(repo.refresh().isSuccess)
         assertEquals(setOf("a"), dao.rows.value.keys)
         assertEquals(true, repo.available.value)
+    }
+
+    @Test fun `an entry deleted while the GET was on its way does not come back`() = runTest {
+        server["a"] = dto("a", 1); server["b"] = dto("b", 1)
+        // The GET answers with both; meanwhile the partner's calendar.deleted for "b" was applied.
+        getHook = { deletions.record("b") }
+        assertTrue(repo.refresh().isSuccess)
+        assertEquals(setOf("a"), dao.rows.value.keys)
+    }
+
+    @Test fun `an entry created while the GET was on its way is kept`() = runTest {
+        server["a"] = dto("a", 1)
+        getHook = { dao.upsert(dto("new", 1).toEntity()) }
+        assertTrue(repo.refresh().isSuccess)
+        assertEquals(setOf("a", "new"), dao.rows.value.keys)
+    }
+
+    @Test fun `every stored change asks for the reminders to be worked out again`() = runTest {
+        repo.create(CalendarEntryDraft(CalendarKind.EVENT, "Picnic", LocalDate.of(2026, 11, 1)), notifyPartner = false)
+        assertEquals(1, rearms)
+        repo.delete("new")
+        assertEquals(2, rearms)
+        repo.refresh()
+        assertEquals(3, rearms)
+    }
+
+    @Test fun `refreshIfStale asks the server at most every half hour, and never an old server`() = runTest {
+        assertTrue(repo.refreshIfStale().isSuccess)
+        assertTrue(repo.refreshIfStale().isSuccess)
+        assertEquals(1, requests.count { it == "GET calendar" })
+        oldServer = true
+        repo.refreshIfStale(maxAgeMs = 0)
+        assertEquals(2, requests.count { it == "GET calendar" })
+        assertEquals(false, repo.available.value)
+        repo.refreshIfStale(maxAgeMs = 0)
+        assertEquals(2, requests.count { it == "GET calendar" })
     }
 
     @Test fun `an older server's 404 marks the calendar unavailable`() = runTest {

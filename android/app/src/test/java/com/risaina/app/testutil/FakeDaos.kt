@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * In-memory DAOs for JVM tests. Only the queries are faked: the DAOs' own default methods
- * (upsertIfNewer, syncFromServer, replaceAll) run as written, so tests exercise the real rules.
+ * (upsertIfNewer, syncFromServer) run as written, so tests exercise the real rules.
  */
 class FakeListDao : ListDao {
     val rows = MutableStateFlow<Map<String, ListEntity>>(emptyMap())
@@ -49,8 +49,11 @@ class FakeCalendarDao : CalendarDao {
     override fun forMessages(messageIds: List<String>): Flow<List<CalendarEntryEntity>> = rows.map { m -> sorted(m.values.filter { it.sourceMessageId in messageIds }) }
     override fun forList(listId: String): Flow<List<CalendarEntryEntity>> = rows.map { m -> sorted(m.values.filter { it.sourceListId == listId }) }
     override suspend fun versionOf(id: String): Int? = rows.value[id]?.version
-    override suspend fun ids(): List<String> = rows.value.keys.toList()
+    override suspend fun idsSyncedBefore(before: Long): List<String> = rows.value.values.filter { it.syncedAt < before }.map { it.id }
     override suspend fun upsert(e: CalendarEntryEntity) { rows.value = rows.value + (e.id to e) }
+    override suspend fun markDone(id: String, done: Boolean, doneAt: Long?, doneBy: String?) {
+        rows.value[id]?.let { rows.value = rows.value + (id to it.copy(done = done, doneAt = doneAt, doneBy = doneBy)) }
+    }
     override suspend fun delete(id: String) { rows.value = rows.value - id }
     override suspend fun clear() { rows.value = emptyMap() }
 }

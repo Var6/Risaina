@@ -49,6 +49,7 @@ class Migration5To6Test {
             assertTrue("creates $table", sql.any { it.startsWith("CREATE TABLE IF NOT EXISTS `$table`") })
         }
         assertTrue(sql.contains("CREATE INDEX IF NOT EXISTS `index_calendar_entries_sourceMessageId` ON `calendar_entries` (`sourceMessageId`)"))
+        assertTrue(sql.any { it.startsWith("CREATE TABLE IF NOT EXISTS `calendar_entries`") && it.contains("`syncedAt` INTEGER NOT NULL DEFAULT 0") })
         // Nothing is dropped, renamed or copied: no table is rebuilt, so no row can be lost.
         assertTrue(sql.none { it.startsWith("DROP") || it.contains("RENAME") || it.startsWith("INSERT") })
     }
@@ -78,8 +79,12 @@ class Migration5To6Test {
         )
         assertEquals(setOf("key", "firedAt"), v6.getValue("reminder_log").columns().keys)
         val calendar = v6.getValue("calendar_entries").columns().keys
-        for (col in listOf("id", "kind", "date", "time", "timeZone", "repeat", "reminders", "remindUserIds", "done", "sourceMessageId", "sourceListId", "version")) {
+        for (col in listOf("id", "kind", "date", "time", "timeZone", "repeat", "reminders", "remindUserIds", "done", "sourceMessageId", "sourceListId", "version", "syncedAt")) {
             assertTrue("calendar_entries.$col", col in calendar)
         }
+        // CalendarDao.syncFromServer keeps rows written after its GET started; 0 means "before any GET".
+        val syncedAt = v6.getValue("calendar_entries").columns().getValue("syncedAt")
+        assertEquals("INTEGER", syncedAt["affinity"]!!.jsonPrimitive.content)
+        assertEquals("0", syncedAt["defaultValue"]!!.jsonPrimitive.content)
     }
 }

@@ -263,7 +263,7 @@ interface CalendarDao {
     fun forList(listId: String): Flow<List<CalendarEntryEntity>>
 
     @Query("SELECT version FROM calendar_entries WHERE id = :id") suspend fun versionOf(id: String): Int?
-    @Query("SELECT id FROM calendar_entries") suspend fun ids(): List<String>
+    @Query("SELECT id FROM calendar_entries WHERE syncedAt < :before") suspend fun idsSyncedBefore(before: Long): List<String>
 
     /** Writes unconditionally: use [upsertIfNewer] for anything that came from the server. */
     @Upsert suspend fun upsert(e: CalendarEntryEntity)
@@ -278,15 +278,22 @@ interface CalendarDao {
     }
 
     /**
-     * Makes the table the server's list (GET /calendar returns every entry). Entries it lacks are
-     * deleted one by one: up to 1000 ids would not fit the 999 parameters older SQLite allows in NOT IN.
+     * Applies a GET /calendar answer (every entry) started at [requestedAtMillis] (this phone's clock),
+     * as ListDao.syncFromServer does: each entry is written only if newer, and an entry missing from the
+     * answer is deleted only when it was written before the GET started, because one saved here or
+     * received from the partner while the GET was on its way is missing too. Deleted one by one: up to
+     * 1000 ids would not fit the 999 parameters older SQLite allows in NOT IN.
      */
     @Transaction
-    suspend fun replaceAll(items: List<CalendarEntryEntity>) {
-        val returned = items.mapTo(HashSet()) { it.id }
-        ids().filterNot { it in returned }.forEach { delete(it) }
+    suspend fun syncFromServer(items: List<CalendarEntryEntity>, requestedAtMillis: Long) {
         items.forEach { upsertIfNewer(it) }
+        val returned = items.mapTo(HashSet()) { it.id }
+        idsSyncedBefore(requestedAtMillis).filterNot { it in returned }.forEach { delete(it) }
     }
+
+    /** An optimistic tick from a reminder's "Done" button; the server's reply (a newer version) replaces it. */
+    @Query("UPDATE calendar_entries SET done = :done, doneAt = :doneAt, doneBy = :doneBy WHERE id = :id")
+    suspend fun markDone(id: String, done: Boolean, doneAt: Long?, doneBy: String?)
 
     @Query("DELETE FROM calendar_entries WHERE id = :id") suspend fun delete(id: String)
     @Query("DELETE FROM calendar_entries") suspend fun clear()

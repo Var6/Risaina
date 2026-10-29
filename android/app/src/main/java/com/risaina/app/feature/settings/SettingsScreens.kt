@@ -119,7 +119,7 @@ private fun ToggleRow(title: String, subtitle: String?, checked: Boolean, onChan
     }
 }
 
-data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {}, val safety: () -> Unit = {})
+data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {}, val safety: () -> Unit = {}, val calendarReminders: () -> Unit = {})
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel = hiltViewModel()) {
@@ -154,6 +154,7 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         Spacer(Modifier.height(8.dp))
         SectionHeader("Experience")
         Row(NotificationsIcon, "Notifications", if (!s.pushConfigured) "Push isn't configured in this build — pings arrive while the app is open" else if (!s.notificationsPermitted) "Permission not granted" else "Quiet hours, previews, cooldown", nav.notifications)
+        Row(com.risaina.app.feature.common.CalendarIcon, "Calendar reminders", "Your anniversary, birthdays and plans", nav.calendarReminders)
         Row(LockIcon, "Privacy", "Previews, widget content, data export, deletion", nav.privacy)
         Row(WidgetsIcon, "Widgets", "Add Risaina to your home screen", nav.widgets)
         Spacer(Modifier.height(8.dp))
@@ -184,7 +185,7 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         ToggleRow("Show my partner's local time", "Home shows their weather; turn this on to see their clock too", s.prefs.showPartnerTime, { v -> vm.update { it.copy(showPartnerTime = v) } })
         Spacer(Modifier.height(8.dp))
         SectionHeader("Relationship")
-        Row(LinkIcon, "Dates & milestones", "Start date, next visit, anniversaries", nav.timeline)
+        Row(LinkIcon, "Our story", "Start date, next visit, milestones", nav.timeline)
         if (s.pairing is PairingState.Paired) {
             Row(LinkIcon, "Unlink", "Ends the pairing and all contact between you", { confirmUnlink = true })
         }

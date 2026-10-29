@@ -1,6 +1,7 @@
 package com.risaina.app.core.sync
 
 import com.risaina.app.core.data.lists.ListSyncEngine
+import com.risaina.app.core.data.CalendarDeletions
 import com.risaina.app.core.data.toEntity
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.model.Session
@@ -45,7 +46,9 @@ class NextRoundEventsTest {
         mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), listDao,
         mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao, mockk(relaxed = true),
         listSync,
+        CalendarDeletions(), { rearms++ },
     )
+    private var rearms = 0
 
     private fun event(seq: Long, type: String, payload: Map<String, JsonElement>, actor: String = "bea") =
         EventDto("e$seq", "c", seq, type, actor, JsonObject(payload), "2026-10-29T10:00:00.000Z")
@@ -56,7 +59,7 @@ class NextRoundEventsTest {
     )
 
     @Test fun `calendar events add, update (newer only) and delete entries`() = runTest {
-        assertTrue(reducer.apply(event(1, "calendar.created", mapOf("entry" to entry(1, "Dinner"), "notify" to JsonPrimitive(true)))).isEmpty())
+        assertTrue(reducer.apply(event(1, "calendar.created", mapOf("entry" to entry(1, "Dinner"), "notify" to JsonPrimitive(true)), actor = "me")).isEmpty())
         assertEquals("Dinner", calendarDao.byId("cal")!!.title)
         reducer.apply(event(2, "calendar.updated", mapOf("entry" to entry(3, "Dinner at 8"), "notify" to JsonPrimitive(false))))
         reducer.apply(event(3, "calendar.updated", mapOf("entry" to entry(2, "Dinner at 7"))))
@@ -64,6 +67,43 @@ class NextRoundEventsTest {
         reducer.apply(event(4, "calendar.deleted", mapOf("entryId" to JsonPrimitive("cal"))))
         assertNull(calendarDao.byId("cal"))
         assertEquals(4L, cursor.value)
+    }
+
+    @Test fun `the partner's entry with notify on is announced, once and only when fresh`() = runTest {
+        val out = reducer.apply(event(1, "calendar.created", mapOf("entry" to entry(1, "Dinner"), "notify" to JsonPrimitive(true))))
+        val shared = out.single() as Incoming.CalendarShared
+        assertEquals("Dinner", shared.entry.title)
+        assertEquals(false, shared.updated)
+        val moved = reducer.apply(event(2, "calendar.updated", mapOf("entry" to entry(2, "Dinner at 9"), "notify" to JsonPrimitive(true)))).single() as Incoming.CalendarShared
+        assertEquals(true, moved.updated)
+        // Not asked to tell me, my own change, or history being replayed: stored, not announced.
+        assertTrue(reducer.apply(event(3, "calendar.updated", mapOf("entry" to entry(3, "Dinner at 10"), "notify" to JsonPrimitive(false)))).isEmpty())
+        assertTrue(reducer.apply(event(4, "calendar.updated", mapOf("entry" to entry(4, "Dinner at 11"), "notify" to JsonPrimitive(true)), actor = "me")).isEmpty())
+        assertTrue(reducer.apply(event(5, "calendar.updated", mapOf("entry" to entry(5, "Dinner at 12"), "notify" to JsonPrimitive(true))), replay = true).isEmpty())
+        assertTrue(reducer.apply(event(6, "calendar.updated", mapOf("entry" to entry(6, "Dinner"), "notify" to JsonPrimitive("true")))).isEmpty())
+        assertEquals("Dinner", calendarDao.byId("cal")!!.title)
+    }
+
+    @Test fun `calendar, couple, partner and milestone events ask for the reminders to be worked out again`() = runTest {
+        reducer.apply(event(1, "calendar.created", mapOf("entry" to entry(1, "Dinner"))))
+        reducer.apply(event(2, "calendar.deleted", mapOf("entryId" to JsonPrimitive("cal"))))
+        reducer.apply(event(3, "milestone.deleted", mapOf("milestoneId" to JsonPrimitive("m"))))
+        assertEquals(3, rearms)
+        reducer.apply(event(4, "list.deleted", mapOf("listId" to JsonPrimitive("l"))))
+        assertEquals(3, rearms)
+    }
+
+    @Test fun `a deleted entry is remembered so an older GET answer does not bring it back`() = runTest {
+        val deletions = CalendarDeletions()
+        val r = EventReducer(
+            json, session, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
+            mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), listDao,
+            mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao, mockk(relaxed = true),
+            deletions, {},
+        )
+        val before = System.currentTimeMillis()
+        r.apply(event(1, "calendar.deleted", mapOf("entryId" to JsonPrimitive("cal"))))
+        assertTrue(deletions.deletedSince("cal", before))
     }
 
     @Test fun `an unreadable calendar payload is skipped and the cursor still moves`() = runTest {

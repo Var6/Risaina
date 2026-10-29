@@ -19,5 +19,5 @@ object ReplayGuard {
      */
     fun announceable(results: List<Incoming>, seq: Long, bootstrapUntilSeq: Long): List<Incoming> =
         if (!isReplay(seq, bootstrapUntilSeq)) results
-        else results.filterNot { it is Incoming.NewPing || it is Incoming.NewMessage || it is Incoming.Game || it is Incoming.WidgetChanged }
+        else results.filterNot { it is Incoming.NewPing || it is Incoming.NewMessage || it is Incoming.Game || it is Incoming.WidgetChanged || it is Incoming.CalendarShared }
 }

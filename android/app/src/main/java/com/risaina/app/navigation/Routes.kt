@@ -17,6 +17,8 @@ import kotlinx.serialization.Serializable
 @Serializable data class MemoryDetail(val id: String)
 @Serializable data object AddMemory
 @Serializable data object Timeline
+/** The couple's calendar (risaina://app/calendar); [openReminders] opens its reminder settings (from Settings). */
+@Serializable data class Calendar(val openReminders: Boolean = false)
 @Serializable data class EditMilestone(val id: String? = null)
 @Serializable data object WidgetGallery
 @Serializable data object Settings

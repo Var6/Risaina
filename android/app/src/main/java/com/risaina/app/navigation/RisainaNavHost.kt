@@ -103,6 +103,8 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     timeline = { navController.navigate(Timeline) },
                     widgets = { navController.navigate(WidgetGallery) },
                     pingHistory = { navController.navigate(PingHistory) },
+                    calendar = { navController.navigate(Calendar()) },
+                    calendarEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
                     notificationPermission = { navController.navigate(NotificationPermission) },
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     lists = { navController.navigate(Lists) },
@@ -134,12 +136,36 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
             PingDetailScreen(pingId = entry.toRoute<PingDetail>().id, onBack = back, onReplied = toast)
         }
         composable<Messages>(deepLinks = listOf(navDeepLink<Messages>(basePath = "risaina://app/messages"))) { entry ->
-            MessagesScreen(onBack = back, openRecorder = entry.toRoute<Messages>().openRecorder)
+            MessagesScreen(
+                onBack = back, openRecorder = entry.toRoute<Messages>().openRecorder,
+                onCalendarEntry = { prefill -> navController.navigate(prefill.toRoute()) },
+                onOpenCalendarEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
+                onOpenList = { id -> navController.navigate(ListDetail(id)) },
+            )
         }
         composable<Memories> { MemoriesScreen(onBack = back, onOpen = { navController.navigate(MemoryDetail(it)) }, onAdd = { navController.navigate(AddMemory) }) }
         composable<MemoryDetail> { entry -> MemoryDetailScreen(id = entry.toRoute<MemoryDetail>().id, onBack = back) }
         composable<AddMemory> { AddMemoryScreen(onBack = back, onDone = back) }
         composable<Timeline> { TimelineScreen(onBack = back) }
+        composable<Calendar>(deepLinks = listOf(navDeepLink<Calendar>(basePath = "risaina://app/calendar"))) { entry ->
+            com.risaina.app.feature.calendar.CalendarScreen(
+                onBack = back,
+                onOpenEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
+                onAdd = { date -> navController.navigate(CalendarEntryEdit(date = date?.toString())) },
+                onOurStory = { navController.navigate(Timeline) },
+                onOpenProfile = { navController.navigate(Profile) },
+                openReminders = entry.toRoute<Calendar>().openReminders,
+            )
+        }
+        // A reminder or "Bea added … to your calendar" opens its entry: risaina://app/calendar/{id}.
+        composable<CalendarEntryEdit>(deepLinks = listOf(navDeepLink { uriPattern = "risaina://app/calendar/{id}" })) {
+            com.risaina.app.feature.calendar.CalendarEntryScreen(
+                onBack = back,
+                onDone = { message -> back(); toast(message) },
+                onOpenChat = { navController.navigate(Messages()) },
+                onOpenList = { id -> navController.navigate(ListDetail(id)) },
+            )
+        }
         composable<WidgetGallery> { WidgetGalleryScreen(onBack = back) }
 
         composable<Settings> {
@@ -151,6 +177,7 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     privacy = { navController.navigate(PrivacySettings) },
                     widgets = { navController.navigate(WidgetGallery) },
                     timeline = { navController.navigate(Timeline) },
+                    calendarReminders = { navController.navigate(Calendar(openReminders = true)) },
                     about = { navController.navigate(About) },
                     pairing = { navController.navigate(Pairing) },
                     verifyEmail = { navController.navigate(VerifyEmail) },

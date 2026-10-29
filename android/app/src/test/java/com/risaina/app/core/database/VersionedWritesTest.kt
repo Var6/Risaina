@@ -66,21 +66,29 @@ class VersionedWritesTest {
         assertEquals(5, dao.byId("a")!!.version)
     }
 
-    private fun entry(id: String, version: Int, title: String = "Dinner") = CalendarEntryEntity(
+    private fun entry(id: String, version: Int, title: String = "Dinner", syncedAt: Long = 0) = CalendarEntryEntity(
         id = id, coupleId = "c", createdBy = "me", updatedBy = null, kind = "event", title = title, notes = null, emoji = null,
         date = "2026-11-14", endDate = null, time = "20:00", durationMinutes = null, timeZone = null, repeat = "none",
         repeatUntil = null, reminders = "60", remindUserIds = "me,bea", pinned = false, done = false, doneAt = null, doneBy = null,
         sourceKind = null, sourceMessageId = null, sourceListId = null, sourceItemId = null, clientKey = null,
-        version = version, createdAt = 0, updatedAt = 0,
+        version = version, createdAt = 0, updatedAt = 0, syncedAt = syncedAt,
     )
 
-    @Test fun `replacing the calendar removes what the server lacks and keeps newer local copies`() = runTest {
+    @Test fun `a calendar sync removes what the server lacks and keeps newer local copies`() = runTest {
         val dao = FakeCalendarDao()
-        dao.upsert(entry("gone", 1))
-        dao.upsert(entry("edited", 3, title = "Dinner at 8"))
-        dao.replaceAll(listOf(entry("edited", 2, title = "Dinner"), entry("added", 1)))
+        dao.upsert(entry("gone", 1, syncedAt = 100))
+        dao.upsert(entry("edited", 3, title = "Dinner at 8", syncedAt = 100))
+        dao.syncFromServer(listOf(entry("edited", 2, title = "Dinner", syncedAt = 300), entry("added", 1, syncedAt = 300)), requestedAtMillis = 200)
         assertEquals(setOf("edited", "added"), dao.rows.value.keys)
         assertEquals("Dinner at 8", dao.byId("edited")!!.title)
+    }
+
+    @Test fun `an entry created or received while the calendar GET was on its way survives it`() = runTest {
+        val dao = FakeCalendarDao()
+        // Saved here (or a partner's calendar.created applied) at 250, after the GET started at 200.
+        dao.upsert(entry("mine", 1, syncedAt = 250))
+        dao.syncFromServer(emptyList(), requestedAtMillis = 200)
+        assertEquals(1, dao.byId("mine")!!.version)
     }
 
     @Test fun `a replayed calendar event does not undo a newer edit`() = runTest {
