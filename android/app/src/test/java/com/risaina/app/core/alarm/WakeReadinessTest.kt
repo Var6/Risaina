@@ -30,8 +30,32 @@ class WakeReadinessTest {
         assertEquals(WakeReadyReport(true, null), WakeReadiness.report(ok.copy(sdk = 33, canUseFullScreenIntent = false)))
     }
 
+    @Test fun `a silent alarm channel is not ready, and says how to fix it`() {
+        // Sound set to None from "Change the alarm sound", or importance lowered to Silent.
+        for (silent in listOf(ok.copy(channelSound = false), ok.copy(channelImportance = 2), ok.copy(channelImportance = 1))) {
+            assertEquals(WakeReadyReport(false, "alarm_silent"), WakeReadiness.report(silent))
+            val row = WakeReadiness.evaluate(silent).single { it.status == CheckStatus.ACTION }
+            assertEquals(WakeReadiness.KEY_SOUND, row.key)
+            assertEquals("Open", row.fixLabel)
+        }
+        // Lowered to Default: it still rings out loud, but never pops up or opens full-screen.
+        val noPopUp = ok.copy(channelImportance = 3)
+        assertEquals(WakeReadyReport(true, "full_screen_off"), WakeReadiness.report(noPopUp))
+        assertEquals(WakeReadiness.KEY_POP_UP, WakeReadiness.evaluate(noPopUp).single { it.status == CheckStatus.ACTION }.key)
+        // High, or a channel not made yet: nothing to say.
+        assertEquals(WakeReadyReport(true, null), WakeReadiness.report(ok.copy(channelImportance = 4)))
+        assertEquals(WakeReadyReport(true, null), WakeReadiness.report(ok.copy(channelImportance = null)))
+        // Turned off outright stays "blocked", with one row, not three.
+        val blocked = ok.copy(channelBlocked = true, channelImportance = 0, channelSound = false)
+        assertEquals(WakeReadyReport(false, "channel_blocked"), WakeReadiness.report(blocked))
+        assertEquals(listOf(WakeReadiness.KEY_CHANNEL), WakeReadiness.evaluate(blocked).filter { it.status == CheckStatus.ACTION }.map { it.key })
+    }
+
     @Test fun `every reason is a short snake case code the server accepts`() {
-        val codes = listOf(WakeReadiness.NOTIFICATIONS_OFF, WakeReadiness.CHANNEL_BLOCKED, WakeReadiness.EXACT_ALARMS_OFF, WakeReadiness.FULL_SCREEN_OFF, WakeReadiness.UPDATE_NEEDED)
+        val codes = listOf(
+            WakeReadiness.NOTIFICATIONS_OFF, WakeReadiness.CHANNEL_BLOCKED, WakeReadiness.ALARM_SILENT, WakeReadiness.EXACT_ALARMS_OFF,
+            WakeReadiness.FULL_SCREEN_OFF, WakeReadiness.UPDATE_NEEDED,
+        )
         for (c in codes) assertTrue(c, Regex("^[a-z][a-z0-9_]{0,31}$").matches(c))
     }
 

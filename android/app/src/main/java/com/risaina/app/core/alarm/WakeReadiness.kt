@@ -31,26 +31,45 @@ data class WakeDeviceState(
     val silentModeMutesAlarms: Boolean,
     val dndBlocksAlarms: Boolean,
     val manufacturer: String,
-)
+    /** The wake_alarm channel's importance, null when it is not there yet (it is made with HIGH). */
+    val channelImportance: Int? = null,
+    /** False when the person set the channel's sound to None. */
+    val channelSound: Boolean = true,
+) {
+    /**
+     * The alarm makes no sound: its sound is None, or its importance was lowered to Silent (LOW or
+     * MIN), which plays nothing and cannot open over the lock screen either.
+     */
+    val channelSilent: Boolean
+        get() = !channelSound || (channelImportance != null && channelImportance in NotificationManager.IMPORTANCE_MIN..NotificationManager.IMPORTANCE_LOW)
+
+    /** Default importance: it rings, but never pops up or opens full-screen (that needs HIGH). */
+    val channelNoPopUp: Boolean get() = channelImportance == NotificationManager.IMPORTANCE_DEFAULT
+}
 
 /** What this phone tells the partner (POST /alarms/report). [reason] may be set while ready: a smaller problem. */
 data class WakeReadyReport(val ready: Boolean, val reason: String?)
 
 /**
  * "Can Wake together ring on this phone?" Pure (WakeReadinessTest). The ring is a notification, so
- * notifications and the alarm channel are required, unlike the SOS. Without exact alarms it still
- * rings, but can be minutes late, so the partner is told it is not ready. Without full-screen alerts
- * it rings as a banner: ready, with the reason noted.
+ * notifications and the alarm channel, with a sound, are required, unlike the SOS. Without exact
+ * alarms it still rings, but can be minutes late, so the partner is told it is not ready. Without
+ * full-screen alerts, or with the channel lowered to Default, it still rings out loud: ready, with
+ * the reason noted.
  */
 object WakeReadiness {
     const val NOTIFICATIONS_OFF = "notifications_off"
     const val CHANNEL_BLOCKED = "channel_blocked"
+    /** The alarm channel's sound is None, or its importance is Silent: it rings without a sound. */
+    const val ALARM_SILENT = "alarm_silent"
     const val EXACT_ALARMS_OFF = "exact_alarms_off"
     const val FULL_SCREEN_OFF = "full_screen_off"
     /** A mode this build cannot ring (a later server's). */
     const val UPDATE_NEEDED = "update_needed"
     /** Check keys the Wake screen fixes itself (no ReadinessFix of the SOS card fits them). */
     const val KEY_CHANNEL = "wake_channel"
+    const val KEY_SOUND = "wake_sound"
+    const val KEY_POP_UP = "wake_pop_up"
     const val KEY_VOLUME = "volume"
 
     private val OEM_AUTOSTART = setOf("realme", "oppo", "oneplus", "xiaomi", "redmi", "poco", "vivo", "iqoo", "huawei", "honor", "samsung", "asus", "tecno", "infinix")
@@ -58,7 +77,10 @@ object WakeReadiness {
     fun report(s: WakeDeviceState): WakeReadyReport = when {
         !s.notificationsEnabled -> WakeReadyReport(false, NOTIFICATIONS_OFF)
         s.channelBlocked -> WakeReadyReport(false, CHANNEL_BLOCKED)
+        s.channelSilent -> WakeReadyReport(false, ALARM_SILENT)
         !s.exactAlarms -> WakeReadyReport(false, EXACT_ALARMS_OFF)
+        // It still rings out loud: ready, with the reason noted (as without full-screen alerts).
+        s.channelNoPopUp -> WakeReadyReport(true, FULL_SCREEN_OFF)
         s.sdk >= 34 && !s.canUseFullScreenIntent -> WakeReadyReport(true, FULL_SCREEN_OFF)
         else -> WakeReadyReport(true, null)
     }
@@ -77,6 +99,21 @@ object WakeReadiness {
             ReadinessCheck(
                 KEY_CHANNEL, CheckStatus.ACTION, "The Wake together alarm is turned off",
                 "Turn on \"Wake together alarm\" in Risaina's notification settings.", ReadinessFix.APP_NOTIFICATIONS, "Open",
+            ),
+        )
+        val channelOn = s.notificationsEnabled && !s.channelBlocked
+        if (channelOn && s.channelSilent) add(
+            ReadinessCheck(
+                KEY_SOUND, CheckStatus.ACTION, "The Wake together alarm is silent",
+                "Its sound is set to None or Silent, so it can't wake you. Pick a tone and let it make a sound.",
+                ReadinessFix.APP_NOTIFICATIONS, "Open",
+            ),
+        )
+        if (channelOn && !s.channelSilent && s.channelNoPopUp) add(
+            ReadinessCheck(
+                KEY_POP_UP, CheckStatus.ACTION, "The alarm won't pop up",
+                "It rings, but stays in the status bar. Let it pop on screen so it opens like an alarm clock.",
+                ReadinessFix.APP_NOTIFICATIONS, "Open",
             ),
         )
         if (s.sdk >= 31) add(
@@ -133,10 +170,11 @@ class WakeReadinessProbe @Inject constructor(@ApplicationContext private val con
         val audio = context.getSystemService(AudioManager::class.java)
         val max = runCatching { audio.getStreamMaxVolume(AudioManager.STREAM_ALARM) }.getOrDefault(0)
         val volume = runCatching { audio.getStreamVolume(AudioManager.STREAM_ALARM) }.getOrNull()
+        val channel = runCatching { nm.getNotificationChannel(NotificationChannels.WAKE_ALARM) }.getOrNull()
         return WakeDeviceState(
             sdk = Build.VERSION.SDK_INT,
             notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled(),
-            channelBlocked = runCatching { nm.getNotificationChannel(NotificationChannels.WAKE_ALARM)?.importance == NotificationManager.IMPORTANCE_NONE }.getOrDefault(false),
+            channelBlocked = channel?.importance == NotificationManager.IMPORTANCE_NONE,
             exactAlarms = canExact(context),
             canUseFullScreenIntent = if (Build.VERSION.SDK_INT >= 34) runCatching { nm.canUseFullScreenIntent() }.getOrDefault(true) else true,
             alarmVolumePct = if (max > 0 && volume != null) volume * 100 / max else null,
@@ -145,6 +183,8 @@ class WakeReadinessProbe @Inject constructor(@ApplicationContext private val con
             }.getOrDefault(false),
             dndBlocksAlarms = runCatching { SosDiagnostics.dndBlocksAlarms(context) }.getOrDefault(false),
             manufacturer = Build.MANUFACTURER.orEmpty(),
+            channelImportance = channel?.importance,
+            channelSound = channel == null || channel.sound != null,
         )
     }
 

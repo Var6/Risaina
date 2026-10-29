@@ -184,7 +184,7 @@ class WakeViewModel @Inject constructor(
     /** A readiness row's button: the SOS card's fixes, and the two only Wake together has. */
     fun fix(check: ReadinessCheck) {
         when (check.key) {
-            WakeReadiness.KEY_CHANNEL -> probe.openAlarmChannel()
+            WakeReadiness.KEY_CHANNEL, WakeReadiness.KEY_SOUND, WakeReadiness.KEY_POP_UP -> probe.openAlarmChannel()
             WakeReadiness.KEY_VOLUME -> probe.showAlarmVolume()
             else -> check.fix?.let(fixes::open)
         }
