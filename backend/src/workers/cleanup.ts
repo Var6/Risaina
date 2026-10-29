@@ -17,6 +17,11 @@ export interface CleanupOptions {
 /** Grace after the open URL's expiry before its object is deleted (clock skew, slow downloads). */
 export const VIEW_ONCE_PURGE_GRACE_SECONDS = 60;
 
+/** A device row pushed to but silent this long (and at least this old) is dead, if a sibling acks. */
+export const DEAD_DEVICE_DAYS = 3;
+/** The sibling row that proves the user's real phone receives pushes acked within this window. */
+export const LIVE_SIBLING_HOURS = 24;
+
 export interface CleanupReport {
   abandonedUploads: number;
   viewOnceOpenedPurged: number;
@@ -28,6 +33,8 @@ export interface CleanupReport {
   unlinkedEventsPurged: number;
   sessionsPurged: number;
   passwordResetsPurged: number;
+  /** Device rows of an old install that no longer acks pushes while the user's other phone does. */
+  deadDevicesPruned: number;
 }
 
 /**
@@ -35,8 +42,8 @@ export interface CleanupReport {
  * view-once photos (opened ones once their open URL expired, unopened ones after N days), re-runs
  * the (idempotent) purge of couples unlinked within the last 7 days, removes storage objects for
  * media already marked `deleted` (deferred deletions; media of a purged couple loses its document
- * too), drops each unlinked couple's final `couple.unlinked` event after 7 days, and purges
- * long-expired sessions and password-reset tokens.
+ * too), drops each unlinked couple's final `couple.unlinked` event after 7 days, purges
+ * long-expired sessions and password-reset tokens, and prunes dead duplicate device rows.
  */
 export class CleanupWorker {
   private timer: NodeJS.Timeout | null = null;
@@ -91,6 +98,7 @@ export class CleanupWorker {
       unlinkedEventsPurged: 0,
       sessionsPurged: 0,
       passwordResetsPurged: 0,
+      deadDevicesPruned: 0,
     };
 
     // 1. abandoned pending uploads → deleted (object removed if it was partially uploaded)
@@ -205,6 +213,54 @@ export class CleanupWorker {
     });
     report.passwordResetsPurged = resets.deletedCount;
 
+    // 5. device rows of an old install (reinstall / cleared data made a new deviceId)
+    report.deadDevicesPruned = await this.pruneDeadDuplicateDevices(now);
+
     return report;
+  }
+
+  /**
+   * A reinstall or "clear data" gives the phone a new deviceId, and the old row lingers until FCM
+   * answers UNREGISTERED, which can take a long time. A row is deleted only when ALL of these hold:
+   * - it was created more than 3 days ago;
+   * - pushes were sent to it (lastPushSentAt) and none was acknowledged since (it never acked, or the
+   *   last push is newer than its last ack);
+   * - its last ack (or, without one, its creation) is more than 3 days old;
+   * - another row of the same user acked a push within the last 24 h.
+   * So a user's only row is never deleted, nor rows of builds that do not ack while no sibling acks.
+   * A wrong prune heals itself: the app registers its row again every time it opens.
+   */
+  async pruneDeadDuplicateDevices(now: Date): Promise<number> {
+    const staleBefore = new Date(now.getTime() - DEAD_DEVICE_DAYS * 24 * 3600 * 1000);
+    const ackedSince = new Date(now.getTime() - LIVE_SIBLING_HOURS * 3600 * 1000);
+    const candidates = await this.db.deviceTokens
+      .find(
+        {
+          createdAt: { $lt: staleBefore },
+          lastPushSentAt: { $type: 'date' },
+          $or: [{ lastPushAckAt: null }, { lastPushAckAt: { $lt: staleBefore } }],
+        },
+        { projection: { token: 0 } },
+      )
+      .limit(500)
+      .toArray();
+    let pruned = 0;
+    for (const row of candidates) {
+      const ackAt = row.lastPushAckAt ?? null;
+      if (ackAt && row.lastPushSentAt! <= ackAt) continue; // nothing was pushed since its last ack
+      const liveSibling = await this.db.deviceTokens.countDocuments(
+        { userId: row.userId, _id: { $ne: row._id }, lastPushAckAt: { $gte: ackedSince } },
+        { limit: 1 },
+      );
+      if (liveSibling === 0) continue;
+      // Only as read: a row that acked or registered again meanwhile is alive.
+      const res = await this.db.deviceTokens.deleteOne({
+        _id: row._id,
+        lastPushAckAt: ackAt,
+        updatedAt: row.updatedAt,
+      });
+      pruned += res.deletedCount;
+    }
+    return pruned;
   }
 }
