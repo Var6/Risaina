@@ -189,7 +189,17 @@ describe('cross-couple isolation (user C is paired with D, not with A/B)', () =>
 
   it('an unpaired user is 409 not_paired everywhere couple-scoped', async () => {
     const solo = await register(t.app, 'Solo');
-    for (const path of ['/pings', '/messages', '/memories', '/milestones', '/events', '/couple']) {
+    for (const path of [
+      '/pings',
+      '/messages',
+      '/memories',
+      '/milestones',
+      '/events',
+      '/couple',
+      '/calendar',
+      '/alarms',
+      `/lists/${'0'.repeat(24)}`,
+    ]) {
       const res = await t.app.inject({ method: 'GET', url: `${API}${path}`, headers: bearer(solo) });
       expect(res.statusCode, path).toBe(409);
       expect(res.json().error.code, path).toBe('not_paired');
