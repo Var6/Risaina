@@ -1,5 +1,8 @@
 package com.risaina.app.core.data.lists
 
+import com.risaina.app.core.data.TodoAppend
+import com.risaina.app.core.model.ListLimits
+import com.risaina.app.core.model.ListMarker
 import java.util.Collections
 
 /**
@@ -16,13 +19,24 @@ import java.util.Collections
  *   tick likewise. Rows either side added are kept.
  * - Order: the rows both kept follow my order if I reordered them, else theirs. Their new rows go
  *   after the row they followed on their side, then mine after the row they followed on mine.
+ * - They turned a note into a checklist (or back) while I was still writing in it: the lines I
+ *   wrote since become rows at the end of theirs (or my new rows, lines at the end of their note),
+ *   since a checklist's text and a note's rows are not shown as such.
  *
  * merge3(b, b, t) == t, merge3(b, m, b) == m, and merging again with the same copy changes nothing.
  */
 object ListMerge {
     data class Result(val doc: ListDoc, val bodyConflict: Boolean)
 
-    fun merge3(base: ListDoc, mine: ListDoc, theirs: ListDoc): Result {
+    fun merge3(base: ListDoc, mine: ListDoc, theirs: ListDoc, newId: () -> String = TodoAppend::newId): Result {
+        if (mine.kind == base.kind && theirs.kind != base.kind) {
+            if (base.isNote) return intoTheirChecklist(base, mine, theirs, newId)
+            if (theirs.isNote) return intoTheirNote(base, mine, theirs)
+        }
+        return plain(base, mine, theirs)
+    }
+
+    private fun plain(base: ListDoc, mine: ListDoc, theirs: ListDoc): Result {
         val body = Diff3.merge(base.body, mine.body, theirs.body)
         val doc = ListDoc(
             kind = pick(base.kind, mine.kind, theirs.kind),
@@ -34,6 +48,49 @@ object ListMerge {
             items = mergeItems(base.items, mine.items, theirs.items),
         )
         return Result(doc, body.conflict)
+    }
+
+    /**
+     * They made a checklist of the note I am writing in: the lines I added or changed since become
+     * rows after theirs (up to 200; any more stay as text, which the editor shows). A changed line
+     * is there twice then, as their row and as mine: both kept.
+     */
+    private fun intoTheirChecklist(base: ListDoc, mine: ListDoc, theirs: ListDoc, newId: () -> String): Result {
+        val o = base.body.split('\n')
+        val a = mine.body.split('\n')
+        val inBase = Diff3.match(a, o)
+        val written = a.filterIndexed { i, _ -> inBase[i] < 0 }.joinToString("\n")
+        // My other changes (title, pin, rows an older app added) merge as usual, my text aside.
+        val rest = plain(base, mine.copy(body = base.body), theirs).doc
+        if (written.isBlank()) return Result(rest, false)
+        val rows = ListLines.toRows(written, (ListLimits.MAX_ITEMS - rest.items.size).coerceAtLeast(0))
+        val doc = rest.copy(
+            items = rest.items + rows.rows.map { DocItem(newId(), it.text, it.done) },
+            body = if (rows.rest.isBlank()) rest.body else listOf(rest.body.trimEnd(), rows.rest.trim()).filter { it.isNotEmpty() }.joinToString("\n"),
+        )
+        return Result(doc, bodyConflict = Diff3.match(o, a).any { it < 0 })
+    }
+
+    /**
+     * They made a note of the checklist I am editing: my new and reworded rows become lines at the
+     * end of their note, drawn as they were (number, bullet, box). Those that do not fit stay rows,
+     * which the editor shows under the note. A reworded row is there twice then: both kept.
+     */
+    private fun intoTheirNote(base: ListDoc, mine: ListDoc, theirs: ListDoc): Result {
+        val b = base.items.associateBy { it.id }
+        val marker = ListMarker.fromWire(mine.marker)
+        val changed = mine.items.filter { it.text.isNotBlank() }.withIndex().filter { (_, r) -> b[r.id]?.let { it.text.trim() != r.text.trim() } ?: true }
+        // My other changes (title, pin) merge as usual, my rows aside.
+        val rest = plain(base, mine.copy(items = base.items), theirs).doc
+        if (changed.isEmpty()) return Result(rest, false)
+        var body = rest.body.trimEnd()
+        val left = ArrayList<DocItem>()
+        for ((i, r) in changed) {
+            val line = ListLines.prefix(i, r.done, marker, mine.checkboxes) + r.text.trim()
+            val next = if (body.isEmpty()) line else "$body\n$line"
+            if (left.isEmpty() && next.length <= ListLimits.MAX_BODY) body = next else left += r
+        }
+        return Result(rest.copy(body = body, items = rest.items + left), bodyConflict = changed.any { (_, r) -> r.id in b })
     }
 
     private fun <T> pick(b: T, m: T, t: T): T = if (m != b) m else t

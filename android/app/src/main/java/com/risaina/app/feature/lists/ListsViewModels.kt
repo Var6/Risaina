@@ -246,7 +246,17 @@ class ListEditorViewModel @Inject constructor(
     fun uncheckAll() = edit(RowEdits::uncheckAll)
     fun deleteTicked() = edit(RowEdits::deleteTicked)
 
-    /** The rows a note picked up from an older app (it saved items onto it after it became a note), as lines. */
+    /** A checklist's text that is not rows yet (ListEditorScreen's strip), as rows at the end. */
+    fun moveTextIntoItems() {
+        var result: RowEdit? = null
+        edit { d -> RowEdits.textToRows(d).also { result = it }.doc }
+        result?.leftOut?.takeIf { it > 0 }?.let { effects.trySend("A list holds up to 200 items. The rest stays as text.") }
+    }
+
+    /**
+     * The rows a note has (an older app saved items onto it after it became a note, or they were
+     * added while the partner turned the list into a note), as lines.
+     */
     fun moveOldItemsIntoNote() = edit { d ->
         val lines = d.items.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.done) "☑ " else "☐ ") + it.text.trim() }
         d.copy(body = listOf(d.body.trimEnd(), lines).filter { it.isNotEmpty() }.joinToString("\n"), items = emptyList())

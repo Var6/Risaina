@@ -135,6 +135,18 @@ class ListEditorTest {
         assertEquals(r.caret, again.caret)
     }
 
+    @Test fun `a checklist's leftover text becomes rows, up to 200, the rest staying as text`() {
+        val r = RowEdits.textToRows(ListDoc(body = "☑ Bread\n\n• Jam\n", items = listOf(DocItem("a", "Milk"))), ids)
+        assertEquals(listOf("Milk", "Bread", "Jam"), texts(r.doc))
+        assertTrue(r.doc.items[1].done)
+        assertEquals("", r.doc.body)
+        assertEquals(0, r.leftOut)
+        val full = RowEdits.textToRows(ListDoc(body = "a\n• b\n\n", items = List(199) { DocItem("i$it", "x") }), ids)
+        assertEquals(200, full.doc.items.size)
+        assertEquals("• b", full.doc.body)
+        assertEquals(1, full.leftOut)
+    }
+
     @Test fun `a deleted row comes back where it was`() {
         val (d, removed) = RowEdits.remove(doc("A", "B", "C"), "r1")
         assertEquals(listOf("A", "C"), texts(d))

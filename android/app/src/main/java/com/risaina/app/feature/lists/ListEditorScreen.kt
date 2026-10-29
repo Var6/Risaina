@@ -262,6 +262,8 @@ private fun EditorBody(
             item(key = "body") { NoteBody(doc, vm, firstFocus, onNoteValue) }
             if (doc.items.any { it.text.isNotBlank() }) item(key = "old-items") { OldItemsStrip(doc, vm) }
         } else {
+            // Text a checklist has (a note's lines past 200, or written as it became a checklist) is never hidden.
+            if (doc.body.isNotBlank()) item(key = "text-lines") { TextLinesStrip(doc, vm) }
             itemsIndexed(doc.items, key = { _, r -> ROW_KEY + r.id }) { i, row ->
                 RowItem(
                     row = row, index = i, count = doc.items.size, doc = doc, people = people, vm = vm, reorder = reorder, now = now,
@@ -363,14 +365,17 @@ private fun NoteBody(doc: ListDoc, vm: ListEditorViewModel, focus: FocusRequeste
     )
 }
 
-/** Items an older app saved onto what is now a note (lists.md G): shown, and can be added to the text. */
+/**
+ * Items on what is now a note (lists.md G: an older app saved them onto it, or they were added while
+ * the partner turned the list into a note): shown, and can be added to the text.
+ */
 @Composable
 private fun OldItemsStrip(doc: ListDoc, vm: ListEditorViewModel) {
     var open by remember { mutableStateOf(false) }
     val items = doc.items.filter { it.text.isNotBlank() }
     RisainaCard(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), contentPadding = PaddingValues(16.dp)) {
         val n = items.size
-        Text("$n list item${if (n == 1) "" else "s"} from an older version of the app", style = MaterialTheme.typography.bodyMedium)
+        Text("$n list item${if (n == 1) " isn't" else "s aren't"} in the note yet", style = MaterialTheme.typography.bodyMedium)
         if (open) {
             Spacer(Modifier.height(8.dp))
             items.forEach { Text((if (it.done) "☑ " else "☐ ") + it.text, style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted) }
@@ -378,6 +383,25 @@ private fun OldItemsStrip(doc: ListDoc, vm: ListEditorViewModel) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton(if (open) "Hide" else "Show", onClick = { open = !open })
             GhostButton("Add them to the note", onClick = vm::moveOldItemsIntoNote)
+        }
+    }
+}
+
+/** A checklist's text that is not rows: shown, and can be turned into items. */
+@Composable
+private fun TextLinesStrip(doc: ListDoc, vm: ListEditorViewModel) {
+    var open by remember { mutableStateOf(false) }
+    val lines = doc.body.lines().filter { it.isNotBlank() }
+    RisainaCard(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), contentPadding = PaddingValues(16.dp)) {
+        val n = lines.size
+        Text("$n line${if (n == 1) "" else "s"} of text ${if (n == 1) "isn't an item" else "aren't items"} yet", style = MaterialTheme.typography.bodyMedium)
+        if (open) {
+            Spacer(Modifier.height(8.dp))
+            lines.forEach { Text(it.trim(), style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton(if (open) "Hide" else "Show", onClick = { open = !open })
+            GhostButton("Turn into items", onClick = vm::moveTextIntoItems)
         }
     }
 }

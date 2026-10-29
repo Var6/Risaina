@@ -109,6 +109,15 @@ object RowEdits {
         return RowEdit(doc.copy(items = doc.items + row), Caret(row.id, 0))
     }
 
+    /**
+     * A checklist's text (lines a note had past 200 items, or written while the partner turned it
+     * into a checklist) as rows at the end, up to 200 in all; [RowEdit.leftOut] lines stay as text.
+     */
+    fun textToRows(doc: ListDoc, newId: () -> String = TodoAppend::newId): RowEdit {
+        val r = ListLines.toRows(doc.body, (ListLimits.MAX_ITEMS - doc.items.size).coerceAtLeast(0))
+        return RowEdit(doc.copy(items = doc.items + r.rows.map { DocItem(newId(), it.text, it.done) }, body = r.rest.trim()), leftOut = r.leftOver)
+    }
+
     fun remove(doc: ListDoc, rowId: String): Pair<ListDoc, RemovedRow?> {
         val i = doc.items.indexOfFirst { it.id == rowId }
         if (i < 0) return doc to null

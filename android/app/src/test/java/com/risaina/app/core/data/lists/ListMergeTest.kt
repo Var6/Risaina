@@ -131,6 +131,39 @@ class ListMergeTest {
         assertEquals("deleted here, added after there: the added line stays", "a\nc", merge(base, doc(body = "a"), theirs).body)
     }
 
+    @Test fun `lines written while the partner turned the note into a checklist become rows`() {
+        var n = 0
+        val newId = { "m${n++}" }
+        val base = ListDoc(kind = "note", title = "Shop", body = "Milk\nEggs")
+        val theirs = ListDoc(kind = "checklist", title = "Shop", items = listOf(row("cv0", "Milk"), row("cv1", "Eggs")))
+        val r = ListMerge.merge3(base, base.copy(body = "Milk\nEggs\n• Bread\n"), theirs, newId)
+        assertEquals("checklist", r.doc.kind)
+        assertEquals(listOf("Milk", "Eggs", "Bread"), r.doc.items.map { it.text })
+        assertEquals("no text is left where a checklist does not show it", "", r.doc.body)
+        assertFalse(r.bodyConflict)
+        assertEquals("merging again adds nothing", r.doc, merge(base, r.doc, theirs))
+        assertEquals(r.doc, merge(theirs, r.doc, theirs))
+        assertEquals("nothing written here: theirs", theirs, merge(base, base, theirs))
+
+        val reworded = ListMerge.merge3(base, base.copy(body = "Milk\nBrown eggs"), theirs, newId)
+        assertEquals(listOf("Milk", "Eggs", "Brown eggs"), reworded.doc.items.map { it.text })
+        assertTrue("both kept", reworded.bodyConflict)
+    }
+
+    @Test fun `rows added while the partner turned the checklist into a note become lines`() {
+        val base = doc(row("a", "Milk"), row("b", "Eggs"))
+        val theirs = ListDoc(kind = "note", title = "Weekend", body = "☐ Milk\n☐ Eggs")
+        val mine = doc(row("a", "Milk"), row("b", "Eggs"), row("x", "Bread", done = true), row("y", ""))
+        val r = ListMerge.merge3(base, mine, theirs)
+        assertEquals("note", r.doc.kind)
+        assertEquals("☐ Milk\n☐ Eggs\n☑ Bread", r.doc.body)
+        assertTrue(r.doc.items.isEmpty())
+        assertFalse(r.bodyConflict)
+        assertEquals("merging again adds nothing", r.doc, merge(base, r.doc, theirs))
+        assertEquals(r.doc, merge(theirs, r.doc, theirs))
+        assertEquals(theirs, merge(base, base, theirs))
+    }
+
     @Test fun `the same body edit on both sides is taken once`() {
         val r = ListMerge.merge3(doc(body = "a\nb"), doc(body = "a\nb\nc"), doc(body = "a\nb\nc"))
         assertEquals("a\nb\nc", r.doc.body)
