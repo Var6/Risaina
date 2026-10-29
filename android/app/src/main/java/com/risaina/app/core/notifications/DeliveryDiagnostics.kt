@@ -191,6 +191,13 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
 
     private fun storedQuickMessages(): Map<String, Long> = QuickMessageRefs.decode(prefs.getString(K_QUICK_MESSAGES, null))
 
+    /** The game the last game notification was posted for, and when (GameNotificationText.alertOnce). */
+    fun recordGameNotification(gameId: String, now: Long = System.currentTimeMillis()) {
+        prefs.edit().putString(K_GAME_ID, gameId).putLong(K_GAME_AT, now).apply()
+    }
+
+    fun lastGameNotification(): Pair<String?, Long> = prefs.getString(K_GAME_ID, null) to prefs.getLong(K_GAME_AT, 0L)
+
     /** The person said they turned on auto launch and background activity (Delivery health). */
     fun confirmOemSteps(now: Long = System.currentTimeMillis()) {
         prefs.edit().putLong(K_OEM_CONFIRMED, now).apply()
@@ -238,6 +245,8 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         private const val K_FAST_REF_PREFIX = "fast_alert_ref_"
         private const val K_QUICK_MESSAGES = "quick_messages"
         private const val K_HANDLED = "handled_push_ids"
+        private const val K_GAME_ID = "game_notification_id"
+        private const val K_GAME_AT = "game_notification_at"
         private const val K_ACK_PRIORITY = "ack_priority"
         private const val K_ACK_ORIGINAL = "ack_original_priority"
         private const val K_OEM_CONFIRMED = "oem_steps_confirmed_at"

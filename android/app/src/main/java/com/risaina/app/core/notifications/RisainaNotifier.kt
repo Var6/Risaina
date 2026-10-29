@@ -196,13 +196,15 @@ class RisainaNotifier @Inject constructor(
                     }
                     return
                 }
+                val (lastGame, lastAt) = diagnostics.lastGameNotification()
                 post(
                     id = GAME_NOTIFICATION_ID, group = NotificationGroups.GAME,
                     channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
                     title = partner, body = if (prefs.previewInNotifications) "${partner.substringBefore(" ")} $body" else "New activity",
                     deepLink = "risaina://app/messages", category = NotificationCompat.CATEGORY_MESSAGE, priority = NotificationCompat.PRIORITY_DEFAULT,
-                    onlyAlertOnce = GameNotificationText.alertOnce(item.action),
+                    onlyAlertOnce = GameNotificationText.alertOnce(item.action, item.id, lastGame, lastAt, showing(GAME_NOTIFICATION_ID), System.currentTimeMillis()),
                 )
+                diagnostics.recordGameNotification(item.id)
             }
             Incoming.Unlinked -> post(
                 id = 9001, group = NotificationGroups.SYSTEM, channel = NotificationChannels.SYSTEM, title = "Risaina",
