@@ -217,6 +217,14 @@ class WakeAlarmController @Inject constructor(
         rearm(now)
     }
 
+    /** This person's own switch on the Wake screen: applies here at once, reaches the server when it can. */
+    fun setMyRing(alarmId: String, ring: Boolean) {
+        if (!ring) return notOnMyPhone(alarmId)
+        store.setPendingRing(alarmId, true)
+        WakeReportWorker.enqueueRing(context, alarmId, true)
+        rearm()
+    }
+
     /** "Test on this phone": rings in 10 seconds through the alarm clock and the full-screen path. */
     fun scheduleTest(now: Instant = Instant.now()) = scheduler.setTest(now.toEpochMilli() + WakeAlarmRules.TEST_DELAY_MS)
 
