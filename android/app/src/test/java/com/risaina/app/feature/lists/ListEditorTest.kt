@@ -172,6 +172,20 @@ class ListEditorTest {
         assertEquals("milk\n• eggs\nbread", NoteEdits.toggleList("milk\neggs\nbread", 6, 6, NoteEdits.Kind.BULLET).text)
     }
 
+    @Test fun `a keystroke made before a merged partner edit reached the field keeps their lines`() {
+        // The field still shows "Milk"; the engine already holds the partner's "Bread" under it.
+        assertEquals("Milkx\nBread", NoteEdits.onto("Milk\nBread", "Milk", "Milkx"))
+        assertEquals("their line above", "Eggs\nMilk!", NoteEdits.onto("Eggs\nMilk", "Milk", "Milk!"))
+        assertEquals("Backspace", "Mil\nBread", NoteEdits.onto("Milk\nBread", "Milk", "Mil"))
+        assertEquals("Enter with a new bullet", "• a\n• \nBread", NoteEdits.onto("• a\nBread", "• a", "• a\n• "))
+        assertEquals("nothing merged meanwhile: the field's text", "Milkx", NoteEdits.onto("Milk", "Milk", "Milkx"))
+        // Both changed the same line: both kept, nothing lost.
+        val same = NoteEdits.onto("Oat milk", "Milk", "Milkx")
+        assertTrue(same.contains("Oat milk") && same.contains("Milkx"))
+        // A list button over several lines is merged line by line.
+        assertEquals("• a\n• b\nBread", NoteEdits.onto("a\nb\nBread", "a\nb", "• a\n• b"))
+    }
+
     @Test fun `Add to calendar takes the selection, or the cursor's line, without its marker`() {
         val text = "Plans\n• Dinner at Lilo's on Friday\n• Movie"
         assertEquals("Dinner at Lilo's on Friday", NoteEdits.calendarTitle(text, 10, 10))

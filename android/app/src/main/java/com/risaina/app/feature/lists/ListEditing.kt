@@ -1,6 +1,7 @@
 package com.risaina.app.feature.lists
 
 import com.risaina.app.core.data.TodoAppend
+import com.risaina.app.core.data.lists.Diff3
 import com.risaina.app.core.data.lists.DocItem
 import com.risaina.app.core.data.lists.ListDoc
 import com.risaina.app.core.data.lists.ListLines
@@ -185,6 +186,33 @@ object NoteEdits {
         }
         val text = new.substring(0, cursor) + next + new.substring(cursor)
         return Edit(text, cursor + next.length)
+    }
+
+    /**
+     * The field's change ([old] → [new]) made on the engine's newest body [cur]. They differ when a
+     * partner's save was merged in after the field last drew it: their lines must stay, or the next
+     * send would take them out for both. A change within one line goes into that line where it is
+     * now; anything else is merged line by line.
+     */
+    fun onto(cur: String, old: String, new: String): String {
+        if (cur == old || old == new) return if (cur == old) new else cur
+        var p = 0
+        while (p < old.length && p < new.length && old[p] == new[p]) p++
+        var q = 0
+        while (q < old.length - p && q < new.length - p && old[old.length - 1 - q] == new[new.length - 1 - q]) q++
+        val end = old.length - q
+        if (old.indexOf('\n', p).let { it < 0 || it >= end }) {
+            val line = old.substring(0, p).count { it == '\n' }
+            val target = Diff3.match(old.split('\n'), cur.split('\n'))[line]
+            if (target >= 0) {
+                val col = p - (old.lastIndexOf('\n', p - 1) + 1)
+                var at = 0
+                repeat(target) { at = cur.indexOf('\n', at) + 1 }
+                at += col
+                return cur.substring(0, at) + new.substring(p, new.length - q) + cur.substring(at + (end - p))
+            }
+        }
+        return Diff3.merge(old, new, cur).text
     }
 
     enum class Kind { BULLET, NUMBER }

@@ -168,16 +168,20 @@ class ListEditorViewModel @Inject constructor(
 
     fun setTitle(t: String) = edit { it.copy(title = t.take(com.risaina.app.core.model.ListLimits.MAX_TITLE)) }
 
-    /** The note's text, with list continuation on Enter. Returns the text and cursor the field should show. */
+    /**
+     * The note's text, with list continuation on Enter. Returns the text and cursor the field should
+     * show. The change is made on the engine's newest body, which may hold a partner's merged lines
+     * the field has not drawn yet; the field takes that body once the flow brings it.
+     */
     fun setBody(old: String, new: String, cursor: Int): NoteEdits.Edit {
         val e = NoteEdits.typed(old, new, cursor).let { if (it.text.length > com.risaina.app.core.model.ListLimits.MAX_BODY) NoteEdits.Edit(old, cursor - 1) else it }
-        edit { it.copy(body = e.text) }
+        edit { it.copy(body = NoteEdits.onto(it.body, old, e.text)) }
         return e
     }
 
     fun toggleNoteList(text: String, selStart: Int, selEnd: Int, kind: NoteEdits.Kind): NoteEdits.Edit {
         val e = NoteEdits.toggleList(text, selStart, selEnd, kind)
-        edit { it.copy(body = e.text) }
+        edit { it.copy(body = NoteEdits.onto(it.body, text, e.text)) }
         return e
     }
 
