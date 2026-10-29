@@ -89,6 +89,7 @@ class MessagesViewModel @Inject constructor(
     private val preferencesStore: com.risaina.app.core.datastore.PreferencesStore,
     gameRepo: com.risaina.app.core.data.GameRepository,
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
+    private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
 ) : ViewModel() {
     private val wallpaperBusy = MutableStateFlow(false)
     private val gameRepository = gameRepo
@@ -353,9 +354,19 @@ class MessagesViewModel @Inject constructor(
         ))
     }
 
+    /** The repository also takes the message's line out of the chat notification once the read is stored. */
     fun markRead(message: Message) {
         if (message.senderId == state.value.myId || message.readAt != null) return
         viewModelScope.launch { messageRepository.markRead(message.id) }
+    }
+
+    /**
+     * The chat is on screen (opened, or back from the background): the chat notification is rebuilt
+     * from what is still unread, or removed, so it never lingers with messages read on another phone
+     * or deleted meanwhile. The messages that come into view are then marked read one by one.
+     */
+    fun onChatVisible() {
+        viewModelScope.launch { notifier.refreshConversation() }
     }
 
     fun retry(message: Message) { viewModelScope.launch { messageRepository.retry(message.localKey) } }

@@ -49,6 +49,7 @@ class MessageRepository @Inject constructor(
     private val sessionStore: SessionStore,
     private val time: TimeProvider,
     private val json: Json,
+    private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
 ) {
     fun recent(limit: Int = 200): Flow<List<Message>> = messageDao.recent(limit).map { l -> l.map { it.toDomain() } }
     val latest: Flow<Message?> = messageDao.latest().map { it?.toDomain() }
@@ -146,10 +147,14 @@ class MessageRepository @Inject constructor(
 
     suspend fun discard(localKey: String) { messageDao.deleteByLocalKey(localKey); outboxDao.deleteByKey(localKey) }
 
+    /** Once the read is stored, the message's line leaves the chat notification (from any screen that reads it). */
     suspend fun markRead(id: String): AppResult<Unit> {
         val local = messageDao.byId(id)
         if (local == null || local.readAt != null || local.id.startsWith("local:")) return AppResult.Success(Unit)
-        return apiCall { api.messageRead(id) }.onSuccess { messageDao.upsert(it.message.toEntity(local.localMediaPath)) }.map { }
+        return apiCall { api.messageRead(id) }.onSuccess {
+            messageDao.upsert(it.message.toEntity(local.localMediaPath))
+            notifier.refreshConversation()
+        }.map { }
     }
 
     suspend fun delete(id: String): AppResult<Unit> =

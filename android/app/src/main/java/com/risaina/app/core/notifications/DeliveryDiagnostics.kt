@@ -156,6 +156,27 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
     fun lastFastAlert(kind: String): Pair<Long, String?> =
         prefs.getLong(K_FAST_PREFIX + kind, 0L) to prefs.getString(K_FAST_REF_PREFIX + kind, null)
 
+    /**
+     * Messages whose quick alert ("Sent you a message") was posted from their push, with when. Per
+     * message, not just the last one (as [recordFastAlert] keeps for pings): in a burst every push
+     * posts its own quick alert before the sync brings any of them, and each detailed post must know
+     * whether its message already alerted. The chat notification shows a placeholder line for each
+     * one Room does not have yet. Kept for FastAlerts.WINDOW_MS. Callers hold RisainaNotifier's
+     * postLock, so a read and the write after it never interleave.
+     */
+    fun recordQuickMessage(id: String, now: Long = System.currentTimeMillis()) {
+        prefs.edit().putString(K_QUICK_MESSAGES, QuickMessageRefs.encode(QuickMessageRefs.add(storedQuickMessages(), id, now))).apply()
+    }
+
+    fun quickMessages(now: Long = System.currentTimeMillis()): Map<String, Long> = QuickMessageRefs.fresh(storedQuickMessages(), now)
+
+    fun forgetQuickMessage(id: String) {
+        val refs = storedQuickMessages()
+        if (id in refs) prefs.edit().putString(K_QUICK_MESSAGES, QuickMessageRefs.encode(refs - id)).apply()
+    }
+
+    private fun storedQuickMessages(): Map<String, Long> = QuickMessageRefs.decode(prefs.getString(K_QUICK_MESSAGES, null))
+
     /** The person said they turned on auto launch and background activity (Delivery health). */
     fun confirmOemSteps(now: Long = System.currentTimeMillis()) {
         prefs.edit().putLong(K_OEM_CONFIRMED, now).apply()
@@ -201,6 +222,7 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         private const val K_TEST_AT = "test_push_at"
         private const val K_FAST_PREFIX = "fast_alert_at_"
         private const val K_FAST_REF_PREFIX = "fast_alert_ref_"
+        private const val K_QUICK_MESSAGES = "quick_messages"
         private const val K_ACK_PRIORITY = "ack_priority"
         private const val K_ACK_ORIGINAL = "ack_original_priority"
         private const val K_OEM_CONFIRMED = "oem_steps_confirmed_at"

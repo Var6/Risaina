@@ -14,7 +14,6 @@ import com.risaina.app.core.common.TimeProvider
 import com.risaina.app.core.database.CoupleDao
 import com.risaina.app.core.datastore.PreferencesStore
 import com.risaina.app.core.domain.QuietHoursPolicy
-import com.risaina.app.core.model.MessageType
 import com.risaina.app.core.sync.Incoming
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.sync.Mutex
@@ -36,6 +35,7 @@ class RisainaNotifier @Inject constructor(
     private val diagnostics: DeliveryDiagnostics,
     private val pingDao: com.risaina.app.core.database.PingDao,
     private val messageDao: com.risaina.app.core.database.MessageDao,
+    private val conversation: ConversationNotification,
 ) {
     private fun canPost(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED &&
@@ -55,9 +55,10 @@ class RisainaNotifier @Inject constructor(
 
     /**
      * Opening Risaina means the partner's ping or gift, the game nudge and "updated your widget" were
-     * seen: remove those notifications so an old gift never lingers in the shade. Chat messages stay
-     * until read or tapped (they are not "seen" just because the app opened on Home), and SOS, the
-     * lock-screen card and service notifications are left alone.
+     * seen: remove those notifications so an old gift never lingers in the shade. The chat stays
+     * until its messages are read or it is tapped (they are not "seen" just because the app opened on
+     * Home; see [refreshConversation]), and SOS, the lock-screen card and service notifications are
+     * left alone.
      */
     fun clearPartnerAlerts() {
         val nm = NotificationManagerCompat.from(context)
@@ -114,7 +115,27 @@ class RisainaNotifier @Inject constructor(
         postLock.withLock { postDetailed(item, prefs, partner, quiet) }
     }
 
-    private fun postDetailed(item: Incoming, prefs: com.risaina.app.core.model.Preferences, partner: String, quiet: Boolean) {
+    /**
+     * Messages were read (here, on the person's other phone, or from Home) or the partner deleted
+     * one: the chat notification is rebuilt from what is still unread, silently, and removed when
+     * nothing is. Called from MessageRepository.markRead, the chat screen and the reducer (inside an
+     * event's apply), so it is local only and never throws: a notification must not fail a read.
+     */
+    suspend fun refreshConversation() {
+        try {
+            val prefs = preferencesStore.current()
+            val partner = coupleDao.partner()?.displayName ?: "Your partner"
+            val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
+            postLock.withLock {
+                conversation.refresh(conversation.build(prefs.previewInNotifications), partner, quiet, mayPost = canPost() && prefs.notificationsEnabled)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+        }
+    }
+
+    private suspend fun postDetailed(item: Incoming, prefs: com.risaina.app.core.model.Preferences, partner: String, quiet: Boolean) {
         when (item) {
             is Incoming.NewPing -> {
                 val p = item.ping
@@ -141,26 +162,16 @@ class RisainaNotifier @Inject constructor(
                 )
             }
             is Incoming.NewMessage -> {
-                val m = item.message
-                val body = when {
-                    !prefs.previewInNotifications -> "New message"
-                    m.type == MessageType.PHOTO && m.viewOnce -> "Sent you a view-once photo"
-                    m.type == MessageType.PHOTO -> "Sent you a photo"
-                    m.type == MessageType.VOICE -> "Sent you a voice note"
-                    else -> m.text ?: "New message"
-                }
-                // Same id as the quick "sent you a message" posted from the push (messageNotificationId),
-                // so this replaces it in place without a second alert.
-                val id = messageNotificationId(m.id)
-                val action = FastAlerts.detailedAction(followsFastAlert(FAST_MESSAGE, m.id), showing(id))
+                // One conversation for the whole chat (ConversationNotification). This message's quick
+                // alert left a placeholder line in it; the rebuild from Room puts the real text in its
+                // place, in the same notification. A message with no quick alert of its own (more of a
+                // burst than pushes so far, the hourly sync) alerts.
+                val id = item.message.id
+                val quick = id in diagnostics.quickMessages()
+                diagnostics.forgetQuickMessage(id)
+                val action = FastAlerts.detailedAction(quick, conversation.showing())
                 if (action == DetailedAction.SKIP) return
-                post(
-                    id = id, group = NotificationGroups.CHAT,
-                    onlyAlertOnce = action.onlyAlertOnce,
-                    channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
-                    title = partner, body = body, deepLink = "risaina://app/messages",
-                    category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
-                )
+                conversation.show(conversation.build(prefs.previewInNotifications), partner, quiet, alert = action == DetailedAction.ALERT)
             }
             // The partner changed "Their widget" (mood, note, photo): a quiet line while the widget
             // redraws, so this high-priority push still ends in something visible.
@@ -230,9 +241,9 @@ class RisainaNotifier @Inject constructor(
 
     /**
      * Straight from a message push, before the network: the phone alerts within a second even when
-     * the sync after a Doze wake is slow or fails. Generic (the push carries no content, only the
-     * message's opaque id [messageId]), posted under the id the real message notification uses, so
-     * that one replaces it in place once the sync has it.
+     * the sync after a Doze wake is slow or fails. The push carries no content, only the message's
+     * opaque id [messageId], so the chat notification gets a generic "Sent you a message" line for
+     * it, which the sync replaces with the real text in the same notification.
      */
     suspend fun notifyMessageArrivedFast(messageId: String) {
         if (!canPost()) return
@@ -241,16 +252,11 @@ class RisainaNotifier @Inject constructor(
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
         val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
         postLock.withLock {
-            // Already synced (see notifyPingArrivedFast): its real notification was posted, or was
-            // left out on purpose; a generic "Sent you a message" must not replace it.
+            // Already synced (see notifyPingArrivedFast): its real line was posted, or was left out
+            // on purpose; it must not alert again.
             if (messageDao.byId(messageId) != null) return
-            post(
-                id = messageNotificationId(messageId), group = NotificationGroups.CHAT,
-                channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
-                title = partner, body = "Sent you a message", deepLink = "risaina://app/messages",
-                category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
-            )
-            diagnostics.recordFastAlert(FAST_MESSAGE, messageId)
+            diagnostics.recordQuickMessage(messageId)
+            conversation.show(conversation.build(prefs.previewInNotifications), partner, quiet, alert = true)
         }
     }
 
@@ -274,11 +280,10 @@ class RisainaNotifier @Inject constructor(
         const val GAME_NOTIFICATION_ID = 5050
         const val TEST_NOTIFICATION_ID = 4344
         const val WIDGET_NOTIFICATION_ID = 4345
+        /** The one chat notification (ConversationNotification); the quick and the detailed post share it. */
+        const val MESSAGES_ID = 4343
         /** Low importance: no sound, no buzz, no heads-up. */
         const val WIDGET_CHANNEL = "widget_updates"
-
-        /** One notification per chat message; the quick and the detailed post share it. */
-        fun messageNotificationId(messageId: String): Int = messageId.hashCode()
 
         /**
          * The safety stream's "is sharing their live location" has no timeout for an "until I turn it
@@ -293,7 +298,7 @@ class RisainaNotifier @Inject constructor(
             NotificationChannels.PARTNER_LOCATION, NotificationChannels.PARTNER_LOCATION_QUIET,
         )
         private val PARTNER_IDS = setOf(
-            PING_NOTIFICATION_ID, GAME_NOTIFICATION_ID, TEST_NOTIFICATION_ID, WIDGET_NOTIFICATION_ID,
+            PING_NOTIFICATION_ID, GAME_NOTIFICATION_ID, TEST_NOTIFICATION_ID, WIDGET_NOTIFICATION_ID, MESSAGES_ID,
             com.risaina.app.core.safety.SafetyNotifier.PARTNER_LOCATION_ID,
             SosAlert.MISSED_ID, SosAlert.SAFE_ID, SosAlert.RESPOND_ID,
         )
@@ -305,7 +310,6 @@ class RisainaNotifier @Inject constructor(
         fun clearedOnPurge(id: Int, channelId: String?): Boolean =
             id != SosAlert.ID && (channelId in PARTNER_CHANNELS || id in PARTNER_IDS)
         private const val FAST_PING = "ping"
-        private const val FAST_MESSAGE = "message"
 
         /** "0.8 s", "12 s", "3 min". */
         fun formatLatency(ms: Long): String = when {
