@@ -27,6 +27,7 @@ class TimeZonesTest {
         assertNull(TimeZones.zoneOf(null))
         assertNull(TimeZones.zoneOf(""))
         assertNull(TimeZones.zoneOf("Not/AZone"))
+        assertEquals("New York", TimeZones.city(newYork))
     }
 
     @Test fun `a partner whose zone is not shared counts as one clock`() {

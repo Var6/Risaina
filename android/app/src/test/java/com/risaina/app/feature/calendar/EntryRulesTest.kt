@@ -30,6 +30,21 @@ class EntryRulesTest {
         assertNull(EntryRules.zoneLine(fri, LocalTime.of(20, 0), kolkata, kolkata, ZoneId.of("Asia/Calcutta"), "Bea", Locale.UK))
     }
 
+    @Test fun `on one clock an entry set in a third zone says so, without asking`() {
+        // Bea added a 9:00 pm call in London and is with you in Kolkata now: one clock, nothing to ask.
+        val call = EntryForm(date = fri, allDay = false, time = LocalTime.of(21, 0), timeZone = "Europe/London")
+        assertFalse(EntryRules.asksWhoseTime(call, kolkata, kolkata))
+        assertEquals(EntryRules.ZoneLine("Set in London time: 2:30 am Sat for you both", night = true), EntryRules.anchorLine(fri, LocalTime.of(21, 0), london, kolkata, Locale.UK))
+        assertEquals(
+            EntryRules.ZoneLine("Set in New York time: 7:30 pm for you both", night = false),
+            EntryRules.anchorLine(fri, LocalTime.of(9, 0), ZoneId.of("America/New_York"), kolkata, Locale.UK),
+        )
+        // Set on your clock, under any name, or floating: nothing to say.
+        assertNull(EntryRules.anchorLine(fri, LocalTime.of(21, 0), kolkata, kolkata, Locale.UK))
+        assertNull(EntryRules.anchorLine(fri, LocalTime.of(21, 0), ZoneId.of("Asia/Calcutta"), kolkata, Locale.UK))
+        assertNull(EntryRules.anchorLine(fri, LocalTime.of(21, 0), null, kolkata, Locale.UK))
+    }
+
     @Test fun `the time-zone row shows only when the clocks differ`() {
         val eight = LocalTime.of(20, 0)
         assertTrue(EntryRules.zonesDiffer(kolkata, london, fri, eight))

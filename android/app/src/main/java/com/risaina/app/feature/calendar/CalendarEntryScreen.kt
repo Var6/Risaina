@@ -55,6 +55,7 @@ import com.risaina.app.core.designsystem.components.RisainaTextField
 import com.risaina.app.core.designsystem.theme.Risaina
 import com.risaina.app.core.designsystem.theme.RisainaTextStyles
 import com.risaina.app.core.domain.CalendarText
+import com.risaina.app.core.domain.TimeZones
 import com.risaina.app.core.model.CalendarKind
 import com.risaina.app.core.model.CalendarRepeat
 import com.risaina.app.core.model.CalendarSourceKind
@@ -63,7 +64,6 @@ import com.risaina.app.feature.common.DeleteIcon
 import com.risaina.app.feature.timeline.DateDialog
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.ZoneId
 
 /**
  * One calendar entry, new or existing: Event or To-do, title and emoji, when (all day or a time,
@@ -251,7 +251,8 @@ fun CalendarEntryScreen(
 /**
  * Whose clock a timed entry follows, only when the partner shares a zone that tells another time:
  * mine, theirs, or each our own. With the live conversion, and a warning when either of you would be
- * asleep. On one clock there is nothing to ask (EntryRules.asksWhoseTime).
+ * asleep. On one clock there is nothing to ask (EntryRules.asksWhoseTime), and only an entry set in a
+ * third zone says so (EntryRules.anchorLine).
  */
 @Composable
 private fun ZoneRow(s: EntryUiState, partnerName: String, onPick: (String?) -> Unit) {
@@ -259,7 +260,11 @@ private fun ZoneRow(s: EntryUiState, partnerName: String, onPick: (String?) -> U
     val partnerZone = s.partnerZone ?: return
     val date = f.date ?: return
     val time = f.time ?: return
-    if (!EntryRules.asksWhoseTime(f, s.myZone, partnerZone)) return
+    val anchor = TimeZones.zoneOf(f.timeZone)
+    if (!EntryRules.asksWhoseTime(f, s.myZone, partnerZone)) {
+        EntryRules.anchorLine(date, time, anchor, s.myZone)?.let { ZoneNote(it, "late at night") }
+        return
+    }
     Text("Whose time", style = MaterialTheme.typography.labelMedium, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 10.dp))
     val options = listOf(s.myZone.id to "My time", partnerZone.id to "$partnerName's time", null to "Each our own clock")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -267,17 +272,22 @@ private fun ZoneRow(s: EntryUiState, partnerName: String, onPick: (String?) -> U
         // A zone that is neither (the entry was made somewhere else): shown so it is not lost by accident.
         if (f.timeZone != null && options.none { it.first == f.timeZone }) FilterChip(selected = true, onClick = {}, label = { Text(f.timeZone) })
     }
-    val anchor = f.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() }
     val line = EntryRules.zoneLine(date, time, anchor, s.myZone, partnerZone, partnerName)
     when {
-        line != null -> Text(
-            line.text + if (line.night) "  ⚠ late at night for one of you" else "",
-            style = MaterialTheme.typography.bodySmall,
-            color = if (line.night) Risaina.colors.warning else Risaina.colors.textMuted,
-            modifier = Modifier.padding(top = 4.dp),
-        )
+        line != null -> ZoneNote(line, "late at night for one of you")
         anchor == null -> Text("${CalendarText.time(time)} on each of your phones", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 4.dp))
     }
+}
+
+/** A conversion under the zone choice, with [warning] in the warning colour when it falls in the night. */
+@Composable
+private fun ZoneNote(line: EntryRules.ZoneLine, warning: String) {
+    Text(
+        line.text + if (line.night) "  ⚠ $warning" else "",
+        style = MaterialTheme.typography.bodySmall,
+        color = if (line.night) Risaina.colors.warning else Risaina.colors.textMuted,
+        modifier = Modifier.padding(top = 4.dp),
+    )
 }
 
 @Composable

@@ -22,6 +22,9 @@ object TimeZones {
     /** [id] as a zone; null when it is missing or this phone does not know it. */
     fun zoneOf(id: String?): ZoneId? = id?.let { runCatching { ZoneId.of(it) }.getOrNull() }
 
+    /** "Kolkata" for Asia/Kolkata, "New York" for America/New_York. */
+    fun city(zone: ZoneId): String = zone.id.substringAfterLast('/').replace('_', ' ')
+
     /** Both clocks tell the same time at [at]. */
     fun sameClock(mine: ZoneId, partner: ZoneId?, at: Instant): Boolean = sameClock(mine, partner, at, at)
 

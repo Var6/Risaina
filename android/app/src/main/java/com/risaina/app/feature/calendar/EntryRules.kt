@@ -70,15 +70,31 @@ object EntryRules {
         val forThem = at.withZoneSameInstant(partner)
         if (forMe.toLocalDateTime() == forThem.toLocalDateTime()) return null
         val name = partnerName.substringBefore(" ").ifBlank { "them" }
-        fun clock(z: ZonedDateTime) = CalendarText.time(z.toLocalTime(), locale) +
-            if (z.toLocalDate() != date) " " + z.format(DateTimeFormatter.ofPattern("EEE", locale)) else ""
         val text = if (anchor.rules == partner.rules && anchor.rules != mine.rules) {
-            "${clock(forThem)} $name's time = ${clock(forMe)} for you"
+            "${clock(forThem, date, locale)} $name's time = ${clock(forMe, date, locale)} for you"
         } else {
-            "${clock(forMe)} for you = ${clock(forThem)} for $name"
+            "${clock(forMe, date, locale)} for you = ${clock(forThem, date, locale)} for $name"
         }
         return ZoneLine(text, night = isNight(forMe.toLocalTime()) || isNight(forThem.toLocalTime()))
     }
+
+    /**
+     * On one clock, where nothing is asked: a timed entry set in a third zone (made while one of you
+     * was away) says so, "Set in London time: 2:30 am Sat for you both". Without it the time above,
+     * London's 9:00 pm, reads as yours, and a time picked now is London's too. [ZoneLine.night] when
+     * it falls in your night. Null when the anchor tells this phone's time then, or for a floating time.
+     */
+    fun anchorLine(date: LocalDate, time: LocalTime, anchor: ZoneId?, mine: ZoneId, locale: Locale = Locale.getDefault()): ZoneLine? {
+        anchor ?: return null
+        val at = ZonedDateTime.of(date, time, anchor)
+        if (TimeZones.sameClock(mine, anchor, at.toInstant())) return null
+        val forUs = at.withZoneSameInstant(mine)
+        return ZoneLine("Set in ${TimeZones.city(anchor)} time: ${clock(forUs, date, locale)} for you both", night = isNight(forUs.toLocalTime()))
+    }
+
+    /** "2:30 am", with the weekday when it is not on [date]: "2:30 am Sat". */
+    private fun clock(z: ZonedDateTime, date: LocalDate, locale: Locale) = CalendarText.time(z.toLocalTime(), locale) +
+        if (z.toLocalDate() != date) " " + z.format(DateTimeFormatter.ofPattern("EEE", locale)) else ""
 
     private fun isNight(t: LocalTime) = !t.isBefore(LocalTime.of(23, 0)) || t.isBefore(LocalTime.of(7, 0))
 

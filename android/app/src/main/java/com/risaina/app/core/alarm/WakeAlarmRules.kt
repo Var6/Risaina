@@ -270,7 +270,7 @@ object WakeAlarmRules {
     }
 
     /** "Kolkata" for Asia/Kolkata, "New York" for America/New_York. */
-    fun zoneName(zone: ZoneId): String = zone.id.substringAfterLast('/').replace('_', ' ')
+    fun zoneName(zone: ZoneId): String = TimeZones.city(zone)
 
     /** The editor's "Set in London time" when the alarm's zone tells another time than this phone at [ring]; null on one clock. */
     fun anchorNote(ring: Instant, anchor: ZoneId, mine: ZoneId): String? =
