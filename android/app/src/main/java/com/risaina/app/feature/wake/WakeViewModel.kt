@@ -181,7 +181,7 @@ class WakeViewModel @Inject constructor(
         viewModelScope.launch { runCatching { sync.refresh() } }
     }
 
-    /** A readiness row's button: the SOS card's fixes, and the two only Wake together has. */
+    /** A readiness row's button: the SOS card's fixes, and the alarm channel and volume only Wake together has. */
     fun fix(check: ReadinessCheck) {
         when (check.key) {
             WakeReadiness.KEY_CHANNEL, WakeReadiness.KEY_SOUND, WakeReadiness.KEY_POP_UP -> probe.openAlarmChannel()
@@ -261,8 +261,12 @@ class WakeViewModel @Inject constructor(
             fun catchUp(newer: WakeAlarm): Boolean {
                 val rb = WakeDrafts.rebase(base, start, newer, draft, me, Instant.now())
                 base = newer; start = rb.start; draft = rb.draft
-                editorBase = base to start
-                _editor.value = draft
+                // Kept current while the sheet is open (a later save goes at the new version), and
+                // opened again for a look; a sheet closed while the save was out stays closed.
+                if (!rb.retry || _editor.value != null) {
+                    editorBase = base to start
+                    _editor.value = draft
+                }
                 if (!rb.retry) say(WakeDrafts.conflictText(partnerName(), rb.changed, newer.enabled))
                 return rb.retry
             }
