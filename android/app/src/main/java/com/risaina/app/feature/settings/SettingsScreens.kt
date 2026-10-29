@@ -73,6 +73,7 @@ import com.risaina.app.feature.common.LockIcon
 import com.risaina.app.feature.common.LogoutIcon
 import com.risaina.app.feature.common.NotificationsIcon
 import com.risaina.app.feature.common.PersonIcon
+import com.risaina.app.feature.common.WallpaperIcon
 import com.risaina.app.feature.common.WidgetsIcon
 import java.time.LocalTime
 
@@ -119,7 +120,7 @@ private fun ToggleRow(title: String, subtitle: String?, checked: Boolean, onChan
     }
 }
 
-data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {}, val safety: () -> Unit = {}, val calendarReminders: () -> Unit = {}, val wake: () -> Unit = {})
+data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {}, val safety: () -> Unit = {}, val calendarReminders: () -> Unit = {}, val wake: () -> Unit = {}, val theirWidget: () -> Unit = {})
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel = hiltViewModel()) {
@@ -156,8 +157,13 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         Row(NotificationsIcon, "Notifications", if (!s.pushConfigured) "Push isn't configured in this build — pings arrive while the app is open" else if (!s.notificationsPermitted) "Permission not granted" else "Quiet hours, previews, cooldown", nav.notifications)
         Row(com.risaina.app.feature.common.CalendarIcon, "Calendar reminders", "Your anniversary, birthdays and plans", nav.calendarReminders)
         Row(LockIcon, "Privacy", "Previews, widget content, data export, deletion", nav.privacy)
-        Row(WidgetsIcon, "Widgets", "Add Risaina to your home screen", nav.widgets)
         Row(com.risaina.app.feature.wake.AlarmIcon, "Wake together", "One alarm that rings on both phones", nav.wake)
+        Spacer(Modifier.height(8.dp))
+        // Both widget screens live here now, so Home keeps only the everyday shortcuts.
+        SectionHeader("Widgets")
+        Row(WidgetsIcon, "Widgets", "Add Risaina to your home screen", nav.widgets)
+        val partner = (s.pairing as? PairingState.Paired)?.partner?.displayName?.takeIf { it.isNotBlank() } ?: "your partner"
+        Row(WallpaperIcon, "Their widget", "What shows on $partner's widgets", nav.theirWidget)
         Spacer(Modifier.height(8.dp))
         SectionHeader("Appearance")
         Spacer(Modifier.height(10.dp))

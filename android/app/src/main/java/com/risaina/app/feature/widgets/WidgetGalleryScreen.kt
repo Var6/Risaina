@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,7 +30,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.risaina.app.core.designsystem.components.HelpAction
+import com.risaina.app.core.designsystem.components.HelpPoint
 import com.risaina.app.core.designsystem.components.RisainaCard
 import com.risaina.app.core.designsystem.components.SecondaryButton
 import com.risaina.app.core.designsystem.theme.Risaina
@@ -36,6 +41,8 @@ import com.risaina.app.core.designsystem.theme.RisainaTextStyles
 import com.risaina.app.feature.common.BackIcon
 
 private data class WidgetInfo(val title: String, val body: String, val emoji: String, val receiver: Class<*>)
+
+private const val NO_PIN = "Your launcher doesn't support adding widgets from inside apps. Long-press your home screen, choose Widgets, and look for Risaina."
 
 @Composable
 fun WidgetGalleryScreen(onBack: () -> Unit) {
@@ -45,7 +52,7 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
     // Two widgets cover everything; the single-purpose ones stay for people who like them.
     val recommended = remember {
         listOf(
-            WidgetInfo("Us · all in one", "Their latest ping, gift, note or photo, your countdown, and a button to reach them. Glows when they reach out. Resize it from small to a full photo card.", "💞", UsWidgetReceiver::class.java),
+            WidgetInfo("Us · all in one", "Their latest ping, gift, note or photo, your countdown, and a button to reach them. Glows when they reach out.", "💞", UsWidgetReceiver::class.java),
             WidgetInfo("Touch Ping", "A small one-tap button. Shows their ping when it arrives, with \u201cSend one back\u201d.", "💭", TouchPingWidgetReceiver::class.java),
         )
     }
@@ -65,18 +72,20 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = { Text("Widgets", style = MaterialTheme.typography.headlineSmall) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(BackIcon, contentDescription = "Back") } },
+                actions = { WidgetsHelp(canPin) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-            Text(
-                if (canPin) "One widget is enough: \u201cUs\u201d shows whatever your partner did last and lights up when they reach out. Add Touch Ping too if you want a small button."
-                else "Your launcher doesn't support adding widgets from inside apps. Long-press your home screen, choose Widgets, and look for Risaina.",
-                style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted,
-            )
-            Spacer(Modifier.height(16.dp))
+            // Without in-app pinning the cards have no Add button, so how to add one stays in sight.
+            if (!canPin) {
+                Text(NO_PIN, style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted)
+                Spacer(Modifier.height(16.dp))
+            } else {
+                Spacer(Modifier.height(8.dp))
+            }
             recommended.forEach { w -> WidgetRow(w, canPin) { requestPin(context, manager, w.receiver) } }
             Spacer(Modifier.height(16.dp))
             LockScreenSection()
@@ -87,8 +96,6 @@ fun WidgetGalleryScreen(onBack: () -> Unit) {
                 Text(if (showMore) "Hide single-purpose widgets" else "More widgets (${more.size})", style = MaterialTheme.typography.titleSmall)
             }
             if (showMore) more.forEach { w -> WidgetRow(w, canPin) { requestPin(context, manager, w.receiver) } }
-            Spacer(Modifier.height(16.dp))
-            Text("What widgets may show is controlled in Settings → Privacy. Photos and note text can be hidden there.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
             Spacer(Modifier.height(40.dp))
         }
     }
@@ -126,20 +133,51 @@ private fun requestPin(context: Context, manager: AppWidgetManager?, receiver: C
 private fun LockScreenSection(vm: com.risaina.app.feature.settings.SettingsViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
     RisainaCard(Modifier.fillMaxWidth()) {
-        Text("On your lock screen", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Turn on the lock-screen card to keep your partner's mood or note on your lock screen. A new gift or ping shows there when its own notification is gone. It's silent, never repeats a notification you already have, and stays away if you swipe it until there's something new.",
-            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-            Text("Lock-screen card", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            androidx.compose.material3.Switch(checked = s.prefs.lockScreenCard, onCheckedChange = { v -> vm.update { it.copy(lockScreenCard = v) }; vm.refreshLockCard() })
+        // The whole row is the switch, so the label is read with it and the target is the full width.
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                value = s.prefs.lockScreenCard, role = Role.Switch,
+                onValueChange = { v -> vm.update { it.copy(lockScreenCard = v) }; vm.refreshLockCard() },
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Lock-screen card", style = MaterialTheme.typography.titleMedium)
+                Text("Your partner's latest mood or note, quietly on your lock screen", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+            }
+            Spacer(Modifier.width(12.dp))
+            androidx.compose.material3.Switch(checked = s.prefs.lockScreenCard, onCheckedChange = null)
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "Lock-screen widgets: if your phone lets you add widgets to the lock screen (newer Android versions and some Samsung phones: long-press the lock screen → Widgets), Risaina's widgets appear there too.",
-            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
+    }
+}
+
+/** The "?" on Widgets: how to add one, which to pick, the lock screen, delivery and privacy. */
+@Composable
+private fun WidgetsHelp(canPin: Boolean) {
+    HelpAction("About widgets") {
+        HelpPoint(
+            if (canPin) "Tap \u201cAdd to home screen\u201d on a widget and confirm. You can also long-press your home screen, choose Widgets, and look for Risaina." else NO_PIN,
+            title = "Adding a widget",
+        )
+        HelpPoint(
+            "One is enough: \u201cUs\u201d shows whatever your partner did last and lights up when they reach out. Resize it from small to a full photo card. Add Touch Ping too if you want a small button.",
+            title = "Which one",
+        )
+        HelpPoint(
+            "Turn on the lock-screen card to keep your partner's mood or note on your lock screen. A new gift or ping shows there when its own notification is gone. It's silent, never repeats a notification you already have, and stays away if you swipe it until there's something new.",
+            title = "Lock-screen card",
+        )
+        HelpPoint(
+            "If your phone lets you add widgets to the lock screen (newer Android versions and some Samsung phones: long-press the lock screen \u2192 Widgets), Risaina's widgets appear there too.",
+            title = "Lock-screen widgets",
+        )
+        HelpPoint(
+            "Widgets and alerts change the moment your partner reaches out only if this phone lets Risaina wake up in the background. Delivery health shows what to fix.",
+            title = "Delivery health",
+        )
+        HelpPoint(
+            "What widgets may show is controlled in Settings \u2192 Privacy. Photos and note text can be hidden there.",
+            title = "Privacy",
         )
     }
 }

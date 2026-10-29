@@ -60,6 +60,8 @@ import com.risaina.app.app.LocalSnackbar
 import com.risaina.app.core.alarm.MemberStatus
 import com.risaina.app.core.alarm.WakeAlarmRules
 import com.risaina.app.core.designsystem.components.GhostButton
+import com.risaina.app.core.designsystem.components.HelpAction
+import com.risaina.app.core.designsystem.components.HelpPoint
 import com.risaina.app.core.designsystem.components.OutlineButton
 import com.risaina.app.core.designsystem.components.PillTone
 import com.risaina.app.core.designsystem.components.PrimaryButton
@@ -115,17 +117,14 @@ fun WakeScreen(onBack: () -> Unit, vm: WakeViewModel = hiltViewModel()) {
             TopAppBar(
                 title = { Text("Wake together", style = MaterialTheme.typography.headlineSmall) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(BackIcon, contentDescription = "Back") } },
+                actions = { WakeHelp(s.partnerName) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-            Text(
-                "One alarm, ringing at the same moment on both phones. Each of you can turn it off on your own phone, and \"I'm up\" tells the other.",
-                style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted,
-            )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
             if (s.goodMorning) {
                 // I'm up and they are not yet: their alarm keeps ringing, but a ping can say hello.
                 RisainaCard(Modifier.fillMaxWidth()) {
@@ -423,4 +422,19 @@ private fun TimeDialog(initial: LocalTime, onDismiss: () -> Unit, onPick: (Local
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         text = { TimePicker(state = state) },
     )
+}
+
+/** The "?" on Wake together: how a shared alarm works, and making sure it rings on this phone. */
+@Composable
+private fun WakeHelp(partnerName: String) {
+    HelpAction("About Wake together") {
+        HelpPoint(
+            "One alarm, ringing at the same moment on both phones, even far apart. Each of you can turn it off on your own phone, and \"I'm up\" tells the other.",
+            title = "How it works",
+        )
+        HelpPoint(
+            "Under \"On this phone\", fix anything marked ! so the alarm can ring here, then use \"Test on this phone\". These checks are for this phone only; $partnerName's phone has its own.",
+            title = "Make sure it rings",
+        )
+    }
 }

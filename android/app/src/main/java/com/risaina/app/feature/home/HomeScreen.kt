@@ -73,8 +73,6 @@ import com.risaina.app.feature.common.ImageIcon
 import com.risaina.app.feature.common.MicIcon
 import com.risaina.app.feature.common.SettingsIcon
 import com.risaina.app.feature.common.TimelineIcon
-import com.risaina.app.feature.common.WallpaperIcon
-import com.risaina.app.feature.common.WidgetsIcon
 import com.risaina.app.feature.ping.IncomingPingReveal
 import com.risaina.app.feature.ping.PingButtonState
 import com.risaina.app.feature.ping.PingComposerSheet
@@ -89,13 +87,11 @@ data class HomeNav(
     val memories: () -> Unit,
     val memory: (String) -> Unit,
     val timeline: () -> Unit,
-    val widgets: () -> Unit,
     val pingHistory: () -> Unit,
     val notificationPermission: () -> Unit,
     val verifyEmail: () -> Unit = {},
     val lists: () -> Unit = {},
     val gifts: () -> Unit = {},
-    val theirWidget: () -> Unit = {},
     // safety stream
     val safety: () -> Unit = {},
     val partnerLocation: () -> Unit = {},
@@ -362,23 +358,39 @@ private fun LatestMoment(s: HomeUiState, onOpen: () -> Unit) {
     }
 }
 
+/** An even grid of shortcuts (HomeTiles). Widgets and Their widget are in Settings → Widgets. */
 @Composable
 private fun QuickRow(nav: HomeNav, calendar: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        QuickTile("Messages", com.risaina.app.feature.common.MailIcon, nav.messages, Modifier.weight(1f))
-        QuickTile("Lists", com.risaina.app.feature.common.CheckIcon, nav.lists, Modifier.weight(1f))
-        QuickTile("Memories", ImageIcon, nav.memories, Modifier.weight(1f))
-        // The Timeline lives on as "Our story" inside the calendar; an older server has no calendar yet.
-        if (calendar) QuickTile("Calendar", com.risaina.app.feature.common.CalendarIcon, nav.calendar, Modifier.weight(1f))
-        else QuickTile("Timeline", TimelineIcon, nav.timeline, Modifier.weight(1f))
+    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        HomeTiles.rows(calendar).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { tile -> QuickTile(tile.label, tile.icon, tile.action(nav), Modifier.weight(1f)) }
+                // A shorter last row keeps the tiles the same width as the rows above it.
+                repeat(HomeTiles.PER_ROW - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        QuickTile("Gifts", com.risaina.app.feature.common.HeartIcon, nav.gifts, Modifier.weight(1f))
-        QuickTile("Widgets", WidgetsIcon, nav.widgets, Modifier.weight(1f))
-        QuickTile("Their widget", WallpaperIcon, nav.theirWidget, Modifier.weight(1f))
-        // Settings is the gear in the top row; this place is Wake together's.
-        QuickTile("Wake", com.risaina.app.feature.wake.AlarmIcon, nav.wake, Modifier.weight(1f))
+}
+
+private val HomeTile.icon: ImageVector
+    get() = when (this) {
+        HomeTile.MESSAGES -> com.risaina.app.feature.common.MailIcon
+        HomeTile.LISTS -> com.risaina.app.feature.common.CheckIcon
+        HomeTile.MEMORIES -> ImageIcon
+        HomeTile.CALENDAR -> com.risaina.app.feature.common.CalendarIcon
+        HomeTile.TIMELINE -> TimelineIcon
+        HomeTile.GIFTS -> com.risaina.app.feature.common.HeartIcon
+        HomeTile.WAKE -> com.risaina.app.feature.wake.AlarmIcon
     }
+
+private fun HomeTile.action(nav: HomeNav): () -> Unit = when (this) {
+    HomeTile.MESSAGES -> nav.messages
+    HomeTile.LISTS -> nav.lists
+    HomeTile.MEMORIES -> nav.memories
+    HomeTile.CALENDAR -> nav.calendar
+    HomeTile.TIMELINE -> nav.timeline
+    HomeTile.GIFTS -> nav.gifts
+    HomeTile.WAKE -> nav.wake
 }
 
 /** Due to-dos and the next week's plans, with checkboxes; tapping one opens it. */

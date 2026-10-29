@@ -102,14 +102,12 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     memories = { navController.navigate(Memories) },
                     memory = { id -> navController.navigate(MemoryDetail(id)) },
                     timeline = { navController.navigate(Timeline) },
-                    widgets = { navController.navigate(WidgetGallery) },
                     pingHistory = { navController.navigate(PingHistory) },
                     calendar = { navController.navigate(Calendar()) },
                     calendarEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
                     notificationPermission = { navController.navigate(NotificationPermission) },
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     lists = { navController.navigate(Lists) },
-                    theirWidget = { navController.navigate(TheirWidget) },
                     safety = { navController.navigate(Safety) },
                     partnerLocation = { navController.navigate(PartnerLocation) },
                     wake = { navController.navigate(WakeTogether) },
@@ -192,6 +190,7 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     safety = { navController.navigate(Safety) },
                     wake = { navController.navigate(WakeTogether) },
+                    theirWidget = { navController.navigate(TheirWidget) },
                 ),
             )
         }
