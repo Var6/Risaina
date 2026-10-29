@@ -1,5 +1,6 @@
 package com.risaina.app.core.sync
 
+import com.risaina.app.core.data.lists.ListSyncEngine
 import com.risaina.app.core.data.toEntity
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.model.Session
@@ -38,10 +39,12 @@ class NextRoundEventsTest {
     }
     private val listDao = FakeListDao()
     private val calendarDao = FakeCalendarDao()
+    private val listSync = mockk<ListSyncEngine>(relaxed = true)
     private val reducer = EventReducer(
         json, session, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
         mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), listDao,
         mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao, mockk(relaxed = true),
+        listSync,
     )
 
     private fun event(seq: Long, type: String, payload: Map<String, JsonElement>, actor: String = "bea") =
@@ -87,5 +90,11 @@ class NextRoundEventsTest {
         assertEquals("With Hike", listDao.byId("l")!!.title)
         reducer.apply(event(2, "list.updated", mapOf("list" to list(4, "Hike and beach"))))
         assertEquals("Hike and beach", listDao.byId("l")!!.title)
+    }
+
+    @Test fun `list deleted goes through the sync engine, which keeps it deleted and orphans unsent edits`() = runTest {
+        reducer.apply(event(1, "list.deleted", mapOf("listId" to JsonPrimitive("l"))))
+        coVerify { listSync.onDeleted("l") }
+        assertEquals(1L, cursor.value)
     }
 }

@@ -3,6 +3,8 @@ package com.risaina.app.testutil
 import com.risaina.app.core.database.CalendarDao
 import com.risaina.app.core.database.CalendarEntryEntity
 import com.risaina.app.core.database.ListDao
+import com.risaina.app.core.database.ListDraftDao
+import com.risaina.app.core.database.ListDraftEntity
 import com.risaina.app.core.database.ListEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +24,18 @@ class FakeListDao : ListDao {
     override suspend fun versionOf(id: String): Int? = rows.value[id]?.version
     override suspend fun idsSyncedBefore(before: Long): List<String> = rows.value.values.filter { it.syncedAt < before }.map { it.id }
     override suspend fun delete(id: String) { rows.value = rows.value - id }
+    override suspend fun clear() { rows.value = emptyMap() }
+}
+
+class FakeListDraftDao : ListDraftDao {
+    val rows = MutableStateFlow<Map<String, ListDraftEntity>>(emptyMap())
+
+    override suspend fun get(listId: String): ListDraftEntity? = rows.value[listId]
+    override fun observe(listId: String): Flow<ListDraftEntity?> = rows.map { it[listId] }
+    override suspend fun all(): List<ListDraftEntity> = rows.value.values.sortedBy { it.editedAt }
+    override fun observeAll(): Flow<List<ListDraftEntity>> = rows.map { m -> m.values.sortedBy { it.editedAt } }
+    override suspend fun upsert(e: ListDraftEntity) { rows.value = rows.value + (e.listId to e) }
+    override suspend fun delete(listId: String) { rows.value = rows.value - listId }
     override suspend fun clear() { rows.value = emptyMap() }
 }
 
