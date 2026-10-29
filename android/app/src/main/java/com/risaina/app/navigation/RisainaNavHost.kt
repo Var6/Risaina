@@ -135,7 +135,12 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
             PingDetailScreen(pingId = entry.toRoute<PingDetail>().id, onBack = back, onReplied = toast)
         }
         composable<Messages>(deepLinks = listOf(navDeepLink<Messages>(basePath = "risaina://app/messages"))) { entry ->
-            MessagesScreen(onBack = back, openRecorder = entry.toRoute<Messages>().openRecorder)
+            MessagesScreen(
+                onBack = back, openRecorder = entry.toRoute<Messages>().openRecorder,
+                onCalendarEntry = { prefill -> navController.navigate(prefill.toRoute()) },
+                onOpenCalendarEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
+                onOpenList = { id -> navController.navigate(ListDetail(id)) },
+            )
         }
         composable<Memories> { MemoriesScreen(onBack = back, onOpen = { navController.navigate(MemoryDetail(it)) }, onAdd = { navController.navigate(AddMemory) }) }
         composable<MemoryDetail> { entry -> MemoryDetailScreen(id = entry.toRoute<MemoryDetail>().id, onBack = back) }
