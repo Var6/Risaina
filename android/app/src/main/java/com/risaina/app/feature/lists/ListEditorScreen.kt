@@ -192,7 +192,7 @@ fun ListEditorScreen(onBack: () -> Unit, onAddToCalendar: (CalendarEntryEdit) ->
 /** Saved / Saving… / Saved on this phone, will send when online / Couldn't save — tap to retry. */
 @Composable
 private fun StatusLine(snap: EditorSnapshot, onRetry: () -> Unit) {
-    val (text, tappable) = when (val s = snap.status) {
+    val (text, tappable) = when (snap.status) {
         SyncStatus.Saved -> (if (snap.isLocal && !ListWire.hasContent(snap.doc)) "" else "Saved") to false
         SyncStatus.Saving -> "Saving…" to false
         SyncStatus.Offline -> "Saved on this phone, will send when online" to true
@@ -305,8 +305,9 @@ private fun TitleField(doc: ListDoc, vm: ListEditorViewModel, onNext: () -> Unit
         value = value,
         onValueChange = { v ->
             val clean = if ('\n' in v.text) v.copy(text = v.text.replace('\n', ' ')) else v
+            val before = value.text
             value = if (clean.text.length > ListLimits.MAX_TITLE) value else clean
-            if (value.text != doc.title) vm.setTitle(value.text)
+            if (value.text != before) vm.setTitle(value.text)
         },
         textStyle = style,
         singleLine = true,
