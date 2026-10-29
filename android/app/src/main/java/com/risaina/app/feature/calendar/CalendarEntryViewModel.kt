@@ -18,7 +18,6 @@ import com.risaina.app.core.domain.DateDetector
 import com.risaina.app.core.domain.DateHit
 import com.risaina.app.core.domain.DateOrder
 import com.risaina.app.core.model.CalendarEntry
-import com.risaina.app.core.model.CalendarEntryDraft
 import com.risaina.app.core.model.CalendarKind
 import com.risaina.app.core.model.CalendarRepeat
 import com.risaina.app.core.model.CalendarSource
@@ -163,26 +162,27 @@ class CalendarEntryViewModel @Inject constructor(
     }
 
     private suspend fun show(entry: CalendarEntry) {
-        val me = _state.value.myId
-        val partnerId = _state.value.partner?.id
-        val who = when (entry.remindUserIds.toSet()) {
-            setOfNotNull(me) -> Who.ME
-            setOfNotNull(partnerId) -> Who.PARTNER
-            else -> Who.BOTH
-        }
-        val form = EntryForm(
-            kind = entry.kind.takeIf { it != CalendarKind.UNKNOWN } ?: CalendarKind.EVENT, title = entry.title, emoji = entry.emoji.orEmpty(),
-            date = entry.date, endDate = entry.endDate, allDay = entry.allDay, time = entry.time, durationMinutes = entry.durationMinutes,
-            timeZone = entry.timeZone, repeat = entry.repeat, repeatUntil = entry.repeatUntil, reminders = entry.reminders.toSet(),
-            who = who, pinned = entry.pinned, notes = entry.notes.orEmpty(), notifyPartner = false,
-        )
+        val form = EntryRules.formFor(entry, _state.value.myId, _state.value.partner?.id)
         notifyTouched = false
         _state.update {
             it.copy(
                 loading = false, existing = entry, form = form, source = entry.source, sourceLabel = labelFor(entry.source),
-                readOnly = entry.kind == CalendarKind.UNKNOWN || entry.repeat == CalendarRepeat.UNKNOWN,
+                readOnly = readOnly(entry),
             )
         }
+    }
+
+    private fun readOnly(entry: CalendarEntry) = entry.kind == CalendarKind.UNKNOWN || entry.repeat == CalendarRepeat.UNKNOWN
+
+    /**
+     * The partner saved first (409, calendar.md §10 "reload and re-apply"): the editor moves onto
+     * their copy and keeps what the person changed, so nothing typed is lost and the next save
+     * sends only the person's changes, at the new version.
+     */
+    private fun rebaseOnto(base: CalendarEntry, theirs: CalendarEntry) = _state.update { s ->
+        val old = EntryRules.formFor(base, s.myId, s.partner?.id)
+        val new = EntryRules.formFor(theirs, s.myId, s.partner?.id)
+        s.copy(existing = theirs, form = EntryRules.rebase(old, new, s.form), readOnly = readOnly(theirs))
     }
 
     /** The source chip: the message's words (gone with a deleted message), or the note's title. */
@@ -258,13 +258,7 @@ class CalendarEntryViewModel @Inject constructor(
         val f = s.form
         if (f.title.isBlank()) { _state.update { it.copy(titleError = "Give it a name") }; return }
         val date = f.date ?: run { effects.trySend("Pick a date first"); return }
-        val draft = CalendarEntryDraft(
-            kind = f.kind, title = f.title.trim(), date = date, notes = f.notes.trim().ifEmpty { null }, emoji = f.emoji.trim().ifEmpty { null },
-            endDate = f.endDate.takeIf { f.allDay }, time = f.time.takeIf { !f.allDay }, durationMinutes = f.durationMinutes.takeIf { !f.allDay },
-            timeZone = f.timeZone.takeIf { !f.allDay }, repeat = if (f.kind == CalendarKind.TODO) CalendarRepeat.NONE else f.repeat,
-            repeatUntil = f.repeatUntil.takeIf { f.kind != CalendarKind.TODO && f.repeat != CalendarRepeat.NONE },
-            reminders = f.reminders.sorted(), remindUserIds = remindIds(f.who), pinned = f.pinned, source = s.source,
-        )
+        val draft = EntryRules.draft(f, date, remindIds(f.who), s.source)
         viewModelScope.launch {
             _state.update { it.copy(saving = true) }
             val base = s.existing
@@ -278,8 +272,15 @@ class CalendarEntryViewModel @Inject constructor(
             when (r) {
                 is AppResult.Success -> closes.send(if (base == null) "Added to your calendar" else "Saved")
                 is AppResult.Failure -> when (val e = r.error) {
-                    // Room already holds the partner's copy: show it, and say so.
-                    is AppError.VersionConflict -> { base?.let { calendar.byId(it.id) }?.let { show(it) }; effects.trySend(e.message ?: "Changed meanwhile") }
+                    // Room already holds the partner's copy: carry the person's changes over to it, and say so.
+                    is AppError.VersionConflict -> {
+                        val theirs = base?.let { calendar.byId(it.id) }
+                        val said = e.message ?: "Changed meanwhile"
+                        if (base != null && theirs != null) {
+                            rebaseOnto(base, theirs)
+                            effects.trySend("$said. Your changes are still here: check and save again.")
+                        } else effects.trySend(said)
+                    }
                     is AppError.NotFound ->
                         if (base != null) closes.send("That was deleted meanwhile")
                         // Only a server from before the calendar answers a create with 404.
