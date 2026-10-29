@@ -15,15 +15,16 @@ import com.risaina.app.core.alarm.WakeReadyReport
 import com.risaina.app.core.common.AppError
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.data.CoupleRepository
+import com.risaina.app.core.data.PingRepository
 import com.risaina.app.core.data.PreferencesRepository
 import com.risaina.app.core.data.WakeAlarmRepository
 import com.risaina.app.core.data.toDomain
 import com.risaina.app.core.data.toDto
 import com.risaina.app.core.model.Partner
+import com.risaina.app.core.model.PingType
 import com.risaina.app.core.model.WakeAlarm
 import com.risaina.app.core.network.alarm
 import com.risaina.app.core.safety.ReadinessCheck
-import com.risaina.app.core.safety.ReadinessFix
 import com.risaina.app.core.safety.SosReadinessProbe
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -82,6 +83,8 @@ data class WakeUi(
     /** False on a server older than alarms. */
     val available: Boolean? = null,
     val shareLocalTime: Boolean = true,
+    /** I'm up and the partner is not yet: "Send a good-morning ping" (WakeHome.goodMorningFor). */
+    val goodMorning: Boolean = false,
 )
 
 @HiltViewModel
@@ -93,6 +96,7 @@ class WakeViewModel @Inject constructor(
     private val probe: WakeReadinessProbe,
     private val fixes: SosReadinessProbe,
     private val json: Json,
+    private val pings: PingRepository,
     coupleRepository: CoupleRepository,
     preferencesRepository: PreferencesRepository,
 ) : ViewModel() {
@@ -124,6 +128,7 @@ class WakeViewModel @Inject constructor(
             home = home, me = local.me, partnerName = partnerName,
             partnerZone = partner?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() },
             checks = WakeReadiness.evaluate(d), device = report, busy = b, available = available, shareLocalTime = share,
+            goodMorning = WakeHome.goodMorningFor(local, now) != null,
         )
     }
 
@@ -169,7 +174,41 @@ class WakeViewModel @Inject constructor(
         viewModelScope.launch { runCatching { sync.refresh() } }
     }
 
-    fun openFix(fix: ReadinessFix) = fixes.open(fix)
+    /** A readiness row's button: the SOS card's fixes, and the two only Wake together has. */
+    fun fix(check: ReadinessCheck) {
+        when (check.key) {
+            WakeReadiness.KEY_CHANNEL -> probe.openAlarmChannel()
+            WakeReadiness.KEY_VOLUME -> probe.showAlarmVolume()
+            else -> check.fix?.let(fixes::open)
+        }
+    }
+
+    /** "Alarm sound": the alarm channel's settings, where the tone can be changed. */
+    fun openAlarmSound() = probe.openAlarmChannel()
+
+    /**
+     * I'm up and the partner is not yet: the existing good_morning ping (its own push), once per
+     * ring from here.
+     */
+    fun sendGoodMorning() = work {
+        val ring = WakeHome.goodMorningFor(store.current(), Instant.now()) ?: return@work
+        val type = PingType.GOOD_MORNING
+        when (val r = pings.send(type, type.defaultEmoji, type.defaultMessage)) {
+            is AppResult.Success -> {
+                store.update { s ->
+                    s.copy(ring = s.ring?.takeIf { it.alarmId == ring.alarmId && it.occurrence == ring.occurrence }?.copy(goodMorningSent = true) ?: s.ring)
+                }
+                say("Good morning sent ☀")
+            }
+            is AppResult.Failure -> say(
+                when (val e = r.error) {
+                    is AppError.RateLimited -> "You just sent a ping. Give it ${e.retryAfterSeconds ?: 15}s"
+                    is AppError.Offline -> "You're offline"
+                    else -> e.message ?: "Couldn't send"
+                },
+            )
+        }
+    }
 
     fun openNew() { _editor.value = WakeDrafts.new(ZoneId.systemDefault(), Instant.now()) }
 

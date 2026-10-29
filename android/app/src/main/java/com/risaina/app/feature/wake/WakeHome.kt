@@ -17,6 +17,8 @@ import java.util.Locale
 object WakeHome {
     /** After "I'm up" (or a missed ring) the card says so for this long. */
     private val RECENT: Duration = Duration.ofHours(6)
+    /** "Send a good-morning ping" is offered this long after "I'm up". */
+    private val GOOD_MORNING: Duration = Duration.ofHours(2)
 
     /**
      * The alarm ringing, snoozed or just answered on this phone; otherwise the one that rings
@@ -73,6 +75,22 @@ object WakeHome {
             else -> "not ready on $partnerName's phone"
         }
         return "${WakeAlarmRules.whenText(next, zone, now, locale)} · $tail"
+    }
+
+    /**
+     * The ring the Wake screen offers "Send a good-morning ping" for: this person said "I'm up" in
+     * the last [GOOD_MORNING] and the partner has not (yet) for the same ring. Once a ping went
+     * from there for it, null. It reuses the good_morning ping and its push.
+     */
+    fun goodMorningFor(local: WakeLocal, now: Instant): WakeRing? {
+        val r = local.ring?.takeIf { !it.test && it.phase == WakePhase.UP && !it.goodMorningSent } ?: return null
+        val done = r.doneAt?.let(Instant::ofEpochMilli) ?: return null
+        if (Duration.between(done, now) >= GOOD_MORNING) return null
+        val alarm = local.alarm(r.alarmId) ?: return null
+        val partner = alarm.members.firstOrNull { it.userId != local.me }
+        val occurrence = Instant.ofEpochMilli(r.occurrence)
+        val partnerUp = r.partnerUpAt != null || partner?.lastWake?.let { it.occurrence == occurrence && it.outcome == WakeOutcome.UP } == true
+        return r.takeIf { !partnerUp }
     }
 
     private fun recent(r: WakeRing, now: Instant): Boolean =

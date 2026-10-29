@@ -72,4 +72,24 @@ class WakeHomeTest {
         val l = local(dto(), ring = up, armed = mapOf("a1" to Instant.parse("2026-11-02T01:00:00Z").toEpochMilli()))
         assertEquals("Mon 2 Nov 6:30 am · not set on Raina's phone yet", WakeHome.line(WakeHome.pick(l, evening)!!, l, ready, evening, india, uk))
     }
+
+    @Test fun `a good-morning ping is offered once I'm up and they are not yet`() {
+        val upAt = occ.plusSeconds(60)
+        val up = WakeRing("a1", occ.toEpochMilli(), WakePhase.UP, "Wake together", startedAt = occ.toEpochMilli(), doneAt = upAt.toEpochMilli())
+        val soon = upAt.plusSeconds(300)
+        assertEquals(up, WakeHome.goodMorningFor(local(dto(), ring = up), soon))
+        // They are up already (their wake came, or reached the ring), or it was sent, or it is hours later.
+        val beaUp = AlarmMemberDto("bea", ready = true, lastWake = AlarmWakeDto(occ.toString(), "up", upAt.toString(), 0))
+        assertNull(WakeHome.goodMorningFor(local(dto(bea = beaUp), ring = up), soon))
+        assertNull(WakeHome.goodMorningFor(local(dto(), ring = up.copy(partnerUpAt = upAt.toEpochMilli())), soon))
+        assertNull(WakeHome.goodMorningFor(local(dto(), ring = up.copy(goodMorningSent = true)), soon))
+        assertNull(WakeHome.goodMorningFor(local(dto(), ring = up), upAt.plusSeconds(3 * 3600)))
+        // Their wake for an earlier morning is not this one's.
+        val beaUpYesterday = beaUp.copy(lastWake = AlarmWakeDto(occ.minusSeconds(86_400).toString(), "up", upAt.minusSeconds(86_400).toString(), 0))
+        assertEquals(up, WakeHome.goodMorningFor(local(dto(bea = beaUpYesterday), ring = up), soon))
+        // Not while it rings or is snoozed, not after a missed ring, never for the test.
+        assertNull(WakeHome.goodMorningFor(local(dto(), ring = up.copy(phase = WakePhase.SNOOZED)), soon))
+        assertNull(WakeHome.goodMorningFor(local(dto(), ring = up.copy(phase = WakePhase.MISSED)), soon))
+        assertNull(WakeHome.goodMorningFor(local(dto(), ring = up.copy(test = true)), soon))
+    }
 }

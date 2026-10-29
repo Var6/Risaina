@@ -3,6 +3,7 @@ package com.risaina.app.core.alarm
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
 import android.provider.Settings
@@ -48,6 +49,9 @@ object WakeReadiness {
     const val FULL_SCREEN_OFF = "full_screen_off"
     /** A mode this build cannot ring (a later server's). */
     const val UPDATE_NEEDED = "update_needed"
+    /** Check keys the Wake screen fixes itself (no ReadinessFix of the SOS card fits them). */
+    const val KEY_CHANNEL = "wake_channel"
+    const val KEY_VOLUME = "volume"
 
     private val OEM_AUTOSTART = setOf("realme", "oppo", "oneplus", "xiaomi", "redmi", "poco", "vivo", "iqoo", "huawei", "honor", "samsung", "asus", "tecno", "infinix")
 
@@ -71,7 +75,7 @@ object WakeReadiness {
         )
         if (s.notificationsEnabled && s.channelBlocked) add(
             ReadinessCheck(
-                "wake_channel", CheckStatus.ACTION, "The Wake together alarm is turned off",
+                KEY_CHANNEL, CheckStatus.ACTION, "The Wake together alarm is turned off",
                 "Turn on \"Wake together alarm\" in Risaina's notification settings.", ReadinessFix.APP_NOTIFICATIONS, "Open",
             ),
         )
@@ -90,7 +94,8 @@ object WakeReadiness {
             ),
         )
         if (s.alarmVolumePct == 0) add(
-            ReadinessCheck("volume", CheckStatus.ACTION, "Your alarm volume is at zero", "Raise the alarm volume, or Wake together rings silently."),
+            // No fix of the SOS card: the Wake screen shows the alarm volume slider (it never sets it).
+            ReadinessCheck(KEY_VOLUME, CheckStatus.ACTION, "Your alarm volume is at zero", "Raise the alarm volume, or Wake together rings silently.", fixLabel = "Volume"),
         )
         if (s.silentModeMutesAlarms) add(
             ReadinessCheck(
@@ -141,6 +146,29 @@ class WakeReadinessProbe @Inject constructor(@ApplicationContext private val con
             dndBlocksAlarms = runCatching { SosDiagnostics.dndBlocksAlarms(context) }.getOrDefault(false),
             manufacturer = Build.MANUFACTURER.orEmpty(),
         )
+    }
+
+    /**
+     * The alarm channel's own settings: its tone, vibration and the switch. On a phone without that
+     * screen, Risaina's notification settings.
+     */
+    fun openAlarmChannel() {
+        val channel = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .putExtra(Settings.EXTRA_CHANNEL_ID, NotificationChannels.WAKE_ALARM)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val app = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(channel) }.onFailure { runCatching { context.startActivity(app) } }
+    }
+
+    /** Shows the system's alarm volume slider. ADJUST_SAME: the volume is the person's to set, never changed here. */
+    fun showAlarmVolume() {
+        runCatching {
+            context.getSystemService(AudioManager::class.java)
+                .adjustStreamVolume(AudioManager.STREAM_ALARM, AudioManager.ADJUST_SAME, AudioManager.FLAG_SHOW_UI)
+        }
     }
 
     companion object {

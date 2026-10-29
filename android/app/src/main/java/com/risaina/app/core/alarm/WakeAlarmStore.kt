@@ -39,6 +39,8 @@ data class WakeRing(
     val partnerUpAt: Long? = null,
     /** "I'm up" here, or given up. */
     val doneAt: Long? = null,
+    /** A good-morning ping went to the partner from the Wake screen for this ring. */
+    val goodMorningSent: Boolean = false,
 ) {
     val active: Boolean get() = phase == WakePhase.RINGING || phase == WakePhase.SNOOZED
 }

@@ -4,6 +4,7 @@ import com.risaina.app.core.safety.CheckStatus
 import com.risaina.app.core.safety.ReadinessFix
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -47,6 +48,9 @@ class WakeReadinessTest {
     @Test fun `what no app can fix is explained`() {
         val checks = WakeReadiness.evaluate(ok.copy(alarmVolumePct = 0, silentModeMutesAlarms = true, dndBlocksAlarms = true, manufacturer = "OPPO"))
         assertEquals(CheckStatus.ACTION, checks.first { it.key == "volume" }.status)
+        // The Wake screen shows the alarm volume slider itself: a label, no SOS-card fix.
+        assertEquals("Volume", checks.first { it.key == WakeReadiness.KEY_VOLUME }.fixLabel)
+        assertNull(checks.first { it.key == WakeReadiness.KEY_VOLUME }.fix)
         assertEquals(CheckStatus.INFO, checks.first { it.key == "silent_mutes_alarms" }.status)
         assertEquals(CheckStatus.INFO, checks.first { it.key == "dnd" }.status)
         assertEquals(ReadinessFix.APP_INFO, checks.first { it.key == "autostart" }.fix)

@@ -126,6 +126,16 @@ fun WakeScreen(onBack: () -> Unit, vm: WakeViewModel = hiltViewModel()) {
                 style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted,
             )
             Spacer(Modifier.height(16.dp))
+            if (s.goodMorning) {
+                // I'm up and they are not yet: their alarm keeps ringing, but a ping can say hello.
+                RisainaCard(Modifier.fillMaxWidth()) {
+                    Text("You're up ☀", style = MaterialTheme.typography.titleMedium)
+                    Text("${s.partnerName} isn't up yet.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
+                    Spacer(Modifier.height(10.dp))
+                    PrimaryButton("Send a good-morning ping", onClick = vm::sendGoodMorning, modifier = Modifier.fillMaxWidth(), loading = s.busy)
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             if (s.available == false) {
                 RisainaCard(Modifier.fillMaxWidth()) {
                     Text("Wake together isn't ready on the server yet", style = MaterialTheme.typography.titleMedium)
@@ -171,9 +181,10 @@ fun WakeScreen(onBack: () -> Unit, vm: WakeViewModel = hiltViewModel()) {
                     color = if (todo == 0) Risaina.colors.success else Risaina.colors.warning,
                 )
                 Spacer(Modifier.height(8.dp))
-                s.checks.forEach { check -> CheckRow(check, onFix = { check.fix?.let(vm::openFix) }) }
+                s.checks.forEach { check -> CheckRow(check, onFix = { vm.fix(check) }) }
             }
-            Spacer(Modifier.height(12.dp))
+            GhostButton("Change the alarm sound", onClick = vm::openAlarmSound, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(4.dp))
             OutlineButton("Test on this phone", onClick = vm::test, modifier = Modifier.fillMaxWidth())
             Text(
                 "Rings in 10 seconds, the way a real alarm does. Nothing is sent to ${s.partnerName}.",
@@ -267,7 +278,7 @@ private fun CheckRow(check: ReadinessCheck, onFix: () -> Unit) {
             Text(check.title, style = MaterialTheme.typography.bodyMedium)
             check.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted) }
         }
-        if (check.fix != null && check.status != CheckStatus.OK) GhostButton(check.fixLabel ?: "Fix", onClick = onFix)
+        if ((check.fix != null || check.fixLabel != null) && check.status != CheckStatus.OK) GhostButton(check.fixLabel ?: "Fix", onClick = onFix)
     }
 }
 
