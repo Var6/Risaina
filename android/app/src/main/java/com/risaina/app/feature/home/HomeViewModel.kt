@@ -13,8 +13,10 @@ import com.risaina.app.core.data.MediaRepository
 import com.risaina.app.core.data.MemoryRepository
 import com.risaina.app.core.data.MessageRepository
 import com.risaina.app.core.data.PingRepository
+import com.risaina.app.core.domain.CalendarOccasions
 import com.risaina.app.core.domain.Countdown
 import com.risaina.app.core.domain.CountdownCalculator
+import com.risaina.app.core.domain.OccasionKind
 import com.risaina.app.core.model.Couple
 import com.risaina.app.core.model.Memory
 import com.risaina.app.core.model.Message
@@ -173,6 +175,9 @@ class HomeViewModel @Inject constructor(
             c.messages.firstOrNull { it.senderId != c.myId && it.deletedAt == null }?.let { Moment.FromMessage(it) },
         ).maxByOrNull { it.at }
         fastTicks.value = cooldown > 0 || l.sending || l.settledUntil?.isAfter(now) == true
+        // The same occasions the calendar and its reminders use. Milestones are left out: Home only
+        // shows the birthdays (and the anniversary, with its "together" count, from the start date).
+        val occasions = CalendarOccasions.derive(c.couple, c.myId, c.myBirthday, c.partner, emptyList())
         HomeUiState(
             myName = c.myName, emailVerified = c.emailVerified, myId = c.myId, partner = c.partner, couple = c.couple,
             countdown = countdownFor(c.couple, today),
@@ -187,8 +192,8 @@ class HomeViewModel @Inject constructor(
             incoming = l.incoming, showComposer = l.showComposer, composerTab = l.composerTab, justPaired = l.justPaired,
             pushConfigured = pushConfigured, unread = c.unread, socket = socket,
             anniversary = c.couple?.relationshipStartDate?.let { com.risaina.app.core.domain.Occasions.anniversary(it, today) },
-            partnerBirthday = com.risaina.app.core.domain.Birthday.parse(c.partner?.birthday)?.let { com.risaina.app.core.domain.Occasions.nextBirthday(it, today) },
-            myBirthday = com.risaina.app.core.domain.Birthday.parse(c.myBirthday)?.let { com.risaina.app.core.domain.Occasions.nextBirthday(it, today) },
+            partnerBirthday = CalendarOccasions.upcomingBirthday(occasions, OccasionKind.PARTNER_BIRTHDAY, today),
+            myBirthday = CalendarOccasions.upcomingBirthday(occasions, OccasionKind.MY_BIRTHDAY, today),
             partnerClock = com.risaina.app.core.domain.Occasions.partnerClock(c.partner?.timeZone, now),
             pingsToday = c.pings.count { it.createdAt.atZone(ZoneId.systemDefault()).toLocalDate() == today && it.status != com.risaina.app.core.model.PingStatus.FAILED },
             background = c.background,
