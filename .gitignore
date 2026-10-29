@@ -42,3 +42,6 @@ pnpm-debug.log*
 
 # --- Private notes (never committed): your own checklist, account IDs, URLs ---
 docs/private/
+
+# Temporary working copies made by Claude Code (git worktrees)
+.claude/worktrees/
