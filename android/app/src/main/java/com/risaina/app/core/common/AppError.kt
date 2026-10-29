@@ -1,5 +1,7 @@
 package com.risaina.app.core.common
 
+import kotlinx.serialization.json.JsonObject
+
 /**
  * Errors the UI can present truthfully. Network and server failures are kept distinct from
  * authorization problems so screens can choose between "retry" and "sign in again".
@@ -10,7 +12,13 @@ sealed class AppError(message: String, cause: Throwable? = null) : Exception(mes
     class Unauthorized : AppError("Please sign in again")
     class Forbidden(msg: String = "You can't do that") : AppError(msg)
     class NotFound(msg: String = "Not found") : AppError(msg)
-    class Conflict(val code: String, msg: String) : AppError(msg)
+    /** [details] is the error's `details` object when the server sent one (games send the current game). */
+    class Conflict(val code: String, msg: String, val details: JsonObject? = null) : AppError(msg)
+    /**
+     * 409 version_conflict: the other phone saved first. [details] carries the server's current copy
+     * (`list` for lists, `entry` for calendar entries, `alarm` for alarms) when it sent one.
+     */
+    class VersionConflict(msg: String, val details: JsonObject? = null) : AppError(msg)
     class RateLimited(val retryAfterSeconds: Int?) : AppError("Too many requests")
     class Validation(msg: String, val details: Any? = null) : AppError(msg)
     class Server(msg: String = "Something went wrong on our side") : AppError(msg)

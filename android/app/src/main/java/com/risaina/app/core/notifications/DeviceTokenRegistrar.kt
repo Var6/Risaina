@@ -13,6 +13,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.google.firebase.messaging.FirebaseMessaging
 import com.risaina.app.BuildConfig
+import com.risaina.app.core.common.AppError
 import com.risaina.app.core.common.AppResult
 import com.risaina.app.core.data.DeviceRegistrar
 import com.risaina.app.core.datastore.SessionStore
@@ -58,9 +59,10 @@ class RegisterDeviceWorker @AssistedInject constructor(
         val session = sessionStore.current() ?: return Result.success()
         if (!pushAvailability.configured) return Result.success()
         val token = runCatching { fetchToken() }.getOrNull() ?: return if (runAttemptCount < 3) Result.retry() else Result.failure()
-        val res = apiCall {
-            api.registerDevice(DeviceRequest(deviceId = session.deviceId, token = token, appVersion = BuildConfig.VERSION_NAME, model = Build.MODEL))
-        }
+        val req = DeviceRequest(deviceId = session.deviceId, token = token, appVersion = BuildConfig.VERSION_NAME, model = Build.MODEL, sdkInt = Build.VERSION.SDK_INT)
+        var res = apiCall { api.registerDevice(req) }
+        // A server older than `sdkInt` refuses the whole (strict) body: register without it, as before.
+        if ((res as? AppResult.Failure)?.error is AppError.Validation) res = apiCall { api.registerDevice(req.copy(sdkInt = null)) }
         return when (res) {
             is AppResult.Success -> Result.success()
             is AppResult.Failure -> if (res.error.isRetryable && runAttemptCount < 5) Result.retry() else Result.failure()

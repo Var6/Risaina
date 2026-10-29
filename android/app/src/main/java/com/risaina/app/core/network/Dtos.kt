@@ -2,6 +2,7 @@ package com.risaina.app.core.network
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
@@ -75,7 +76,11 @@ import kotlinx.serialization.json.JsonObject
 )
 @Serializable data class UnlinkRequest(val confirm: Boolean = true)
 
-@Serializable data class DeviceRequest(val deviceId: String, val platform: String = "android", val token: String, val appVersion: String, val model: String? = null)
+/**
+ * [sdkInt] (Build.VERSION.SDK_INT) is newer than the rest: a server without it refuses the strict
+ * body with 400, and RegisterDeviceWorker then registers again without it.
+ */
+@Serializable data class DeviceRequest(val deviceId: String, val platform: String = "android", val token: String, val appVersion: String, val model: String? = null, val sdkInt: Int? = null)
 
 @Serializable data class PingDto(
     val id: String,
@@ -177,16 +182,124 @@ import kotlinx.serialization.json.JsonObject
     val location: LiveLocationDto? = null,
 )
 
-@Serializable data class ListItemDto(val id: String? = null, val text: String, val done: Boolean = false, val doneBy: String? = null, val doneAt: String? = null)
+/**
+ * [addedBy]/[addedAt] are set by the server (null on older items and from older servers). In a PATCH
+ * only id, text and done count; the server ignores the rest of an item.
+ */
+@Serializable data class ListItemDto(
+    val id: String? = null, val text: String, val done: Boolean = false, val doneBy: String? = null, val doneAt: String? = null,
+    val addedBy: String? = null, val addedAt: String? = null,
+)
+/** [marker] ('none'|'number'|'bullet') and [checkboxes] are format fields; an older server omits them, hence the defaults. */
 @Serializable data class SharedListDto(
     val id: String, val coupleId: String, val createdBy: String, val updatedBy: String? = null,
     val title: String, val kind: String, val body: String = "", val items: List<ListItemDto> = emptyList(),
     val pinned: Boolean = false, val version: Int = 1, val createdAt: String, val updatedAt: String,
+    val marker: String = "none", val checkboxes: Boolean = true,
 )
 @Serializable data class ListsResponse(val items: List<SharedListDto>)
 @Serializable data class ListResponse(val list: SharedListDto)
-@Serializable data class CreateListRequest(val title: String, val kind: String, val body: String? = null, val items: List<ListItemDto>? = null, val pinned: Boolean? = null)
-@Serializable data class PatchListRequest(val title: String? = null, val body: String? = null, val items: List<ListItemDto>? = null, val pinned: Boolean? = null, val expectedVersion: Int? = null)
+/**
+ * Nulls are left out (explicitNulls = false), so a request without the format fields or [clientKey]
+ * is what v75 sends. [clientKey] (≤ 64 characters) makes a retried create return the first list.
+ */
+@Serializable data class CreateListRequest(
+    val title: String, val kind: String, val body: String? = null, val items: List<ListItemDto>? = null, val pinned: Boolean? = null,
+    val marker: String? = null, val checkboxes: Boolean? = null, val clientKey: String? = null,
+)
+@Serializable data class PatchListRequest(
+    val title: String? = null, val body: String? = null, val items: List<ListItemDto>? = null, val pinned: Boolean? = null, val expectedVersion: Int? = null,
+    val marker: String? = null, val checkboxes: Boolean? = null,
+)
+/** POST /lists/:id/convert. [to] is 'note' or 'checklist'; a note's lines become items and back. */
+@Serializable data class ConvertListRequest(val to: String, val marker: String? = null, val checkboxes: Boolean? = null, val expectedVersion: Int? = null)
+
+// ---- calendar: entries both partners share (occasions and reminders stay on each phone) ----
+
+/** Ids only. [kind] is 'message', 'list' or 'list_item'. */
+@Serializable data class CalendarSourceDto(val kind: String = "", val messageId: String? = null, val listId: String? = null, val itemId: String? = null)
+/**
+ * `kind` and `repeat` are plain strings in responses, so a newer value decodes (and maps to UNKNOWN)
+ * instead of failing GET /calendar. Dates are YYYY-MM-DD, times HH:mm, timestamps ISO.
+ */
+@Serializable data class CalendarEntryDto(
+    val id: String, val coupleId: String = "", val createdBy: String = "", val updatedBy: String? = null,
+    val kind: String = "", val title: String, val notes: String? = null, val emoji: String? = null,
+    val date: String, val endDate: String? = null, val time: String? = null, val durationMinutes: Int? = null, val timeZone: String? = null,
+    val repeat: String = "none", val repeatUntil: String? = null,
+    val reminders: List<Int> = emptyList(), val remindUserIds: List<String> = emptyList(), val pinned: Boolean = false,
+    val done: Boolean = false, val doneAt: String? = null, val doneBy: String? = null,
+    val source: CalendarSourceDto? = null, val clientKey: String? = null, val version: Int = 1,
+    val createdAt: String, val updatedAt: String,
+)
+@Serializable data class CalendarListResponse(val items: List<CalendarEntryDto> = emptyList())
+@Serializable data class CalendarEntryResponse(val entry: CalendarEntryDto)
+/**
+ * POST /calendar. Nulls are left out; the server fills repeat 'none', no reminders, both of us and
+ * not pinned. A repeated [clientKey] returns the entry the first try made (200 instead of 201).
+ */
+@Serializable data class CreateCalendarRequest(
+    val kind: String, val title: String, val date: String,
+    val notes: String? = null, val emoji: String? = null, val endDate: String? = null,
+    val time: String? = null, val durationMinutes: Int? = null, val timeZone: String? = null,
+    val repeat: String? = null, val repeatUntil: String? = null,
+    val reminders: List<Int>? = null, val remindUserIds: List<String>? = null, val pinned: Boolean? = null,
+    val source: CalendarSourceDto? = null, val clientKey: String? = null, val notifyPartner: Boolean? = null,
+)
+/**
+ * PATCH /calendar/:id: only what changed. A field named in [clear] is sent as an explicit null,
+ * which explicitNulls = false would otherwise drop (RisainaApi.patchCalendar adds them). [done] is
+ * for to-dos only. A stale [expectedVersion] gets 409 version_conflict with details.entry.
+ */
+@Serializable data class PatchCalendarRequest(
+    val kind: String? = null, val title: String? = null, val date: String? = null,
+    val notes: String? = null, val emoji: String? = null, val endDate: String? = null,
+    val time: String? = null, val durationMinutes: Int? = null, val timeZone: String? = null,
+    val repeat: String? = null, val repeatUntil: String? = null,
+    val reminders: List<Int>? = null, val remindUserIds: List<String>? = null, val pinned: Boolean? = null,
+    val done: Boolean? = null, val expectedVersion: Int? = null, val notifyPartner: Boolean? = null,
+    /** Of: notes, emoji, endDate, time, durationMinutes, timeZone, repeatUntil. A cleared field is sent as null even if also set. */
+    @Transient val clear: Set<String> = emptySet(),
+)
+
+// ---- wake together: one shared alarm rule, rung by each phone itself ----
+
+/** [outcome] is 'up' or 'missed'. */
+@Serializable data class AlarmWakeDto(val occurrence: String, val outcome: String = "", val at: String, val snoozes: Int = 0)
+/** [ready] null: this person's phone never reported (it runs a build without alarms). */
+@Serializable data class AlarmMemberDto(
+    val userId: String, val ring: Boolean = true, val skips: List<String> = emptyList(),
+    val ready: Boolean? = null, val reason: String? = null, val armedFor: String? = null, val reportedAt: String? = null,
+    val lastWake: AlarmWakeDto? = null,
+)
+/** [mode] is a plain string ('together'): a later mode decodes, and is shown but never scheduled. */
+@Serializable data class AlarmDto(
+    val id: String, val coupleId: String = "", val createdBy: String = "", val updatedBy: String? = null,
+    val mode: String = "together", val label: String? = null, val time: String, val timeZone: String,
+    val days: List<Int> = emptyList(), val onceAt: String? = null, val enabled: Boolean = true, val snoozeMinutes: Int = 10,
+    val version: Int = 1, val createdAt: String, val updatedAt: String, val members: List<AlarmMemberDto> = emptyList(),
+)
+@Serializable data class AlarmListResponse(val items: List<AlarmDto> = emptyList())
+@Serializable data class AlarmResponse(val alarm: AlarmDto)
+/** POST /alarms. Empty [days] means once, at [onceAt] (an instant whose local time in [timeZone] is [time]). */
+@Serializable data class CreateAlarmRequest(
+    val time: String, val timeZone: String, val days: List<Int>, val label: String? = null, val onceAt: String? = null,
+    val ringOnMyPhone: Boolean? = null, val snoozeMinutes: Int? = null, val mode: String? = null,
+)
+/** PATCH /alarms/:id. A field named in [clear] ("label", "onceAt") is sent as an explicit null. */
+@Serializable data class PatchAlarmRequest(
+    val expectedVersion: Int, val label: String? = null, val time: String? = null, val timeZone: String? = null,
+    val days: List<Int>? = null, val onceAt: String? = null, val enabled: Boolean? = null, val snoozeMinutes: Int? = null,
+    @Transient val clear: Set<String> = emptySet(),
+)
+@Serializable data class AlarmSkipDto(val occurrence: String, val skip: Boolean)
+/** PUT /alarms/:id/me: only the caller's own member entry changes. */
+@Serializable data class PutMyAlarmRequest(val ring: Boolean? = null, val skip: AlarmSkipDto? = null)
+/** One alarm's readiness on this phone. [reason] and [armedFor] go out as explicit nulls (RisainaApi.reportAlarms). */
+@Serializable data class AlarmReportItemDto(val alarmId: String, val ready: Boolean, val reason: String? = null, val armedFor: String? = null)
+@Serializable data class AlarmReportRequest(val items: List<AlarmReportItemDto>)
+/** POST /alarms/:id/wake. Idempotent per person and occurrence. */
+@Serializable data class AlarmWakeRequest(val occurrence: String, val outcome: String, val at: String, val snoozes: Int)
 @Serializable data class WidgetBoardDto(
     val authorId: String? = null, val note: String? = null, val emoji: String? = null, val mood: String? = null,
     val photoMediaId: String? = null, val updatedAt: String? = null,
@@ -301,6 +414,8 @@ import kotlinx.serialization.json.JsonObject
     val deviceId: String? = null, val model: String? = null, val appVersion: String = "", val updatedAt: String? = null,
     val lastPushSentAt: String? = null, val lastPushAckAt: String? = null, val lastPushPriority: String? = null,
     val lastPushDowngraded: Boolean = false, val healthFlags: List<String> = emptyList(),
+    /** Android API level the phone reported; null from older apps and older servers. */
+    val sdkInt: Int? = null,
 )
 @Serializable data class DeviceHealthResponse(val mine: List<DeviceHealthDto> = emptyList(), val partner: List<DeviceHealthDto> = emptyList())
 // ---- safety stream: SOS receipts and live location ----------------------------------------------
