@@ -139,6 +139,24 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
         composable<MemoryDetail> { entry -> MemoryDetailScreen(id = entry.toRoute<MemoryDetail>().id, onBack = back) }
         composable<AddMemory> { AddMemoryScreen(onBack = back, onDone = back) }
         composable<Timeline> { TimelineScreen(onBack = back) }
+        composable<Calendar>(deepLinks = listOf(navDeepLink<Calendar>(basePath = "risaina://app/calendar"))) { entry ->
+            com.risaina.app.feature.calendar.CalendarScreen(
+                onBack = back,
+                onOpenEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
+                onAdd = { date -> navController.navigate(CalendarEntryEdit(date = date?.toString())) },
+                onOurStory = { navController.navigate(Timeline) },
+                onOpenProfile = { navController.navigate(Profile) },
+                openReminders = entry.toRoute<Calendar>().openReminders,
+            )
+        }
+        // A reminder or "Bea added … to your calendar" opens its entry: risaina://app/calendar/{id}.
+        composable<CalendarEntryEdit>(deepLinks = listOf(navDeepLink { uriPattern = "risaina://app/calendar/{id}" })) {
+            com.risaina.app.feature.calendar.CalendarEntryScreen(
+                onBack = back,
+                onOpenChat = { navController.navigate(Messages()) },
+                onOpenList = { id -> navController.navigate(ListDetail(id)) },
+            )
+        }
         composable<WidgetGallery> { WidgetGalleryScreen(onBack = back) }
 
         composable<Settings> {
@@ -150,6 +168,7 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     privacy = { navController.navigate(PrivacySettings) },
                     widgets = { navController.navigate(WidgetGallery) },
                     timeline = { navController.navigate(Timeline) },
+                    calendarReminders = { navController.navigate(Calendar(openReminders = true)) },
                     about = { navController.navigate(About) },
                     pairing = { navController.navigate(Pairing) },
                     verifyEmail = { navController.navigate(VerifyEmail) },

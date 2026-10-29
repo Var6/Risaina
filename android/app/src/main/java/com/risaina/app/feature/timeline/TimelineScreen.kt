@@ -69,7 +69,7 @@ fun TimelineScreen(onBack: () -> Unit, vm: TimelineViewModel = hiltViewModel()) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Timeline", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Our story", style = MaterialTheme.typography.headlineSmall) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(BackIcon, contentDescription = "Back") } },
                 actions = { IconButton(onClick = { addMilestone = true }) { Icon(AddIcon, contentDescription = "Add a milestone") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
