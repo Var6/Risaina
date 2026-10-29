@@ -170,7 +170,7 @@ class MessagesViewModel @Inject constructor(
     fun draftHit(text: String): com.risaina.app.core.domain.DateHit? =
         if (text.isBlank() || !calendarAvailable.value) null else com.risaina.app.feature.calendar.CalendarPrefills.confidentHit(text, now(), order)
 
-    private val todoBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val todos = TodoQueue(listsRepository::ensureTodoList, listsRepository::appendItems)
 
     /**
      * "Make it a to-do" (D5): with a date the parser is sure of, a dated to-do in the calendar (the
@@ -194,11 +194,8 @@ class MessagesViewModel @Inject constructor(
     fun addTodoFromComposer(onDated: (com.risaina.app.feature.calendar.CalendarPrefill) -> Unit, onOpenList: (String) -> Unit) {
         val text = composer.trim()
         if (text.isEmpty()) {
-            if (!todoBusy.compareAndSet(false, true)) return
             viewModelScope.launch {
-                try {
-                    listsRepository.ensureTodoList().onSuccess { onOpenList(it.id) }.onFailure { effects.trySend(it.message ?: "Couldn't open your To-dos") }
-                } finally { todoBusy.set(false) }
+                todos.list().onSuccess { onOpenList(it.id) }.onFailure { effects.trySend(it.message ?: "Couldn't open your To-dos") }
             }
             return
         }
@@ -210,18 +207,12 @@ class MessagesViewModel @Inject constructor(
         appendTodo(text, clearDraft = true)
     }
 
-    // One at a time: two quick taps must not make two "To-dos" lists before the first exists.
+    // One at a time (TodoQueue): a second to-do waits for the first, so there is only ever one "To-dos" list.
     private fun appendTodo(text: String, clearDraft: Boolean) {
-        if (!todoBusy.compareAndSet(false, true)) return
         viewModelScope.launch {
-            try {
-                when (val list = listsRepository.ensureTodoList()) {
-                    is AppResult.Success -> listsRepository.appendItems(list.value.id, listOf(text))
-                        .onSuccess { if (clearDraft && composer.trim() == text) composer = ""; effects.trySend("Added to ${list.value.title}") }
-                        .onFailure { effects.trySend(it.message ?: "Couldn't add the to-do") }
-                    is AppResult.Failure -> effects.trySend(list.error.message ?: "Couldn't add the to-do")
-                }
-            } finally { todoBusy.set(false) }
+            val r = todos.add(text) ?: run { effects.trySend("Still adding that one…"); return@launch }
+            r.onSuccess { list -> if (clearDraft && composer.trim() == text) composer = ""; effects.trySend("Added to ${list.title}") }
+                .onFailure { effects.trySend(it.message ?: "Couldn't add the to-do") }
         }
     }
 
