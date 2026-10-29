@@ -75,6 +75,7 @@ class RisainaNotifier @Inject constructor(
      */
     fun clearAllPartnerNotifications() {
         clearPartnerAlerts()
+        diagnostics.clearQuickAlerts()
         val nm = NotificationManagerCompat.from(context)
         // The known ids first, without relying on activeNotifications (which can fail or lag).
         PARTNER_IDS.forEach { nm.cancel(it) }
@@ -86,17 +87,18 @@ class RisainaNotifier @Inject constructor(
     }
 
     /**
-     * A generic alert for this very item ([ref]) was posted from its push moments ago. The detailed
-     * notification then updates it in place without alerting, or is left out when the person already
-     * tapped or dismissed the generic one (FastAlerts.detailedAction). Matched per item, so another
-     * ping or message that came in the same sync (and had no quick alert of its own) still alerts,
-     * and in a burst each one alerts once. A quick alert from an older server carries no item id and
-     * matches any item of its kind. Called once per item: it forgets the item's quick alert.
+     * A generic alert for this very item ([ref]) was posted from its push, however long ago. The
+     * detailed notification then updates it in place without alerting, or is left out when the person
+     * already tapped or dismissed the generic one (FastAlerts.detailedAction). Matched per item, so
+     * another ping or message that came in the same sync (and had no quick alert of its own) still
+     * alerts, and in a burst each one alerts once. A quick alert from an older server carries no item
+     * id and matches any item of its kind for 2 minutes. Called once per item: it forgets the item's
+     * quick alert.
      */
     private fun followsQuickAlert(kind: String, ref: String): Boolean {
         val now = System.currentTimeMillis()
         val (at, fastRef) = diagnostics.lastFastAlert(kind)
-        val follows = ref in diagnostics.quickAlerts(kind, now) || (fastRef == null && FastAlerts.follows(at, null, ref, now))
+        val follows = FastAlerts.followsQuick(diagnostics.quickAlerts(kind, now), at, fastRef, ref, now)
         diagnostics.forgetQuickAlert(kind, ref)
         return follows
     }

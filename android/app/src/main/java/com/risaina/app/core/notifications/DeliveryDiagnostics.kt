@@ -51,7 +51,11 @@ data class DeliverySnapshot(
 
 /** When a detailed notification follows the quick one posted from its push. Pure (FastAlertsTest). */
 object FastAlerts {
-    /** Long enough for a slow sync or the SyncWorker after a Doze wake; short enough to never mute a new item. */
+    /**
+     * How long a quick alert that named no item (an older server's ping push) keeps the next ping
+     * quiet: it matches any ping, so it must not mute a new one for long. A quick alert that named its
+     * item is matched by id instead, for much longer (QuickAlertRefs.KEEP_MS).
+     */
     const val WINDOW_MS = 2 * 60_000L
 
     /**
@@ -60,6 +64,17 @@ object FastAlerts {
      */
     fun follows(fastAt: Long, fastRef: String?, ref: String, now: Long): Boolean =
         fastAt > 0 && now - fastAt in 0 until WINDOW_MS && (fastRef == null || fastRef == ref)
+
+    /**
+     * Whether the detailed post for [ref] follows a quick alert of its own: [refs] (the kind's
+     * remembered quick alerts, DeliveryDiagnostics.quickAlerts) has it at any age, or the last quick
+     * alert ([lastAt], [lastRef]) named no item and is recent ([follows]). The age of an id-matched
+     * one does not matter: an id cannot mute another item, and the sync can come minutes late (the
+     * 4 s inline sync failed and the SyncWorker backs off, or Doze holds it on Android 11 and below).
+     * The quick alert is then usually still in the shade, and alerting again would buzz twice.
+     */
+    fun followsQuick(refs: Map<String, Long>, lastAt: Long, lastRef: String?, ref: String, now: Long): Boolean =
+        ref in refs || (lastRef == null && follows(lastAt, null, ref, now))
 
     /**
      * What the detailed post does. After a quick alert for this item ([followsFast]) it only updates
@@ -84,6 +99,14 @@ object FastAlerts {
 object QuickAlertRefs {
     private const val MAX = 16
 
+    /**
+     * How long one is kept when its detailed post never comes to forget it (the app was open when the
+     * item synced, say). Long, because each is matched by its own id and the sync can come hours late
+     * after a Doze wake or a phone that was offline; a ref whose item never syncs at all only lasts
+     * this long (sign-out and unlink drop them all at once: DeliveryDiagnostics.clearQuickAlerts).
+     */
+    const val KEEP_MS = 24 * 60 * 60_000L
+
     fun decode(raw: String?): Map<String, Long> =
         raw.orEmpty().split(',').mapNotNull { e ->
             val id = e.substringBeforeLast(':', "")
@@ -93,9 +116,9 @@ object QuickAlertRefs {
 
     fun encode(refs: Map<String, Long>): String = refs.entries.joinToString(",") { "${it.key}:${it.value}" }
 
-    /** Only those under FastAlerts.WINDOW_MS old: past that an item is never waited for, nor kept quiet. */
+    /** Only those under [KEEP_MS] old; a clock that jumped back never keeps one for ever. */
     fun fresh(refs: Map<String, Long>, now: Long): Map<String, Long> =
-        refs.filterValues { now - it in 0 until FastAlerts.WINDOW_MS }
+        refs.filterValues { now - it in 0 until KEEP_MS }
 
     fun add(refs: Map<String, Long>, id: String, now: Long): Map<String, Long> {
         // The separators cannot be in a server id (24 hex); a malformed one is just not remembered.
@@ -202,9 +225,9 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
     /**
      * Every item of [kind] ([QUICK_PING], [QUICK_MESSAGE]) whose quick alert was posted from its push,
      * by id (QuickAlertRefs), where [recordFastAlert] keeps only the last one. The chat notification
-     * also shows a placeholder line for each message Room does not have yet. Kept for
-     * FastAlerts.WINDOW_MS. Callers hold RisainaNotifier's postLock, so a read and the write after it
-     * never interleave.
+     * also shows a placeholder line for each message Room does not have yet. Kept until the item's
+     * detailed post forgets it ([forgetQuickAlert]), or QuickAlertRefs.KEEP_MS. Callers hold
+     * RisainaNotifier's postLock, so a read and the write after it never interleave.
      */
     fun recordQuickAlert(kind: String, id: String, now: Long = System.currentTimeMillis()) {
         prefs.edit().putString(K_QUICK_PREFIX + kind, QuickAlertRefs.encode(QuickAlertRefs.add(storedQuickAlerts(kind), id, now))).apply()
@@ -216,6 +239,14 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
     fun forgetQuickAlert(kind: String, id: String) {
         val refs = storedQuickAlerts(kind)
         if (id in refs) prefs.edit().putString(K_QUICK_PREFIX + kind, QuickAlertRefs.encode(refs - id)).apply()
+    }
+
+    /**
+     * Sign-out, unlink and the like wipe the chat: a message announced before that may never sync now,
+     * and must not come back as a "Sent you a message" line in a later conversation.
+     */
+    fun clearQuickAlerts() {
+        prefs.edit().remove(K_QUICK_PREFIX + QUICK_PING).remove(K_QUICK_PREFIX + QUICK_MESSAGE).apply()
     }
 
     private fun storedQuickAlerts(kind: String): Map<String, Long> = QuickAlertRefs.decode(prefs.getString(K_QUICK_PREFIX + kind, null))
