@@ -65,6 +65,7 @@ import com.risaina.app.core.designsystem.theme.PillShape
 import com.risaina.app.core.designsystem.theme.Risaina
 import com.risaina.app.core.designsystem.theme.RisainaTextStyles
 import com.risaina.app.core.model.MessageType
+import com.risaina.app.core.model.unknownTypeText
 import com.risaina.app.core.model.PingType
 import com.risaina.app.feature.common.Format
 import com.risaina.app.feature.common.HistoryIcon
@@ -337,7 +338,7 @@ private fun LatestMoment(s: HomeUiState, onOpen: () -> Unit) {
                 is Moment.FromMessage -> Column {
                     val msg = m.message
                     Text(
-                        when (msg.type) { MessageType.PHOTO -> "Sent a photo"; MessageType.VOICE -> "Sent a voice note"; else -> msg.text ?: "" },
+                        when (msg.type) { MessageType.PHOTO -> "Sent a photo"; MessageType.VOICE -> "Sent a voice note"; MessageType.UNKNOWN -> msg.unknownTypeText(); else -> msg.text ?: "" },
                         style = RisainaTextStyles.noteSerif, maxLines = 4, overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(6.dp))

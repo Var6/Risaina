@@ -23,6 +23,7 @@ import com.risaina.app.core.model.Partner
 import com.risaina.app.core.model.Ping
 import com.risaina.app.core.model.PingStatus
 import com.risaina.app.core.model.PingType
+import com.risaina.app.core.model.unknownTypeText
 import com.risaina.app.core.network.SocketState
 import com.risaina.app.core.notifications.Haptics
 import com.risaina.app.core.notifications.PushAvailability
@@ -255,7 +256,7 @@ class HomeViewModel @Inject constructor(
             val detail = if (gift.isGift(p.message)) gift.giftLine(p.message) else p.message
             ActivityItem(p.id, p.emoji, if (p.senderId == myId) "You · $label" else "${partnerName ?: "Partner"} · $label", detail, p.createdAt, p.senderId == myId, if (p.senderId == myId) p.status else null)
         } + messages.filter { it.deletedAt == null }.map { m ->
-            val what = when (m.type) { MessageType.PHOTO -> "Photo"; MessageType.VOICE -> "Voice note"; else -> m.text ?: "" }
+            val what = when (m.type) { MessageType.PHOTO -> "Photo"; MessageType.VOICE -> "Voice note"; MessageType.UNKNOWN -> m.unknownTypeText(); else -> m.text ?: "" }
             ActivityItem(m.id, when (m.type) { MessageType.PHOTO -> "🖼"; MessageType.VOICE -> "🎙"; MessageType.EMOJI -> m.text ?: "✉️"; else -> "✉️" }, if (m.senderId == myId) "You" else partnerName ?: "Partner", what, m.createdAt, m.senderId == myId, null)
         }
         return items.sortedByDescending { it.at }.take(8)
