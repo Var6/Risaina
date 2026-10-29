@@ -127,8 +127,9 @@ class EventReducer @Inject constructor(
                 val partner = json.decodeFromJsonElement(PartnerDto.serializer(), it)
                 if (partner.id != me) coupleDao.replace(coupleDao.couple(), partner.toEntity())
             }
+            // Newer copy wins: this phone's own older saves come back by replay after its newer reply.
             "list.created", "list.updated" -> p.obj("list")?.let {
-                listDao.upsert(json.decodeFromJsonElement(com.risaina.app.core.network.SharedListDto.serializer(), it).toEntity(json))
+                listDao.upsertIfNewer(json.decodeFromJsonElement(com.risaina.app.core.network.SharedListDto.serializer(), it).toEntity(json))
             }
             "list.deleted" -> p.str("listId")?.let { listDao.delete(it) }
             "widget.updated" -> p.obj("board")?.let {

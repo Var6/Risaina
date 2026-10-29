@@ -226,4 +226,6 @@ dependencies {
     androidTestImplementation(libs.hilt.android.testing)
     kspAndroidTest(libs.hilt.compiler)
     androidTestImplementation(libs.androidx.work.testing)
+    // MigrationTestHelper for the Room 5 → 6 migration on a device (already a unit-test dependency).
+    androidTestImplementation(libs.androidx.room.testing)
 }
