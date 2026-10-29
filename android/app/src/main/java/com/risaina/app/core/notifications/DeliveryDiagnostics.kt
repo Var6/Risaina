@@ -77,6 +77,18 @@ object FastAlerts {
         ref in refs || (lastRef == null && follows(lastAt, null, ref, now))
 
     /**
+     * Whether a push may post its quick alert here, and have it remembered: only for the couple this
+     * phone is in. [coupleId] is the couple in Room (null when signed out or not paired), [pushCoupleId]
+     * the one the push names. A signed-out phone still gets pushes while its device row lingers on the
+     * server (a password reset, a sign-out while offline), and so does one just signed in to another
+     * account until it registers. Its item never syncs here, so a message's "Sent you a message" line
+     * would stay in a later chat notification for a day (QuickAlertRefs.KEEP_MS). A push that names no
+     * couple (an older server) is trusted once a couple is here.
+     */
+    fun forThisCouple(coupleId: String?, pushCoupleId: String?): Boolean =
+        coupleId != null && (pushCoupleId == null || pushCoupleId == coupleId)
+
+    /**
      * What the detailed post does. After a quick alert for this item ([followsFast]) it only updates
      * the quick one in place while that is still [showing], and posts nothing once the person swiped
      * or tapped it away (posting again would bring it back, which looks like a second notification).
@@ -103,7 +115,7 @@ object QuickAlertRefs {
      * How long one is kept when its detailed post never comes to forget it (the app was open when the
      * item synced, say). Long, because each is matched by its own id and the sync can come hours late
      * after a Doze wake or a phone that was offline; a ref whose item never syncs at all only lasts
-     * this long (sign-out and unlink drop them all at once: DeliveryDiagnostics.clearQuickAlerts).
+     * this long (sign-out, unlink and sign-in drop them all at once: DeliveryDiagnostics.clearQuickAlerts).
      */
     const val KEEP_MS = 24 * 60 * 60_000L
 
@@ -243,7 +255,8 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
 
     /**
      * Sign-out, unlink and the like wipe the chat: a message announced before that may never sync now,
-     * and must not come back as a "Sent you a message" line in a later conversation.
+     * and must not come back as a "Sent you a message" line in a later conversation. A sign-in clears
+     * them too (RisainaNotifier.forgetQuickAlerts), for any a wipe cut short left behind.
      */
     fun clearQuickAlerts() {
         prefs.edit().remove(K_QUICK_PREFIX + QUICK_PING).remove(K_QUICK_PREFIX + QUICK_MESSAGE).apply()

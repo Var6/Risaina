@@ -124,6 +124,26 @@ class FastAlertsTest {
         assertTrue(d.quickAlerts(DeliveryDiagnostics.QUICK_MESSAGE, now).isEmpty())
     }
 
+    // --- only for this phone's couple ---------------------------------------------------------
+
+    @Test fun aPushForThisCoupleGetsItsQuickAlert() {
+        assertTrue(FastAlerts.forThisCouple(coupleId = "c1", pushCoupleId = "c1"))
+        // A push that names no couple (an older server) is trusted once a couple is here.
+        assertTrue(FastAlerts.forThisCouple(coupleId = "c1", pushCoupleId = null))
+    }
+
+    @Test fun aSignedOutPhoneGetsNoQuickAlert() {
+        // Its device row lingered on the server (a password reset, a sign-out while offline): the item
+        // never syncs here, and a remembered message would haunt the next account's chat notification.
+        assertFalse(FastAlerts.forThisCouple(coupleId = null, pushCoupleId = "c1"))
+        assertFalse(FastAlerts.forThisCouple(coupleId = null, pushCoupleId = null))
+    }
+
+    @Test fun aPushForAnotherCoupleGetsNoQuickAlert() {
+        // Just signed in to another account, before this phone registered its token for it.
+        assertFalse(FastAlerts.forThisCouple(coupleId = "c2", pushCoupleId = "c1"))
+    }
+
     @Test fun quickRefsAreBounded() {
         var refs = emptyMap<String, Long>()
         for (i in 1..40) refs = QuickAlertRefs.add(refs, "m$i", 1_000L + i)
