@@ -2,6 +2,9 @@ package com.risaina.app.feature.calendar
 
 import com.risaina.app.core.domain.CalendarRules
 import com.risaina.app.core.domain.CalendarText
+import com.risaina.app.core.domain.DateDetector
+import com.risaina.app.core.domain.DateHit
+import com.risaina.app.core.domain.DateOrder
 import com.risaina.app.core.domain.Occurrence
 import com.risaina.app.core.model.CalendarEntry
 import com.risaina.app.core.model.CalendarEntryDraft
@@ -99,6 +102,20 @@ object EntryRules {
             else -> null
         }.takeIf { e.kind != CalendarKind.TODO }
         return listOfNotNull(base, repeat).joinToString(" · ")
+    }
+
+    /**
+     * The title once a date suggested from it is taken: without the date words of [hit], which was
+     * found in [foundIn]. The person may have rewritten the title since, so the words are cut only
+     * where they still stand (found again in [title]); otherwise the title stays as typed.
+     */
+    fun titleTakingSuggestion(title: String, foundIn: String, hit: DateHit, reference: ZonedDateTime, order: DateOrder): String {
+        val now = if (title == foundIn) hit else {
+            val words = foundIn.slice(hit.range.first..minOf(hit.range.last, foundIn.length - 1))
+            DateDetector.find(title, reference, order).firstOrNull { it.range.last < title.length && title.slice(it.range).equals(words, ignoreCase = true) }
+                ?: return title
+        }
+        return DateDetector.suggestTitle(title, listOf(now)).ifBlank { title }
     }
 
     /** The editor's fields for a saved entry. "Let them know" starts off: an edit tells only when it moves the entry. */

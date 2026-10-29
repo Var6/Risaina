@@ -51,6 +51,28 @@ class EntryRulesTest {
         assertEquals("Sat 2 Jan 2027", line(calendarEntry(date = LocalDate.of(2027, 1, 2))))
     }
 
+    // ---- a date suggested from the title ----
+
+    private val ref = java.time.ZonedDateTime.of(2026, 10, 29, 10, 0, 0, 0, kolkata)
+    private fun take(title: String, foundIn: String): String {
+        val hit = com.risaina.app.core.domain.DateDetector.find(foundIn, ref, com.risaina.app.core.domain.DateOrder.DMY).first()
+        return EntryRules.titleTakingSuggestion(title, foundIn, hit, ref, com.risaina.app.core.domain.DateOrder.DMY)
+    }
+
+    @Test fun `taking a suggested date cuts its words from the title`() {
+        assertEquals("Dinner with mum", take("Dinner on 3/4 with mum", "Dinner on 3/4 with mum"))
+    }
+
+    @Test fun `a title rewritten since the suggestion keeps its words`() {
+        // The chip was for "3/4" in the old title; cutting the same places now would mangle the new one.
+        assertEquals("Lunch with mum and dad", take("Lunch with mum and dad", "Dinner on 3/4 with mum"))
+        // Edited elsewhere, the date words still there (and moved): only they go.
+        assertEquals("Dinner with mum and dad", take("Dinner on 3/4 with mum and dad", "Dinner on 3/4 with mum"))
+        assertEquals("Big dinner with mum", take("Big dinner on 3/4 with mum", "Dinner on 3/4 with mum"))
+        // Another date typed in their place is not the one suggested: the title stays as typed.
+        assertEquals("Dinner on 5/4 with mum", take("Dinner on 5/4 with mum", "Dinner on 3/4 with mum"))
+    }
+
     // ---- a save refused because the partner saved first ----
 
     private val ids = listOf("me", "bea")

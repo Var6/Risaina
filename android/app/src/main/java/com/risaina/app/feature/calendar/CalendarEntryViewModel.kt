@@ -116,6 +116,9 @@ class CalendarEntryViewModel @Inject constructor(
     /** The editor is done: go back and say this ("Added to your calendar"). */
     val closed: Flow<String> = closes.receiveAsFlow()
     private var notifyTouched = false
+    /** The title [EntryUiState.suggestion] was found in, and the day it was read against. */
+    private var suggestedFrom: Pair<String, ZonedDateTime>? = null
+    private val order get() = DateOrder.forLocale(Locale.getDefault())
 
     // The keys are CalendarEntryEdit's property names: type-safe navigation keeps the route's
     // arguments (and a risaina://app/calendar/{id} link's) under them.
@@ -155,8 +158,11 @@ class CalendarEntryViewModel @Inject constructor(
             timeZone = CalendarPrefills.zoneFor(time, date, myZone, authorZone), reminders = EntryRules.defaultReminders(allDay),
         )
         // Only a title came (the composer's "Add to calendar" with a draft, a note's line): offer its date.
-        val suggestion = if (!title.isNullOrBlank() && date == null) {
-            DateDetector.find(title, ZonedDateTime.now(myZone), DateOrder.forLocale(Locale.getDefault())).firstOrNull()
+        // Read in the title as the field holds it, so the hit's place is a place in the field.
+        val suggestion = if (form.title.isNotBlank() && date == null) {
+            val reference = ZonedDateTime.now(myZone)
+            suggestedFrom = form.title to reference
+            DateDetector.find(form.title, reference, order).firstOrNull()
         } else null
         _state.update { it.copy(loading = false, form = form, source = source, sourceLabel = labelFor(source), suggestion = suggestion) }
     }
@@ -233,11 +239,15 @@ class CalendarEntryViewModel @Inject constructor(
     fun setNotes(n: String) = edit { it.copy(notes = n.take(2000)) }
     fun setNotify(on: Boolean) { notifyTouched = true; edit { it.copy(notifyPartner = on) } }
 
-    /** A suggested reading of the title's date: taken as the date (and time), and the title loses the date words. */
+    /**
+     * A suggested reading of the title's date: taken as the date (and time), and the title loses the
+     * date words, where they still are (the person may have rewritten the title since).
+     */
     fun applySuggestion(date: LocalDate, time: LocalTime?) {
         val hit = _state.value.suggestion
+        val from = suggestedFrom
         edit { f ->
-            val title = if (hit != null) DateDetector.suggestTitle(f.title, listOf(hit)).ifBlank { f.title } else f.title
+            val title = if (hit != null && from != null) EntryRules.titleTakingSuggestion(f.title, from.first, hit, from.second, order) else f.title
             f.copy(
                 title = title, date = date, time = time, allDay = time == null,
                 timeZone = if (time != null) f.timeZone ?: _state.value.myZone.id else null,
