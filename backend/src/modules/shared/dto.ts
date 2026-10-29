@@ -98,11 +98,16 @@ export function toListDto(l: ListDoc): ListDto {
       done: i.done,
       doneBy: i.doneBy ? i.doneBy.toHexString() : null,
       doneAt: isoOrNull(i.doneAt),
+      addedBy: i.addedBy ? i.addedBy.toHexString() : null,
+      addedAt: isoOrNull(i.addedAt),
     })),
     pinned: l.pinned,
     version: l.version,
     createdAt: iso(l.createdAt),
     updatedAt: iso(l.updatedAt),
+    // lists from before the format fields: a plain checklist / note
+    marker: l.marker ?? 'none',
+    checkboxes: l.checkboxes ?? true,
   };
 }
 

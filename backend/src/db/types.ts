@@ -321,6 +321,12 @@ export type EventType = (typeof EVENT_TYPES)[number];
 
 export const LIST_KINDS = ['note', 'checklist'] as const;
 export type ListKind = (typeof LIST_KINDS)[number];
+/**
+ * How a list's rows are drawn: a format on top of `kind`, not a new kind (the live `lists`
+ * validator's kind enum cannot be widened, and v75 reads an unknown kind as a note).
+ */
+export const LIST_MARKERS = ['none', 'number', 'bullet'] as const;
+export type ListMarker = (typeof LIST_MARKERS)[number];
 
 export interface ListItem {
   id: string; // 12-char random, server-assigned when the client omits it
@@ -328,6 +334,9 @@ export interface ListItem {
   done: boolean;
   doneBy: ObjectId | null;
   doneAt: Date | null;
+  // Who added the item and when (server-owned, added later). Absent on older items: read as null.
+  addedBy?: ObjectId | null;
+  addedAt?: Date | null;
 }
 
 export interface ListDoc {
@@ -344,6 +353,11 @@ export interface ListDoc {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  // Format and idempotent create (added later; optional in the validator, absent on older lists):
+  // read missing marker as 'none' and checkboxes as true.
+  marker?: ListMarker;
+  checkboxes?: boolean;
+  clientKey?: string; // the creating phone's retry key (unique per couple while present)
 }
 
 /** What one partner shows on the OTHER partner's home-screen widgets (one per author per couple). */

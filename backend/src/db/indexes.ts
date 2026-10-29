@@ -91,6 +91,13 @@ export const INDEXES: Record<string, IndexDescription[]> = {
       key: { coupleId: 1, deletedAt: 1, pinned: -1, updatedAt: -1 },
       name: 'coupleId_deletedAt_pinned_updatedAt',
     },
+    // POST /lists retry key: one list per key per couple (only lists created with one)
+    {
+      key: { coupleId: 1, clientKey: 1 },
+      unique: true,
+      name: 'coupleId_clientKey_unique',
+      partialFilterExpression: { clientKey: { $type: 'string' } },
+    },
   ],
   [COLLECTION_NAMES.widgetBoards]: [
     // one board per author per couple; GET /widget-board reads both of the couple

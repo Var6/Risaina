@@ -27,6 +27,11 @@ export class ListRepo {
     return this.db.lists.findOne({ _id: id, coupleId, deletedAt: null });
   }
 
+  /** The list a create with this retry key made, deleted or not. */
+  findByClientKey(coupleId: ObjectId, clientKey: string): Promise<ListDoc | null> {
+    return this.db.lists.findOne({ coupleId, clientKey });
+  }
+
   /** Compare-and-set on `version`: null when the list changed (or was deleted) since it was read. */
   async patchAtVersion(
     id: ObjectId,
