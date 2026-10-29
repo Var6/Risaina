@@ -211,13 +211,10 @@ class RisainaNotifier @Inject constructor(
             // The partner ticked "Let me know" when they saved it. Not a reminder: one notice per entry.
             is Incoming.CalendarShared -> {
                 val e = item.entry
-                val first = partner.substringBefore(" ").ifBlank { partner }
-                val title = when {
-                    !prefs.previewInNotifications -> "$first added something to your calendar"
-                    item.updated -> "$first changed “${e.title}” in your calendar"
-                    else -> "$first added “${e.title}” to your calendar"
-                }
-                val body = if (prefs.previewInNotifications) calendarLine(e) else "Tap to see"
+                val title = CalendarNotice.title(partner, e.title, item.updated, prefs.previewInNotifications)
+                val body = if (prefs.previewInNotifications) {
+                    CalendarNotice.line(e, time.zone(), coupleDao.partner()?.timeZone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() })
+                } else "Tap to see"
                 post(
                     id = e.id.hashCode(), tag = CALENDAR_TAG, group = NotificationGroups.CALENDAR,
                     channel = if (quiet) NotificationChannels.REMINDERS_QUIET else NotificationChannels.CALENDAR_UPDATES,
@@ -357,21 +354,8 @@ class RisainaNotifier @Inject constructor(
 
     /**
      * [group] is the kind's own group (NotificationGroups). No setSilent: it put the notification into
-     * AndroidX's "silent" group; a quiet update uses [onlyAlertOnce] instead.
-     */
-    /** "Sat 14 Nov, 8:00 pm" on this phone's clock, with the partner's when it differs. */
-    private suspend fun calendarLine(e: com.risaina.app.core.model.CalendarEntry): String {
-        val zone = time.zone()
-        val local = com.risaina.app.core.domain.CalendarRules.localStart(e, e.date, zone)
-        val day = com.risaina.app.core.domain.CalendarText.dayTime(local.toLocalDate(), local.toLocalTime().takeIf { e.time != null })
-        val partnerZone = coupleDao.partner()?.timeZone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
-        val theirs = com.risaina.app.core.domain.CalendarRules.partnerStart(e, e.date, zone, partnerZone)
-        return day + (theirs?.let { " (${com.risaina.app.core.domain.CalendarText.time(it.toLocalTime())} for them)" } ?: "")
-    }
-
-    /**
-     * [tag]: for notifications with one per item (calendar notices), so their ids can never clash
-     * with the fixed ones above.
+     * AndroidX's "silent" group; a quiet update uses [onlyAlertOnce] instead. [tag]: for kinds with one
+     * notification per item (calendar notices), so their ids can never clash with the fixed ones above.
      */
     private fun post(id: Int, group: String, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int, onlyAlertOnce: Boolean = false, tag: String? = null) {
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(deepLink)).apply {
