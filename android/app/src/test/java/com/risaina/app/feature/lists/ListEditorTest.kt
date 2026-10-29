@@ -68,6 +68,30 @@ class ListEditorTest {
         assertEquals(long.replace(" ", ""), r.doc.items.joinToString("") { it.text.replace(" ", "") })
     }
 
+    @Test fun `a row that already holds a line break takes typing and Backspace like any other`() {
+        // Saved by v75 (Enter inside a row) or a chat message added as one item.
+        val typed = RowEdits.typed(doc("Milk\nEggs"), "r0", "Milk\nEggsx", ids)
+        assertEquals(listOf("Milk\nEggsx"), texts(typed.doc))
+        assertNull(typed.caret)
+        assertEquals(listOf("Milk\nEgg"), texts(RowEdits.typed(doc("Milk\nEggs"), "r0", "Milk\nEgg", ids).doc))
+        assertEquals("typing before the break", listOf("Oat milk\nEggs"), texts(RowEdits.typed(doc("Milk\nEggs"), "r0", "Oat milk\nEggs", ids).doc))
+        assertEquals("the break itself can be deleted", listOf("MilkEggs"), texts(RowEdits.typed(doc("Milk\nEggs"), "r0", "MilkEggs", ids).doc))
+        // A new Enter in it still splits there.
+        val split = RowEdits.typed(doc("Milk\nEggs"), "r0", "Milk\nEggs\n", ids)
+        assertEquals(listOf("Milk\nEggs", ""), texts(split.doc))
+        assertEquals(Caret("n0", 0), split.caret)
+    }
+
+    @Test fun `only a line break typed now or a row growing past 300 leaves the plain path`() {
+        assertTrue(RowEdits.isPlain("Milk\nEggs", "Milk\nEggsx"))
+        assertTrue(RowEdits.isPlain("Milk\nEggs", "Milk\nEgg"))
+        assertTrue(RowEdits.isPlain("Milk", "Milky"))
+        assertFalse(RowEdits.isPlain("Milk\nEggs", "Milk\n\nEggs"))
+        assertFalse(RowEdits.isPlain("Milk", "Mi\nlk"))
+        assertFalse(RowEdits.isPlain("x".repeat(300), "x".repeat(301)))
+        assertTrue("shrinking an over-long row is fine", RowEdits.isPlain("x".repeat(302), "x".repeat(301)))
+    }
+
     @Test fun `typing one more character into a full row is not taken`() {
         val full = "x".repeat(300)
         val r = RowEdits.typed(doc(full), "r0", full + "y", ids)

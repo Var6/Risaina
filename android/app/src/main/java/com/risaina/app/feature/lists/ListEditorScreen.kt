@@ -505,7 +505,8 @@ private fun LazyItemScope.RowItem(
                 onValueChange = { v ->
                     when {
                         v.text == value.text -> value = v
-                        '\n' in v.text || v.text.length > ListLimits.MAX_ITEM_TEXT -> {
+                        // A line break typed or pasted now, or past 300 characters (one already in the row is just text).
+                        !RowEdits.isPlain(value.text, v.text) -> {
                             vm.typed(row.id, v.text)
                             val text = vm.latestRowText(row.id) ?: value.text
                             value = TextFieldValue(text, TextRange(v.selection.start.coerceAtMost(text.length)))

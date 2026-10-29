@@ -28,14 +28,16 @@ object RowEdits {
     /**
      * Row [rowId] now reads [text]. An Enter typed in it splits the row at the cursor and moves to
      * the new row; pasted lines become rows there (bullets, numbers and boxes stripped, long lines
-     * cut at a space), up to 200 rows in all. A single character past 300 is not taken.
+     * cut at a space), up to 200 rows in all. A single character past 300 is not taken. Only a line
+     * break typed or pasted now counts: a row that already holds one (saved by an older app, or a
+     * chat message added as one item) is edited like any other.
      */
     fun typed(doc: ListDoc, rowId: String, text: String, newId: () -> String = TodoAppend::newId): RowEdit {
         val i = doc.items.indexOfFirst { it.id == rowId }
         if (i < 0) return RowEdit(doc)
         val row = doc.items[i]
         val old = row.text
-        if ('\n' !in text && text.length <= ListLimits.MAX_ITEM_TEXT) return RowEdit(doc.withRow(i, row.copy(text = text)))
+        if (isPlain(old, text)) return RowEdit(doc.withRow(i, row.copy(text = text)))
         val p = commonPrefix(old, text)
         val q = commonSuffix(old, text, p)
         val before = text.substring(0, p)
@@ -49,6 +51,7 @@ object RowEdits {
             val items = doc.items.toMutableList().apply { set(i, row.copy(text = head)); add(i + 1, next) }
             return RowEdit(doc.copy(items = items), Caret(next.id, 0))
         }
+        // One more character in a full row.
         if ('\n' !in inserted && inserted.length <= 1) return RowEdit(doc.withRow(i, row.copy(text = old)), Caret(rowId, p))
         // Pasted lines lose their bullets, numbers and boxes; the first joins what was before the
         // cursor and the last keeps what was after it. Blank lines are dropped.
@@ -67,6 +70,17 @@ object RowEdits {
         // The cursor ends where the pasted text ends (before what followed it), or at the end when rows were left out.
         val caretAt = if (kept.size == pieces.size) last.text.length - after.length else last.text.length
         return RowEdit(doc.copy(items = items), Caret(last.id, caretAt.coerceIn(0, last.text.length)), leftOut = pieces.size - kept.size)
+    }
+
+    /**
+     * Whether [old] → [text] stays one row as typed: what changed holds no line break, and the row
+     * stays within 300 characters (or does not grow). Line breaks already in the row are not a change.
+     */
+    fun isPlain(old: String, text: String): Boolean {
+        if (text.length > ListLimits.MAX_ITEM_TEXT && text.length > old.length) return false
+        val p = commonPrefix(old, text)
+        val q = commonSuffix(old, text, p)
+        return text.indexOf('\n', p).let { it < 0 || it >= text.length - q }
     }
 
     /**
