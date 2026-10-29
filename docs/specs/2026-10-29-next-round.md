@@ -13,7 +13,7 @@ This round goes to GitHub `main`, which auto-deploys the backend. It is not a Pl
 ## Sources
 
 Five investigation reports hold the detailed designs, file plans and tests. Read the one for your area:
-`/private/tmp/claude-501/-Users-rishabhranjan-Desktop-Risaina/8d3b72b8-bc98-46ee-a936-322339046d05/scratchpad/next/`
+`docs/specs/2026-10-29-reports/`
 - `dup-notifications.md`
 - `lists.md`
 - `calendar.md`
