@@ -63,7 +63,8 @@ object ListPreview {
             lines = bodyLines.take(PREVIEW_ROWS).map { PreviewLine("", it.trim(), false) }
             total = bodyLines.size
         } else {
-            lines = rows.take(PREVIEW_ROWS).mapIndexed { i, r -> PreviewLine(ListLines.prefix(i, r.done, marker, d.checkboxes).trim(), r.text.trim(), r.done && d.checkboxes) }
+            // Ticked shows with checkboxes off too (an older app's partner can tick any list), as in the editor.
+            lines = rows.take(PREVIEW_ROWS).mapIndexed { i, r -> PreviewLine(ListLines.prefix(i, r.done, marker, d.checkboxes).trim(), r.text.trim(), r.done) }
             total = rows.size
         }
         return ListCard(

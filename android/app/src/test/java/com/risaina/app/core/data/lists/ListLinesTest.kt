@@ -18,6 +18,12 @@ class ListLinesTest {
         assertNull(ListLines.parseLine("  •  "))
     }
 
+    @Test fun `a byte-order mark or a no-break space counts as space, as on the server`() {
+        assertEquals(ListLines.Parsed("milk", false), ListLines.parseLine("\uFEFF- milk"))
+        assertEquals(ListLines.Parsed("eggs", true), ListLines.parseLine("•\u00A0[x]\u00A0eggs"))
+        assertNull(ListLines.parseLine("\uFEFF"))
+    }
+
     @Test fun `a marker needs a space after it, so numbers and minus signs stay`() {
         assertEquals("1.5 kg rice", ListLines.parseLine("1.5 kg rice")!!.text)
         assertEquals("-5 °C tonight", ListLines.parseLine("-5 °C tonight")!!.text)

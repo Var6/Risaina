@@ -2,6 +2,7 @@ package com.risaina.app.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -133,8 +134,12 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
         }
         composable<TheirWidget> { com.risaina.app.feature.theirwidget.TheirWidgetScreen(onBack = back) }
         composable<Lists> { com.risaina.app.feature.lists.ListsScreen(onBack = back, onOpen = { navController.navigate(ListDetail(it)) }) }
-        // The editor reads its list id from the route (ListEditorViewModel); "Add to calendar" on a row or a note's line.
-        composable<ListDetail> { com.risaina.app.feature.lists.ListEditorScreen(onBack = back, onAddToCalendar = { route -> navController.navigate(route) }) }
+        // The editor reads its list id from the route (ListEditorViewModel); "Add to calendar" on a row or a note's line,
+        // offered only while the calendar editor is in this graph (navigating to a missing route would crash).
+        composable<ListDetail> {
+            val calendar = remember(navController.graph) { navController.graph.findNode<CalendarEntryEdit>() != null }
+            com.risaina.app.feature.lists.ListEditorScreen(onBack = back, onAddToCalendar = { route: CalendarEntryEdit -> navController.navigate(route) }.takeIf { calendar })
+        }
         composable<PingHistory> { PingHistoryScreen(onBack = back) }
         composable<PingDetail>(deepLinks = listOf(navDeepLink<PingDetail>(basePath = "risaina://app/ping"))) { entry ->
             PingDetailScreen(pingId = entry.toRoute<PingDetail>().id, onBack = back, onReplied = toast)

@@ -59,7 +59,11 @@ sealed interface ListNotice {
     val listId: String
     /** Both people changed the same lines of a note: both versions are in it now, mine first. */
     data class BothKept(override val listId: String) : ListNotice
-    /** A new list was deleted on the other phone before this one heard it was saved (R3). */
+    /**
+     * A new list was deleted on the other phone before this one heard it was saved (R3). Kept in
+     * list_drafts until the overview has said so ([ListSyncEngine.dropped]), since the 404 usually
+     * comes to the worker or a resume while nobody is looking.
+     */
     data class DeletedBeforeSaved(override val listId: String, val title: String) : ListNotice
 }
 
@@ -73,8 +77,13 @@ data class EditorSnapshot(
     val loaded: Boolean,
     /** Why the list could not be opened (not on this phone and the server could not be asked). */
     val loadError: String? = null,
+    /** A new list's rows that took the server's ids when it was created: server id → the id they had here. */
+    val rowKeys: Map<String, String> = emptyMap(),
 ) {
     val isLocal: Boolean get() = ListSyncEngine.isLocal(listId)
+
+    /** A row's key on screen, the same before and after its list is created, so the row being typed in keeps focus. */
+    fun keyOf(rowId: String): String = rowKeys[rowId] ?: rowId
 }
 
 /** Queues ListSaveWorker (WorkManager), so unsent drafts go once the network is back, even after the app is closed. */
@@ -137,6 +146,9 @@ class ListSyncEngine @Inject constructor(
         val lastError: String? = null,
         val draftStored: Boolean = false,
         val loadError: String? = null,
+        /** Rows of a list made here: the id they had on this phone → the server's (and back, [rowKeys]). */
+        val rowAliases: Map<String, String> = emptyMap(),
+        val rowKeys: Map<String, String> = emptyMap(),
     ) {
         val dirty: Boolean get() = base != null && !ListWire.same(mine, base)
     }
@@ -168,6 +180,16 @@ class ListSyncEngine @Inject constructor(
     /** Every list for the overview, drafts over server copies (ListOverview). */
     val overview: Flow<List<OverviewEntry>> = combine(listDao.all(), draftDao.observeAll()) { rows, drafts -> ListOverview.entries(rows, drafts, json) }
 
+    /** New lists deleted before they finished saving (R3) that the overview has not mentioned yet. */
+    val dropped: Flow<List<ListNotice.DeletedBeforeSaved>> = draftDao.observeAll().map { ds ->
+        ds.filter { it.state == STATE_DROPPED }.map { ListNotice.DeletedBeforeSaved(it.listId, ListWire.title(decode(it.mineJson) ?: ListDoc())) }
+    }
+
+    /** The overview has said so: the record goes. */
+    suspend fun acknowledge(notice: ListNotice.DeletedBeforeSaved) = draftLock.withLock {
+        if (draftDao.get(notice.listId)?.state == STATE_DROPPED) draftDao.delete(notice.listId)
+    }
+
     /** The editor's view of [id], loading the draft or the server copy first. */
     fun observe(id: String): Flow<EditorSnapshot> = flow {
         val s = sessionFor(id)
@@ -178,6 +200,9 @@ class ListSyncEngine @Inject constructor(
 
     /** The open editor's current copy, newest keystroke included (the flow can lag behind it). */
     fun current(id: String): ListDoc? = sessions[resolve(id)]?.state?.value?.mine
+
+    /** A row's id now: the server's for a row of a new list that was created since the screen last drew it. */
+    fun rowId(listId: String, rowId: String): String = sessions[resolve(listId)]?.state?.value?.rowAliases?.get(rowId) ?: rowId
 
     /**
      * Applies an edit at once. [transform] works on the newest copy (rows by id), so an edit never
@@ -351,7 +376,7 @@ class ListSyncEngine @Inject constructor(
         val at = epoch
         var done = true
         for (d in draftDao.all()) {
-            if (d.state == STATE_ORPHANED || d.state == STATE_FAILED) continue
+            if (d.state == STATE_ORPHANED || d.state == STATE_FAILED || d.state == STATE_DROPPED) continue
             val s = sessionFor(d.listId)
             load(s)
             if (send(s) == Outcome.RETRY) done = false
@@ -422,6 +447,12 @@ class ListSyncEngine @Inject constructor(
         val id = s.id
         val draft = draftDao.get(id)
         val entity = if (isLocal(id)) null else listDao.byId(id)
+        if (draft?.state == STATE_DROPPED) {
+            // Deleted before it finished saving; the overview says so. Nothing here may touch the record.
+            s.closed = true
+            s.state.value = SessionState(id, loaded = true, status = SyncStatus.Gone)
+            return@withLock
+        }
         if (draft != null) {
             val base = decode(draft.baseJson) ?: ListDoc()
             val mine = decode(draft.mineJson) ?: base
@@ -627,6 +658,7 @@ class ListSyncEngine @Inject constructor(
             cur.copy(
                 listId = dto.id, base = reply, baseVersion = dto.version, server = dto.meta(),
                 mine = ListMerge.adoptServerMeta(merged.doc, reply), draftStored = false,
+                rowAliases = made.ids, rowKeys = made.ids.entries.associate { (here, there) -> there to here },
             )
         }
         if (conflict) _notices.tryEmit(ListNotice.BothKept(dto.id))
@@ -656,9 +688,16 @@ class ListSyncEngine @Inject constructor(
         val st = s.state.value
         if (isLocal(st.listId)) {
             s.state.update { it.copy(status = SyncStatus.Gone) }
-            writeDraft(s)
             close(s)
-            _notices.tryEmit(ListNotice.DeletedBeforeSaved(st.listId, ListWire.title(st.mine)))
+            // Never sent again nor shown as a card; kept until the overview has told the person.
+            draftLock.withLock {
+                draftDao.upsert(
+                    ListDraftEntity(
+                        listId = st.listId, baseVersion = 0, baseJson = encode(st.base ?: ListDoc(kind = st.mine.kind)), mineJson = encode(st.mine),
+                        editedAt = st.editedAt, state = STATE_DROPPED, lastError = null, attempts = st.attempts,
+                    ),
+                )
+            }
         } else {
             lists.forget(st.listId)
             markDeleted(s)
@@ -666,7 +705,7 @@ class ListSyncEngine @Inject constructor(
         return Outcome.DONE
     }
 
-    private fun SessionState.snapshot() = EditorSnapshot(listId, mine, status, server, loaded, loadError)
+    private fun SessionState.snapshot() = EditorSnapshot(listId, mine, status, server, loaded, loadError, rowKeys)
 
     private fun stateOf(st: SessionState) = when {
         st.status is SyncStatus.Orphaned -> STATE_ORPHANED
@@ -697,6 +736,8 @@ class ListSyncEngine @Inject constructor(
         const val STATE_SENDING = "sending"
         const val STATE_FAILED = "failed"
         const val STATE_ORPHANED = "orphaned"
+        /** A new list deleted before it finished saving, until the overview has said so (R3). */
+        const val STATE_DROPPED = "dropped"
         const val TOO_MANY_ITEMS = "A list holds up to 200 items. Remove some to save it."
         const val TOO_MANY_LISTS = "You have 200 lists, the most there can be. Delete one to save this."
 

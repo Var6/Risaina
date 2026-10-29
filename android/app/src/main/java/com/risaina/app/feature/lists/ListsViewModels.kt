@@ -93,7 +93,14 @@ class ListsOverviewViewModel @Inject constructor(
     init {
         refresh()
         viewModelScope.launch {
-            engine.notices.filter { it is ListNotice.DeletedBeforeSaved }.collect { effects.trySend(noticeText(it, people.value.partnerName)) }
+            // Kept in Room until said here, so one that came while Lists was closed is said when it opens.
+            val said = HashSet<String>()
+            engine.dropped.collect { notices ->
+                for (n in notices) {
+                    if (said.add(n.listId)) effects.trySend(noticeText(n, people.value.partnerName))
+                    engine.acknowledge(n)
+                }
+            }
         }
     }
 
@@ -161,8 +168,14 @@ class ListEditorViewModel @Inject constructor(
     private fun now() = time.now().toEpochMilli()
     private fun edit(change: (ListDoc) -> ListDoc) = engine.edit(id, change)
 
+    /**
+     * A row's id now. A new list's rows take the server's ids when it is created; the screen keeps
+     * their first ids as keys, and a keystroke can come from a field drawn before the change.
+     */
+    private fun rid(rowId: String) = engine.rowId(id, rowId)
+
     /** The engine's newest text for a row: a field only takes a text from the flow when it is still the newest. */
-    fun latestRowText(rowId: String): String? = engine.current(id)?.items?.firstOrNull { it.id == rowId }?.text
+    fun latestRowText(rowId: String): String? = rid(rowId).let { r -> engine.current(id)?.items?.firstOrNull { it.id == r }?.text }
     fun latestTitle(): String? = engine.current(id)?.title
     fun latestBody(): String? = engine.current(id)?.body
 
@@ -188,7 +201,8 @@ class ListEditorViewModel @Inject constructor(
     /** A row's text changed: Enter splits, a paste makes rows. */
     fun typed(rowId: String, text: String) {
         var result: RowEdit? = null
-        edit { d -> RowEdits.typed(d, rowId, text).also { result = it }.doc }
+        val r = rid(rowId)
+        edit { d -> RowEdits.typed(d, r, text).also { result = it }.doc }
         result?.let { r ->
             r.caret?.let { caret.value = it }
             if (r.leftOut > 0) effects.trySend(leftOutText(r.leftOut))
@@ -197,7 +211,8 @@ class ListEditorViewModel @Inject constructor(
 
     fun backspaceAtStart(rowId: String) {
         var result: RowEdit? = null
-        edit { d -> RowEdits.joinWithPrevious(d, rowId).also { result = it }.doc }
+        val r = rid(rowId)
+        edit { d -> RowEdits.joinWithPrevious(d, r).also { result = it }.doc }
         result?.caret?.let { caret.value = it }
     }
 
@@ -210,12 +225,13 @@ class ListEditorViewModel @Inject constructor(
         }
     }
 
-    fun toggle(rowId: String, done: Boolean) = edit { RowEdits.toggle(it, rowId, done, people.value.me, now()) }
+    fun toggle(rowId: String, done: Boolean) = rid(rowId).let { r -> edit { RowEdits.toggle(it, r, done, people.value.me, now()) } }
 
     /** Deletes a row; true when there is something to undo. */
     fun remove(rowId: String): Boolean {
         var r: RemovedRow? = null
-        edit { d -> RowEdits.remove(d, rowId).also { r = it.second }.first }
+        val row = rid(rowId)
+        edit { d -> RowEdits.remove(d, row).also { r = it.second }.first }
         removed = r
         return r != null
     }
@@ -226,12 +242,16 @@ class ListEditorViewModel @Inject constructor(
         edit { RowEdits.restore(it, r) }
     }
 
-    fun move(rowId: String, to: Int) = edit { RowEdits.move(it, rowId, to) }
+    fun move(rowId: String, to: Int) = rid(rowId).let { r -> edit { RowEdits.move(it, r, to) } }
 
-    /** A drag passed over [targetId]: the dragged row takes its place. */
-    fun moveOnto(rowId: String, targetId: String) = edit { d ->
-        val to = d.items.indexOfFirst { it.id == targetId }
-        if (to < 0) d else RowEdits.move(d, rowId, to)
+    /** A drag passed over [targetId]: the dragged row takes its place. Both are screen keys. */
+    fun moveOnto(rowId: String, targetId: String) {
+        val r = rid(rowId)
+        val target = rid(targetId)
+        edit { d ->
+            val to = d.items.indexOfFirst { it.id == target }
+            if (to < 0) d else RowEdits.move(d, r, to)
+        }
     }
 
     /** The title's Next key: on to the first row (one is made if there is none) or the note's text. */

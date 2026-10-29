@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -79,7 +80,8 @@ class ListSyncEngineTest {
                 throw AppError.VersionConflict("changed", JsonObject(mapOf("list" to json.encodeToJsonElement(SharedListDto.serializer(), cur))))
             }
             val prev = cur.items.associateBy { it.id }
-            val items = p.items?.map { i ->
+            // Zod's trim is JavaScript's: it takes off a byte-order mark too.
+            val items = p.items?.map { it.copy(text = it.text.trim { c -> c == '\uFEFF' || c.isWhitespace() }) }?.map { i ->
                 val old = prev[i.id]
                 when {
                     old == null -> i.copy(id = i.id ?: "s${n++}", doneBy = if (i.done) "me" else null, doneAt = if (i.done) t0 else null, addedBy = "me", addedAt = t0)
@@ -258,6 +260,19 @@ class ListSyncEngineTest {
         assertEquals(SyncStatus.Saved, snap().status)
     }
 
+    @Test fun `a pasted row that starts with a byte-order mark is saved once, not again and again`() = runTest {
+        seed("l", 1, item("a", "Milk"))
+        val e = engine()
+        val snap = open(e, "l")
+        e.edit("l", addRow("x", "\uFEFFEggs"))
+        advanceUntilIdle()
+        assertEquals("Eggs", server.lists.getValue("l").items[1].text)
+        assertEquals(SyncStatus.Saved, snap().status)
+        assertNull(draftDao.rows.value["l"])
+        assertTrue(e.sendAll())
+        assertEquals(listOf("PATCH l@1"), server.calls)
+    }
+
     @Test fun `a 409 is merged with the partner's copy and sent again on top of it`() = runTest {
         seed("l", 1, item("a", "Picnic"))
         server.partnerEdit("l") { it.copy(items = listOf(item("a", "Picnic", done = true).copy(doneBy = "bea", doneAt = t0))) }
@@ -394,8 +409,13 @@ class ListSyncEngineTest {
         assertEquals(made.id, snap().listId)
         assertEquals("rows take the server's ids", listOf(made.items[0].id, "c2"), snap().doc.items.map { it.id })
         assertTrue(draftDao.rows.value.isEmpty())
+        // On screen a row keeps its key, so the field being typed in is not rebuilt; a keystroke from
+        // a field drawn before the change still finds its row.
+        assertEquals(listOf("c1", "c2"), snap().doc.items.map { snap().keyOf(it.id) })
+        assertEquals(made.items[0].id, e.rowId(id, "c1"))
+        assertEquals("c2", e.rowId(id, "c2"))
 
-        e.edit(id, setText(made.items[0].id!!, "Tickets and passports")) // the old id still works
+        e.edit(id, setText(e.rowId(id, "c1"), "Tickets and passports")) // the old list id still works
         advanceUntilIdle()
         assertEquals(listOf("POST ${server.creates.single().clientKey}", "PATCH ${made.id}@1"), server.calls)
         assertEquals("Tickets and passports", server.lists.getValue(made.id).items.single().text)
@@ -413,8 +433,6 @@ class ListSyncEngineTest {
 
     @Test fun `a new list whose create reply was lost is retried with its key, and a 404 then drops it and says so`() = runTest {
         val e = engine()
-        val notices = mutableListOf<ListNotice>()
-        engineScope().launch { e.notices.collect { notices += it } }
         server.loseCreateReply = true
         val id = e.createLocal(ListDoc(kind = "checklist", title = "Weekend", items = listOf(DocItem("c1", "Hike"))))
         val snap = open(e, id)
@@ -423,12 +441,24 @@ class ListSyncEngineTest {
         assertNotNull(draftDao.rows.value[id])
 
         server.lists.clear() // the partner deleted it meanwhile
-        e.sendAll()
+        e.sendAll() // the worker, with Lists not open
         runCurrent()
         assertEquals("both tries carry the same key", List(2) { "POST ${id.removePrefix(ListSyncEngine.LOCAL_PREFIX)}" }, server.calls)
-        assertTrue(draftDao.rows.value.isEmpty())
         assertEquals(SyncStatus.Gone, snap().status)
-        assertEquals(ListNotice.DeletedBeforeSaved(id, "Weekend"), notices.single())
+        // Kept until the overview has said so: not a card, never sent again.
+        assertEquals(ListSyncEngine.STATE_DROPPED, draftDao.rows.value.getValue(id).state)
+        assertTrue(ListOverview.entries(emptyList(), draftDao.all(), json).isEmpty())
+        assertTrue(e.sendAll())
+        assertEquals(2, server.calls.size)
+        e.release(id); advanceUntilIdle()
+        assertTrue("the editor closing does not take it", open(e, id)().status == SyncStatus.Gone && draftDao.rows.value[id] != null)
+
+        // Lists opens later: it is said once, then forgotten.
+        val dropped = e.dropped.first()
+        assertEquals(listOf(ListNotice.DeletedBeforeSaved(id, "Weekend")), dropped)
+        e.acknowledge(dropped.single())
+        assertTrue(draftDao.rows.value.isEmpty())
+        assertTrue(e.dropped.first().isEmpty())
     }
 
     @Test fun `a create retried after its reply was lost keeps what the partner did meanwhile`() = runTest {

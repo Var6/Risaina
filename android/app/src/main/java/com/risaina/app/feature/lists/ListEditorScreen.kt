@@ -114,7 +114,7 @@ private const val ROW_KEY = "row:"
  * that always says whether what is on screen is saved. A note is plain text with list continuation.
  */
 @Composable
-fun ListEditorScreen(onBack: () -> Unit, onAddToCalendar: (CalendarEntryEdit) -> Unit, vm: ListEditorViewModel = hiltViewModel()) {
+fun ListEditorScreen(onBack: () -> Unit, onAddToCalendar: ((CalendarEntryEdit) -> Unit)?, vm: ListEditorViewModel = hiltViewModel()) {
     val ui by vm.state.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
@@ -159,11 +159,13 @@ fun ListEditorScreen(onBack: () -> Unit, onAddToCalendar: (CalendarEntryEdit) ->
                     val e = vm.toggleNoteList(v.text, v.selection.start, v.selection.end, kind)
                     noteValue = TextFieldValue(e.text, TextRange(e.cursor))
                 },
-                onNoteCalendar = {
-                    val v = noteValue ?: TextFieldValue(snap.doc.body)
-                    val title = NoteEdits.calendarTitle(v.text, v.selection.start, v.selection.end)
-                    if (title == null) vm.say("Put the cursor on a line (or select some words) first.")
-                    else onAddToCalendar(CalendarEntryEdit(title = title, sourceKind = "list", sourceListId = snap.listId.takeUnless { snap.isLocal }))
+                onNoteCalendar = onAddToCalendar?.let { add ->
+                    {
+                        val v = noteValue ?: TextFieldValue(snap.doc.body)
+                        val title = NoteEdits.calendarTitle(v.text, v.selection.start, v.selection.end)
+                        if (title == null) vm.say("Put the cursor on a line (or select some words) first.")
+                        else add(CalendarEntryEdit(title = title, sourceKind = "list", sourceListId = snap.listId.takeUnless { snap.isLocal }))
+                    }
                 },
             )
         },
@@ -236,7 +238,7 @@ private fun EditorBody(
     people: People,
     vm: ListEditorViewModel,
     modifier: Modifier,
-    onAddToCalendar: (CalendarEntryEdit) -> Unit,
+    onAddToCalendar: ((CalendarEntryEdit) -> Unit)?,
     onNoteValue: (TextFieldValue) -> Unit,
 ) {
     val doc = snap.doc
@@ -264,17 +266,21 @@ private fun EditorBody(
         } else {
             // Text a checklist has (a note's lines past 200, or written as it became a checklist) is never hidden.
             if (doc.body.isNotBlank()) item(key = "text-lines") { TextLinesStrip(doc, vm) }
-            itemsIndexed(doc.items, key = { _, r -> ROW_KEY + r.id }) { i, row ->
+            // Keyed by the row's first id: a new list's rows take the server's ids when it is created,
+            // and a new key would rebuild the row being typed in (focus and keyboard lost mid-word).
+            itemsIndexed(doc.items, key = { _, r -> ROW_KEY + snap.keyOf(r.id) }) { i, row ->
                 RowItem(
-                    row = row, index = i, count = doc.items.size, doc = doc, people = people, vm = vm, reorder = reorder, now = now,
-                    caret = caret?.takeIf { it.rowId == row.id },
-                    onAddToCalendar = {
-                        onAddToCalendar(
-                            CalendarEntryEdit(
-                                title = row.text.trim().take(CALENDAR_TITLE_MAX), sourceKind = "list_item",
-                                sourceListId = snap.listId.takeUnless { snap.isLocal }, sourceItemId = row.id.takeUnless { snap.isLocal },
-                            ),
-                        )
+                    row = row, key = ROW_KEY + snap.keyOf(row.id), index = i, count = doc.items.size, doc = doc, people = people, vm = vm, reorder = reorder, now = now,
+                    caret = caret?.takeIf { it.rowId == row.id || it.rowId == snap.keyOf(row.id) },
+                    onAddToCalendar = onAddToCalendar?.let { add ->
+                        {
+                            add(
+                                CalendarEntryEdit(
+                                    title = row.text.trim().take(CALENDAR_TITLE_MAX), sourceKind = "list_item",
+                                    sourceListId = snap.listId.takeUnless { snap.isLocal }, sourceItemId = row.id.takeUnless { snap.isLocal },
+                                ),
+                            )
+                        }
                     },
                     onDelete = {
                         if (vm.remove(row.id)) scope.launch {
@@ -447,6 +453,8 @@ private fun AddRowButton(onClick: () -> Unit) {
 @Composable
 private fun LazyItemScope.RowItem(
     row: DocItem,
+    /** The row's key in the list (its first id), for the field's state and the drag. */
+    key: String,
     index: Int,
     count: Int,
     doc: ListDoc,
@@ -455,17 +463,16 @@ private fun LazyItemScope.RowItem(
     reorder: ReorderState,
     now: Long,
     caret: Caret?,
-    onAddToCalendar: () -> Unit,
+    onAddToCalendar: (() -> Unit)?,
     onDelete: () -> Unit,
 ) {
-    val key = ROW_KEY + row.id
-    var value by remember(row.id) { mutableStateOf(TextFieldValue(row.text, TextRange(row.text.length))) }
+    var value by remember(key) { mutableStateOf(TextFieldValue(row.text, TextRange(row.text.length))) }
     // A text from elsewhere (a merge, a split, Undo) is taken only while it is the engine's newest:
     // the flow can lag a keystroke behind the field, and taking an older text would drop one.
     LaunchedEffect(row.text) {
         if (row.text != value.text && vm.latestRowText(row.id) == row.text) value = TextFieldValue(row.text, TextRange(value.selection.end.coerceAtMost(row.text.length)))
     }
-    val focus = remember(row.id) { FocusRequester() }
+    val focus = remember(key) { FocusRequester() }
     LaunchedEffect(caret) {
         val c = caret ?: return@LaunchedEffect
         val text = vm.latestRowText(row.id) ?: value.text
@@ -475,9 +482,12 @@ private fun LazyItemScope.RowItem(
     }
     var menu by remember { mutableStateOf(false) }
     val dragging = reorder.isDragging(key)
-    val struck = row.done && doc.checkboxes
+    // A tick shows with checkboxes off too: the older app has boxes on every list, so a partner
+    // on it can tick a row of a numbered list. It can be unticked from the row's menu.
+    val struck = row.done
     val label = row.text.ifBlank { "Empty item" }
     val moves = buildList {
+        if (row.done && !doc.checkboxes) add(CustomAccessibilityAction("Untick") { vm.toggle(row.id, false); true })
         if (index > 0) add(CustomAccessibilityAction("Move up") { vm.move(row.id, index - 1); true })
         if (index < count - 1) add(CustomAccessibilityAction("Move down") { vm.move(row.id, index + 1); true })
         if (index > 0) add(CustomAccessibilityAction("Move to top") { vm.move(row.id, 0); true })
@@ -501,11 +511,12 @@ private fun LazyItemScope.RowItem(
         ) {
             Icon(DragHandleIcon, contentDescription = null, tint = Risaina.colors.textMuted, modifier = Modifier.size(20.dp))
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                if (row.text.isNotBlank()) DropdownMenuItem(
+                if (onAddToCalendar != null && row.text.isNotBlank()) DropdownMenuItem(
                     text = { Text("Add to calendar") },
                     leadingIcon = { Icon(CalendarIcon, contentDescription = null) },
                     onClick = { menu = false; onAddToCalendar() },
                 )
+                if (row.done && !doc.checkboxes) DropdownMenuItem(text = { Text("Untick") }, onClick = { menu = false; vm.toggle(row.id, false) })
                 if (index > 0) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; vm.move(row.id, index - 1) })
                 if (index < count - 1) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; vm.move(row.id, index + 1) })
                 DropdownMenuItem(text = { Text("Delete item", color = Risaina.colors.danger) }, onClick = { menu = false; onDelete() })
@@ -556,7 +567,7 @@ private fun LazyItemScope.RowItem(
                     }
                 },
             )
-            people.tickLine(row, now)?.takeIf { doc.checkboxes }?.let {
+            people.tickLine(row, now)?.let {
                 Text(it, style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 2.dp))
             }
         }
@@ -587,7 +598,7 @@ private fun PartnerBadge(people: People) {
 
 /** Above the keyboard: the list's format, or the note's list buttons. */
 @Composable
-private fun FormatBar(doc: ListDoc, vm: ListEditorViewModel, onNoteList: (NoteEdits.Kind) -> Unit, onNoteCalendar: () -> Unit) {
+private fun FormatBar(doc: ListDoc, vm: ListEditorViewModel, onNoteList: (NoteEdits.Kind) -> Unit, onNoteCalendar: (() -> Unit)?) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
         Row(
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
@@ -598,7 +609,7 @@ private fun FormatBar(doc: ListDoc, vm: ListEditorViewModel, onNoteList: (NoteEd
                 BarChip("• List", selected = false) { onNoteList(NoteEdits.Kind.BULLET) }
                 BarChip("1. List", selected = false) { onNoteList(NoteEdits.Kind.NUMBER) }
                 BarChip("☑ Turn into checklist", selected = false) { vm.convert(ListKind.CHECKLIST) }
-                BarChip("📅 Add to calendar", selected = false, onClick = onNoteCalendar)
+                if (onNoteCalendar != null) BarChip("📅 Add to calendar", selected = false, onClick = onNoteCalendar)
             } else {
                 val marker = ListMarker.fromWire(doc.marker)
                 BarChip("☑ Checkboxes", selected = doc.checkboxes) { vm.setCheckboxes(!doc.checkboxes) }

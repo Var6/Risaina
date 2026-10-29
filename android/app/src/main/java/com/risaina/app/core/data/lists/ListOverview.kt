@@ -20,7 +20,8 @@ data class OverviewEntry(
 object ListOverview {
     /** Every list the overview shows, pinned first, then the most recently changed. Pure. */
     fun entries(rows: List<ListEntity>, drafts: List<ListDraftEntity>, json: Json): List<OverviewEntry> {
-        val byId = drafts.associateBy { it.listId }
+        // A new list deleted before it finished saving is only a notice now (ListSyncEngine.dropped), not a card.
+        val byId = drafts.filter { it.state != ListSyncEngine.STATE_DROPPED }.associateBy { it.listId }
         val fromServer = rows.map { e ->
             val d = byId[e.id]
             val mine = d?.let { decode(json, it.mineJson) }
@@ -28,7 +29,7 @@ object ListOverview {
         }
         val known = rows.mapTo(HashSet()) { it.id }
         // Made here and not created yet, or deleted while it had unsent changes: only the draft is left.
-        val draftsOnly = drafts.filter { it.listId !in known }.mapNotNull { d ->
+        val draftsOnly = byId.values.filter { it.listId !in known }.mapNotNull { d ->
             decode(json, d.mineJson)?.let { OverviewEntry(d.listId, it, null, d.state, d.lastError, d.editedAt) }
         }
         return (fromServer + draftsOnly).sortedWith(compareByDescending<OverviewEntry> { it.doc.pinned }.thenByDescending { it.changedAt })
