@@ -127,7 +127,8 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
         }
         composable<TheirWidget> { com.risaina.app.feature.theirwidget.TheirWidgetScreen(onBack = back) }
         composable<Lists> { com.risaina.app.feature.lists.ListsScreen(onBack = back, onOpen = { navController.navigate(ListDetail(it)) }) }
-        composable<ListDetail> { entry -> com.risaina.app.feature.lists.ListDetailScreen(id = entry.toRoute<ListDetail>().id, onBack = back) }
+        // The editor reads its list id from the route (ListEditorViewModel); "Add to calendar" on a row or a note's line.
+        composable<ListDetail> { com.risaina.app.feature.lists.ListEditorScreen(onBack = back, onAddToCalendar = { route -> navController.navigate(route) }) }
         composable<PingHistory> { PingHistoryScreen(onBack = back) }
         composable<PingDetail>(deepLinks = listOf(navDeepLink<PingDetail>(basePath = "risaina://app/ping"))) { entry ->
             PingDetailScreen(pingId = entry.toRoute<PingDetail>().id, onBack = back, onReplied = toast)

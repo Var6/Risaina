@@ -126,21 +126,6 @@ class ListsRepository @Inject constructor(
             .onSuccess { dao.upsertIfNewer(it.list.entity()) }
             .map { it.list.entity().toDomain(json) }
 
-    /**
-     * Saves the whole list. On a version clash the server's copy wins locally and the caller is told,
-     * so the user re-applies their change on top of their partner's instead of silently overwriting it.
-     */
-    suspend fun save(list: SharedList, title: String = list.title, body: String = list.body, items: List<ListItem> = list.items, pinned: Boolean = list.pinned): AppResult<SharedList> {
-        val req = PatchListRequest(
-            title = title.trim(), body = body, pinned = pinned, expectedVersion = list.version,
-            items = items.map { ListItemDto(id = it.id, text = it.text.trim(), done = it.done) },
-        )
-        return when (val r = apiCall { api.patchList(list.id, req) }) {
-            is AppResult.Success -> { dao.upsertIfNewer(r.value.list.entity()); AppResult.Success(r.value.list.entity().toDomain(json)) }
-            is AppResult.Failure -> if (r.error is AppError.VersionConflict) { refresh(); AppResult.Failure(AppError.Conflict("version_conflict", "Your partner just changed this. Showing their latest version.")) } else r
-        }
-    }
-
     /** A list already gone on the server counts as deleted. */
     suspend fun delete(id: String): AppResult<Unit> {
         val r = apiCall { api.deleteList(id) }

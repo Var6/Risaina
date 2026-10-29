@@ -34,3 +34,4 @@ import kotlinx.serialization.Serializable
 @Serializable data object Safety
 @Serializable data object Panic
 @Serializable data object PartnerLocation
+@Serializable data class CalendarEntryEdit(val id: String? = null, val title: String? = null, val date: String? = null, val time: String? = null, val kind: String? = null, val sourceKind: String? = null, val sourceMessageId: String? = null, val sourceListId: String? = null, val sourceItemId: String? = null)
