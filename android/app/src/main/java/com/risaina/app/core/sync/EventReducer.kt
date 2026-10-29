@@ -81,6 +81,8 @@ class EventReducer @Inject constructor(
     private val calendarDeletions: com.risaina.app.core.data.CalendarDeletions,
     /** Calendar reminders are worked out again after anything they depend on changes (local, debounced). */
     private val reminders: com.risaina.app.core.reminders.ReminderRearm,
+    /** Wake together: its store, re-arming and the partner's notices. Local, no network. */
+    private val wakeAlarms: com.risaina.app.core.alarm.WakeAlarmSync,
 ) {
     /** [replay]: the event is old history being re-applied (ReplayGuard); its receipts are not re-sent. */
     suspend fun apply(event: EventDto, replay: Boolean = false): List<Incoming> {
@@ -174,9 +176,9 @@ class EventReducer @Inject constructor(
                 p.str("entryId")?.let { calendarDeletions.record(it); calendarDao.delete(it) }
                 reminders.request()
             }
-            // Wake together is applied by its own package (store, re-arm, partner notices). Until
-            // then these are passed over like any unknown type, and the cursor still moves on.
-            "alarm.created", "alarm.updated", "alarm.deleted", "alarm.woke" -> Unit // TODO(P3): WakeAlarmRepository/WakeAlarmStore.apply(event, me).
+            // Wake together: kept outside Room (WakeAlarmStore), re-armed at once, and the partner's
+            // notices ("set Wake together…", "is up too") posted from the event itself.
+            "alarm.created", "alarm.updated", "alarm.deleted", "alarm.woke" -> wakeAlarms.apply(event, me, replay)
             "widget.updated" -> p.obj("board")?.let {
                 val board = json.decodeFromJsonElement(com.risaina.app.core.network.WidgetBoardDto.serializer(), it)
                 if (event.actorId == me) widgetBoardRepository.store(board, null, replaceMine = true, replaceForMe = false)

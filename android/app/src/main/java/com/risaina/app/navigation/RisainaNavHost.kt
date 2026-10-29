@@ -111,8 +111,12 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     theirWidget = { navController.navigate(TheirWidget) },
                     safety = { navController.navigate(Safety) },
                     partnerLocation = { navController.navigate(PartnerLocation) },
+                    wake = { navController.navigate(WakeTogether) },
                 ),
             )
+        }
+        composable<WakeTogether>(deepLinks = listOf(navDeepLink<WakeTogether>(basePath = "risaina://app/wake"))) {
+            com.risaina.app.feature.wake.WakeScreen(onBack = back)
         }
         composable<Sos>(deepLinks = listOf(navDeepLink<Sos>(basePath = "risaina://app/sos"))) { entry ->
             com.risaina.app.feature.sos.SosScreen(id = entry.toRoute<Sos>().id, onBack = back, onOpenChat = { navController.navigate(Messages()) })
@@ -182,6 +186,7 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     pairing = { navController.navigate(Pairing) },
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     safety = { navController.navigate(Safety) },
+                    wake = { navController.navigate(WakeTogether) },
                 ),
             )
         }

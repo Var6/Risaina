@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Wake together channel names its tone (android.resource://…/raw/wake_alarm), so no code
+  refers to R.raw.wake_alarm and resource shrinking would otherwise drop the file.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/wake_alarm" />

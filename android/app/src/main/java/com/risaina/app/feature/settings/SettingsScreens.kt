@@ -119,7 +119,7 @@ private fun ToggleRow(title: String, subtitle: String?, checked: Boolean, onChan
     }
 }
 
-data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {}, val safety: () -> Unit = {}, val calendarReminders: () -> Unit = {})
+data class SettingsNav(val profile: () -> Unit, val notifications: () -> Unit, val privacy: () -> Unit, val widgets: () -> Unit, val timeline: () -> Unit, val about: () -> Unit, val pairing: () -> Unit, val verifyEmail: () -> Unit = {}, val safety: () -> Unit = {}, val calendarReminders: () -> Unit = {}, val wake: () -> Unit = {})
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel = hiltViewModel()) {
@@ -157,6 +157,7 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         Row(com.risaina.app.feature.common.CalendarIcon, "Calendar reminders", "Your anniversary, birthdays and plans", nav.calendarReminders)
         Row(LockIcon, "Privacy", "Previews, widget content, data export, deletion", nav.privacy)
         Row(WidgetsIcon, "Widgets", "Add Risaina to your home screen", nav.widgets)
+        Row(com.risaina.app.feature.wake.AlarmIcon, "Wake together", "One alarm that rings on both phones", nav.wake)
         Spacer(Modifier.height(8.dp))
         SectionHeader("Appearance")
         Spacer(Modifier.height(10.dp))

@@ -101,6 +101,7 @@ data class HomeNav(
     val partnerLocation: () -> Unit = {},
     val calendar: () -> Unit = {},
     val calendarEntry: (String) -> Unit = {},
+    val wake: () -> Unit = {},
 )
 
 @Composable
@@ -148,6 +149,7 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
             if (s.comingUp.isNotEmpty()) item { ComingUp(s, onOpen = nav.calendarEntry, onAll = nav.calendar, onToggle = vm::setDone) }
             if (s.latestMoment != null) item { LatestMoment(s, onOpen = nav.messages) }
             item { QuickRow(nav.copy(gifts = vm::openGifts), calendar = s.calendarAvailable) }
+            item { com.risaina.app.feature.wake.WakeHomeCard(onOpen = nav.wake) }
             if (s.favouriteMemory != null) item { FavouriteMemory(s, onOpen = { nav.memory(s.favouriteMemory!!.id) }) }
             item { VoiceShortcut(s, onOpen = nav.voice) }
             if (s.recent.isNotEmpty()) {
@@ -374,7 +376,8 @@ private fun QuickRow(nav: HomeNav, calendar: Boolean) {
         QuickTile("Gifts", com.risaina.app.feature.common.HeartIcon, nav.gifts, Modifier.weight(1f))
         QuickTile("Widgets", WidgetsIcon, nav.widgets, Modifier.weight(1f))
         QuickTile("Their widget", WallpaperIcon, nav.theirWidget, Modifier.weight(1f))
-        QuickTile("Settings", com.risaina.app.feature.common.SettingsIcon, nav.settings, Modifier.weight(1f))
+        // Settings is the gear in the top row; this place is Wake together's.
+        QuickTile("Wake", com.risaina.app.feature.wake.AlarmIcon, nav.wake, Modifier.weight(1f))
     }
 }
 
