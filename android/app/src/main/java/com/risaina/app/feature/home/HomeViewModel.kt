@@ -104,6 +104,12 @@ data class HomeUiState(
     val askStartDate: Boolean = false,
     val partnerWeather: com.risaina.app.core.data.Weather? = null,
     val showPartnerTime: Boolean = false,
+    /** "Coming up": due to-dos and the next week's entries (HomeCalendar). Hidden when empty. */
+    val comingUp: List<com.risaina.app.feature.calendar.AgendaItem.Entry> = emptyList(),
+    val pinnedChips: List<PinnedChip> = emptyList(),
+    /** False on a server that predates the calendar: Home keeps the Timeline tile then. */
+    val calendarAvailable: Boolean = true,
+    val today: LocalDate = LocalDate.now(),
 )
 
 private data class Local(
@@ -137,6 +143,7 @@ class HomeViewModel @Inject constructor(
     uiFlags: UiFlags,
     private val preferencesStore: com.risaina.app.core.datastore.PreferencesStore,
     private val weatherRepository: com.risaina.app.core.data.WeatherRepository,
+    private val calendarRepository: com.risaina.app.core.data.CalendarRepository,
 ) : ViewModel() {
 
     private val local = MutableStateFlow(Local(justPaired = uiFlags.justPaired.also { uiFlags.justPaired = false }))
@@ -150,7 +157,11 @@ class HomeViewModel @Inject constructor(
     val snackbars: Flow<String> = effects.receiveAsFlow()
     private val pushConfigured = pushAvailability.configured
 
-    private data class Content(val partner: Partner?, val couple: Couple?, val myName: String, val myId: String?, val emailVerified: Boolean = true, val pings: List<Ping>, val messages: List<Message>, val favourite: Memory?, val unread: Int, val myBirthday: String? = null, val background: String = "GLOW", val showPartnerTime: Boolean = false)
+    private data class Content(
+        val partner: Partner?, val couple: Couple?, val myName: String, val myId: String?, val emailVerified: Boolean = true, val pings: List<Ping>, val messages: List<Message>,
+        val favourite: Memory?, val unread: Int, val myBirthday: String? = null, val background: String = "GLOW", val showPartnerTime: Boolean = false,
+        val calendar: List<com.risaina.app.core.model.CalendarEntry> = emptyList(), val calendarAvailable: Boolean = true,
+    )
 
     private val content: Flow<Content> = combine(
         coupleRepository.partner, coupleRepository.couple, coupleRepository.profile, pingRepository.recent, messageRepository.recent(30),
@@ -158,6 +169,8 @@ class HomeViewModel @Inject constructor(
         .combine(memoryRepository.favourite) { c, fav -> c.copy(favourite = fav) }
         .combine(messageRepository.unreadCount) { c, n -> c.copy(unread = n) }
         .combine(preferencesStore.preferences) { c, p -> c.copy(background = p.background, showPartnerTime = p.showPartnerTime) }
+        .combine(calendarRepository.all) { c, e -> c.copy(calendar = e) }
+        .combine(calendarRepository.available) { c, a -> c.copy(calendarAvailable = a != false) }
 
     val state: StateFlow<HomeUiState> = combine(content, local, pingRepository.cooldownEndsAt, ticker, syncManager.socketState) { c, l, cooldownEnds, now, socket ->
         val cooldown = cooldownEnds?.let { java.time.Duration.between(now, it).seconds.coerceAtLeast(0) } ?: 0L
@@ -201,11 +214,17 @@ class HomeViewModel @Inject constructor(
             partnerWeather = l.weather,
             showPartnerTime = c.showPartnerTime,
             askStartDate = c.couple != null && c.couple.relationshipStartDate == null && !l.startDateDismissed,
+            comingUp = if (c.calendarAvailable) HomeCalendar.comingUp(c.calendar, today, ZoneId.systemDefault()) else emptyList(),
+            pinnedChips = if (c.calendarAvailable) HomeCalendar.pinned(c.calendar, today, ZoneId.systemDefault()) else emptyList(),
+            calendarAvailable = c.calendarAvailable,
+            today = today,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     init {
         viewModelScope.launch { pingRepository.refresh(); messageRepository.refresh(); memoryRepository.refresh() }
+        // Also learns whether this server has the calendar at all (the tile and the card hide if not).
+        viewModelScope.launch { calendarRepository.refreshIfStale() }
         viewModelScope.launch {
             syncManager.incoming.collect { item ->
                 if (item is Incoming.NewPing) local.update { it.copy(incoming = item.ping) }
@@ -245,6 +264,11 @@ class HomeViewModel @Inject constructor(
         }
     }
     fun dismissStartDate() = local.update { it.copy(startDateDismissed = true) }
+
+    /** A to-do ticked on the "Coming up" card. */
+    fun setDone(entry: com.risaina.app.core.model.CalendarEntry, done: Boolean) {
+        viewModelScope.launch { calendarRepository.setDone(entry.id, done).onFailure { effects.trySend(it.message ?: "Couldn't save that") } }
+    }
 
     private fun countdownFor(couple: Couple?, today: LocalDate): CountdownInfo? {
         couple ?: return null

@@ -103,6 +103,8 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     timeline = { navController.navigate(Timeline) },
                     widgets = { navController.navigate(WidgetGallery) },
                     pingHistory = { navController.navigate(PingHistory) },
+                    calendar = { navController.navigate(Calendar()) },
+                    calendarEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
                     notificationPermission = { navController.navigate(NotificationPermission) },
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     lists = { navController.navigate(Lists) },
