@@ -173,7 +173,8 @@ class DeliveryHealthViewModel @Inject constructor(
 /**
  * "Delivery health": why alerts and widgets might arrive late on this phone, with a button that
  * fixes each problem, the last push this phone received, when the partner's phone last received
- * one, and a test push. Lives on the Widgets screen, where people notice late updates.
+ * one, and a test push. Lives on the Widgets screen, where people notice late updates; that
+ * screen's help sheet explains why background delivery matters.
  */
 @Composable
 fun DeliveryHealthCard(modifier: Modifier = Modifier, vm: DeliveryHealthViewModel = hiltViewModel()) {
@@ -185,11 +186,8 @@ fun DeliveryHealthCard(modifier: Modifier = Modifier, vm: DeliveryHealthViewMode
     }
     RisainaCard(modifier.fillMaxWidth()) {
         Text("Delivery health", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Widgets and alerts change the moment your partner reaches out only if this phone lets Risaina wake up in the background.",
-            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
-        )
+        // The why ("only if this phone lets Risaina wake up in the background") is in the Widgets help.
+        Text("Whether alerts and widgets reach this phone on time", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
         if (s.loaded) {
             Spacer(Modifier.height(10.dp))
             val worst = s.checks.maxOfOrNull { it.status } ?: HealthStatus.OK
