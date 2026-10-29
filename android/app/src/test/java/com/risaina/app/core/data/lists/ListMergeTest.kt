@@ -118,6 +118,19 @@ class ListMergeTest {
         assertTrue(r.bodyConflict)
     }
 
+    @Test fun `a line changed on one side next to lines only added on the other is no conflict`() {
+        val base = doc(body = "a\nb")
+        val theirs = doc(body = "a\nb\nc")
+        val r = ListMerge.merge3(base, doc(body = "a\nB"), theirs)
+        assertEquals("a\nB\nc", r.doc.body)
+        assertFalse(r.bodyConflict)
+        assertEquals("merging again adds nothing", r.doc, merge(base, r.doc, theirs))
+        val mirrored = ListMerge.merge3(base, doc(body = "z\na\nb\nc"), doc(body = "a\nB"))
+        assertEquals("z\na\nB\nc", mirrored.doc.body)
+        assertFalse(mirrored.bodyConflict)
+        assertEquals("deleted here, added after there: the added line stays", "a\nc", merge(base, doc(body = "a"), theirs).body)
+    }
+
     @Test fun `the same body edit on both sides is taken once`() {
         val r = ListMerge.merge3(doc(body = "a\nb"), doc(body = "a\nb\nc"), doc(body = "a\nb\nc"))
         assertEquals("a\nb\nc", r.doc.body)

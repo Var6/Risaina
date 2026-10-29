@@ -137,7 +137,8 @@ object ListMerge {
 /**
  * Line-based three-way merge (diff3) of a note's body. Lines that both sides kept are the anchors;
  * between two anchors a change made on one side only is taken, the same change on both sides is
- * taken once, and different changes are both kept, mine first. Pure.
+ * taken once, lines one side only added next to lines the other side changed are both taken, and
+ * other different changes are both kept, mine first. Pure.
  */
 internal object Diff3 {
     data class Merged(val text: String, val conflict: Boolean)
@@ -171,9 +172,14 @@ internal object Diff3 {
             val oc = o.subList(i, io)
             val ac = a.subList(j, ja)
             val bc = b.subList(k, kb)
+            val theirsAround = around(oc, bc)
+            val mineAround = around(oc, ac)
             when {
                 ac == oc -> out += bc
                 bc == oc || ac == bc -> out += ac
+                // One side kept these lines and only added next to them; the other changed (or deleted) them: both.
+                theirsAround != null -> out += wrap(theirsAround, ac)
+                mineAround != null -> out += wrap(mineAround, bc)
                 Collections.indexOfSubList(ac, bc) >= 0 -> out += ac // theirs is already in mine
                 Collections.indexOfSubList(bc, ac) >= 0 -> out += bc
                 else -> { out += ac; out += bc; conflict = true }
@@ -184,8 +190,24 @@ internal object Diff3 {
         return out to conflict
     }
 
+    /** When [x] is [o] unchanged with lines added before and/or after it: those lines. */
+    private fun around(o: List<String>, x: List<String>): Pair<List<String>, List<String>>? {
+        if (o.isEmpty()) return null
+        val at = Collections.indexOfSubList(x, o)
+        if (at < 0) return null
+        return x.subList(0, at) to x.subList(at + o.size, x.size)
+    }
+
+    /** [changed] with the lines added around it, each unless it is already there (merging twice adds nothing). */
+    private fun wrap(added: Pair<List<String>, List<String>>, changed: List<String>): List<String> {
+        val (pre, post) = added
+        val keepPre = pre.isNotEmpty() && Collections.indexOfSubList(changed, pre) < 0
+        val keepPost = post.isNotEmpty() && Collections.indexOfSubList(changed, post) < 0
+        return (if (keepPre) pre else emptyList()) + changed + (if (keepPost) post else emptyList())
+    }
+
     /** For each line of [o], the line of [x] it is matched to by a longest common subsequence, or -1. */
-    private fun match(o: List<String>, x: List<String>): IntArray {
+    fun match(o: List<String>, x: List<String>): IntArray {
         val m = IntArray(o.size) { -1 }
         var pre = 0
         while (pre < o.size && pre < x.size && o[pre] == x[pre]) { m[pre] = pre; pre++ }
