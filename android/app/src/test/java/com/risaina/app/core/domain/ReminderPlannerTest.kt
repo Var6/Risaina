@@ -184,6 +184,9 @@ class ReminderPlannerTest {
         val settings = ReminderSettings(partnerBirthday = OccasionReminders(true, emptyList()), anniversary = OccasionReminders(false, emptyList()), partnerMidnight = true)
         assertEquals(Instant.parse("2026-11-05T00:00:00Z"), plan(occasions = occasions, settings = settings, partnerZone = ZoneId.of("Europe/London")).next)
         assertNull(plan(occasions = occasions, settings = settings, partnerZone = null).next)
+        // On one clock their midnight is this phone's own: no reminder "for them".
+        assertNull(plan(occasions = occasions, settings = settings, partnerZone = zone).next)
+        assertNull(plan(occasions = occasions, settings = settings, partnerZone = ZoneId.of("Asia/Calcutta")).next)
     }
 
     @Test fun `only yearly milestones remind, and only when switched on`() {
@@ -219,6 +222,7 @@ class ReminderPlannerTest {
         val r = plan(listOf(call), now = at(2026, 10, 29, 19)).due.single()
         assertEquals("In 1 hour · Call Bea", ReminderText.title(r, at(2026, 10, 29, 19), zone, uk))
         assertEquals("8:00 pm · 2:30 pm for Bea", ReminderText.body(r, zone, "Bea Rao", ZoneId.of("Europe/London"), uk))
+        assertEquals("8:00 pm", ReminderText.body(r, zone, "Bea Rao", ZoneId.of("Asia/Calcutta"), uk))
         assertEquals("In 10 min · Call Bea", ReminderText.title(r, at(2026, 10, 29, 19, 50), zone, uk))
         assertEquals("Now · Call Bea", ReminderText.title(r, at(2026, 10, 29, 20, 1), zone, uk))
 

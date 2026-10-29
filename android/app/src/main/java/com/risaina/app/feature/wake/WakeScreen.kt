@@ -283,7 +283,8 @@ private fun CheckRow(check: ReadinessCheck, onFix: () -> Unit) {
 
 /**
  * Set or change an alarm: the time, the days (none: once, on a date), a name, the snooze length,
- * and who it rings for. When the two of you are in different zones, both clocks are shown.
+ * and who it rings for. When the two of you are in different zones, both clocks are shown; on one
+ * clock, none (WakeAlarmRules.zoneLines).
  */
 @Composable
 private fun WakeEditorSheet(
@@ -308,8 +309,8 @@ private fun WakeEditorSheet(
             TextButton(onClick = { pickTime = true }, modifier = Modifier.semantics { contentDescription = "Time, ${WakeAlarmRules.timeText(draft.time)}. Change" }) {
                 Text(WakeAlarmRules.timeText(draft.time), style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.onSurface)
             }
-            if (ring != null && anchor.rules.getOffset(ring) != mine.rules.getOffset(ring)) {
-                StatusPill("Set in ${WakeAlarmRules.zoneName(anchor)} time", PillTone.Info)
+            ring?.let { WakeAlarmRules.anchorNote(it, anchor, mine) }?.let { note ->
+                StatusPill(note, PillTone.Info)
                 Spacer(Modifier.height(6.dp))
             }
             ring?.let { WakeAlarmRules.zoneLines(it, anchor, mine, ui.partnerZone, ui.partnerName) }?.let { lines ->

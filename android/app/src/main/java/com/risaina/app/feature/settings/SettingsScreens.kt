@@ -189,7 +189,10 @@ fun SettingsScreen(onBack: () -> Unit, nav: SettingsNav, vm: SettingsViewModel =
         }
         if (s.prefs.background == "PHOTO") Text("Uses your pinned memory. Pin one in Memories.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
         ToggleRow("Reduce motion", "Shorter, simpler animations", s.prefs.reducedMotion, { v -> vm.update { it.copy(reducedMotion = v) } })
-        ToggleRow("Show my partner's local time", "Home shows their weather; turn this on to see their clock too", s.prefs.showPartnerTime, { v -> vm.update { it.copy(showPartnerTime = v) } })
+        // On one clock (or theirs not shared) there is no second clock to show.
+        if (s.partnerOnAnotherClock) {
+            ToggleRow("Show my partner's local time", "Home shows their weather; turn this on to see their clock too", s.prefs.showPartnerTime, { v -> vm.update { it.copy(showPartnerTime = v) } })
+        }
         Spacer(Modifier.height(8.dp))
         SectionHeader("Relationship")
         Row(LinkIcon, "Our story", "Start date, next visit, milestones", nav.timeline)

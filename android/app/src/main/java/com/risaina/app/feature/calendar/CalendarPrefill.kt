@@ -82,11 +82,11 @@ object CalendarPrefills {
     /**
      * The anchor zone for a time read from a message: the author's clock, so "8pm" in the partner's
      * message is their evening. Mine when the message is mine, when their zone is not shared, or when
-     * both clocks tell the same time that day. Null for an all-day prefill.
+     * both clocks tell the same time at that moment. Null for an all-day prefill.
      */
     fun zoneFor(time: LocalTime?, date: LocalDate?, myZone: ZoneId, authorZone: ZoneId?): String? {
         time ?: return null
-        val theirs = authorZone?.takeIf { date != null && EntryRules.zonesDiffer(myZone, it, date) }
+        val theirs = authorZone?.takeIf { date != null && EntryRules.zonesDiffer(myZone, it, date, time, anchor = it) }
         return (theirs ?: myZone).id
     }
 

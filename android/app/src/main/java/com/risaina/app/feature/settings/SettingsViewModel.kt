@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.risaina.app.core.common.AppResult
+import com.risaina.app.core.common.TimeProvider
 import com.risaina.app.core.common.map
 import com.risaina.app.core.common.onFailure
 import com.risaina.app.core.common.onSuccess
@@ -20,6 +21,7 @@ import com.risaina.app.core.data.ImageCompressor
 import com.risaina.app.core.data.MediaRepository
 import com.risaina.app.core.data.PairingState
 import com.risaina.app.core.data.PreferencesRepository
+import com.risaina.app.core.domain.TimeZones
 import com.risaina.app.core.model.MediaCategory
 import com.risaina.app.core.model.Preferences
 import com.risaina.app.core.model.Profile
@@ -51,6 +53,11 @@ data class SettingsUiState(
     val notificationsPermitted: Boolean = true,
     val busy: Boolean = false,
     val avatarFile: File? = null,
+    /**
+     * The partner shares a zone that tells another time at some point in the year. Otherwise there
+     * is no second clock to show, and "Show my partner's local time" is not offered.
+     */
+    val partnerOnAnotherClock: Boolean = false,
 )
 
 @HiltViewModel
@@ -66,6 +73,7 @@ class SettingsViewModel @Inject constructor(
     pushAvailability: PushAvailability,
     private val widgetSnapshotUpdater: com.risaina.app.core.sync.WidgetSnapshotUpdater,
     private val weatherRepository: com.risaina.app.core.data.WeatherRepository,
+    private val time: TimeProvider,
 ) : ViewModel() {
     private val busy = MutableStateFlow(false)
     private val avatar = MutableStateFlow<File?>(null)
@@ -79,6 +87,8 @@ class SettingsViewModel @Inject constructor(
             notificationsPermitted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
             busy = b, avatarFile = av,
         )
+    }.combine(coupleRepository.partner) { s, partner ->
+        s.copy(partnerOnAnotherClock = !TimeZones.sameClockAllYear(time.zone(), TimeZones.zoneOf(partner?.timeZone), time.now()))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     init {

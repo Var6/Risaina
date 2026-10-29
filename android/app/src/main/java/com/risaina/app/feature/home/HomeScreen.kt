@@ -480,7 +480,7 @@ private fun RecentRow(item: ActivityItem) {
 
 
 /**
- * Partner profile: who they are and how their day looks (weather, time, birthday) as tiles, then
+ * Partner profile: who they are and how their day looks (weather, their time when it is not yours, birthday) as tiles, then
  * a separated emergency section. SOS lives here, never on Home, so it can't be hit by accident.
  */
 @Composable
@@ -508,12 +508,10 @@ private fun PartnerProfileSheet(s: HomeUiState, note: String?, onDismiss: () -> 
                     sub = w?.let { "${it.label} in ${p.city?.name?.substringBefore(",")}" } ?: (p.city?.name?.substringBefore(",")?.let { "in $it" } ?: "City not shared"),
                     modifier = Modifier.weight(1f),
                 )
-                InfoTile(
-                    emoji = "🕰️", label = "Their time",
-                    value = s.partnerClock?.first ?: "—",
-                    sub = s.partnerClock?.second ?: if (s.partnerClock != null) "same day" else "Not shared",
-                    modifier = Modifier.weight(1f),
-                )
+                // Their clock only when it tells another time: on one clock (or not shared) it says nothing.
+                s.partnerClock?.let { (time, day) ->
+                    InfoTile(emoji = "🕰️", label = "Their time", value = time, sub = day ?: "same day", modifier = Modifier.weight(1f))
+                }
             }
             Spacer(Modifier.height(10.dp))
             val bday = com.risaina.app.core.domain.Birthday.parse(p.birthday)

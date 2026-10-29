@@ -1,5 +1,7 @@
 package com.risaina.app.feature.calendar
 
+import com.risaina.app.core.model.CalendarKind
+import com.risaina.app.core.model.CalendarRepeat
 import com.risaina.app.testutil.calendarEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,10 +30,66 @@ class EntryRulesTest {
         assertNull(EntryRules.zoneLine(fri, LocalTime.of(20, 0), kolkata, kolkata, ZoneId.of("Asia/Calcutta"), "Bea", Locale.UK))
     }
 
+    @Test fun `on one clock an entry set in a third zone says so, without asking`() {
+        // Bea added a 9:00 pm call in London and is with you in Kolkata now: one clock, nothing to ask.
+        val call = EntryForm(date = fri, allDay = false, time = LocalTime.of(21, 0), timeZone = "Europe/London")
+        assertFalse(EntryRules.asksWhoseTime(call, kolkata, kolkata))
+        assertEquals(EntryRules.ZoneLine("Set in London time: 2:30 am Sat for you both", night = true), EntryRules.anchorLine(fri, LocalTime.of(21, 0), london, kolkata, Locale.UK))
+        assertEquals(
+            EntryRules.ZoneLine("Set in New York time: 7:30 pm for you both", night = false),
+            EntryRules.anchorLine(fri, LocalTime.of(9, 0), ZoneId.of("America/New_York"), kolkata, Locale.UK),
+        )
+        // Set on your clock, under any name, or floating: nothing to say.
+        assertNull(EntryRules.anchorLine(fri, LocalTime.of(21, 0), kolkata, kolkata, Locale.UK))
+        assertNull(EntryRules.anchorLine(fri, LocalTime.of(21, 0), ZoneId.of("Asia/Calcutta"), kolkata, Locale.UK))
+        assertNull(EntryRules.anchorLine(fri, LocalTime.of(21, 0), null, kolkata, Locale.UK))
+    }
+
     @Test fun `the time-zone row shows only when the clocks differ`() {
-        assertTrue(EntryRules.zonesDiffer(kolkata, london, fri))
-        assertFalse(EntryRules.zonesDiffer(kolkata, ZoneId.of("Asia/Calcutta"), fri))
-        assertFalse(EntryRules.zonesDiffer(kolkata, null, fri))
+        val eight = LocalTime.of(20, 0)
+        assertTrue(EntryRules.zonesDiffer(kolkata, london, fri, eight))
+        assertFalse(EntryRules.zonesDiffer(kolkata, ZoneId.of("Asia/Calcutta"), fri, eight))
+        assertFalse(EntryRules.zonesDiffer(kolkata, null, fri, eight))
+        assertFalse(EntryRules.zonesDiffer(london, ZoneId.of("Europe/Lisbon"), fri, eight))
+    }
+
+    @Test fun `whose time is asked by the moment an entry starts, not its whole day`() {
+        val phoenix = ZoneId.of("America/Phoenix")
+        val denver = ZoneId.of("America/Denver")
+        // Denver leaves summer time at 1:00 am Phoenix time on Sun 1 Nov: two clocks until then, one after.
+        val sevenPm = EntryForm(date = LocalDate.of(2026, 11, 1), allDay = false, time = LocalTime.of(19, 0), timeZone = "America/Phoenix")
+        assertFalse(EntryRules.asksWhoseTime(sevenPm, phoenix, denver))
+        assertTrue(EntryRules.asksWhoseTime(sevenPm.copy(time = LocalTime.of(0, 30)), phoenix, denver))
+        // Every 15 Jan falls in winter, when the two agree: nothing to ask. Weekly, it reaches March.
+        val january = sevenPm.copy(date = LocalDate.of(2027, 1, 15), repeat = CalendarRepeat.YEARLY)
+        assertFalse(EntryRules.asksWhoseTime(january, phoenix, denver))
+        assertTrue(EntryRules.asksWhoseTime(january.copy(repeat = CalendarRepeat.WEEKLY), phoenix, denver))
+    }
+
+    @Test fun `whose time is asked only when the two of you are on two clocks`() {
+        val eight = EntryForm(date = fri, allDay = false, time = LocalTime.of(20, 0), timeZone = "Asia/Kolkata")
+        assertTrue(EntryRules.asksWhoseTime(eight, kolkata, london))
+        // One clock: nothing to ask, under any name, or with their zone not shared.
+        assertFalse(EntryRules.asksWhoseTime(eight, kolkata, kolkata))
+        assertFalse(EntryRules.asksWhoseTime(eight, kolkata, ZoneId.of("Asia/Calcutta")))
+        assertFalse(EntryRules.asksWhoseTime(eight, kolkata, null))
+        assertFalse(EntryRules.asksWhoseTime(eight.copy(timeZone = "Europe/London"), london, ZoneId.of("Europe/Lisbon")))
+        // All day, or no date or time yet: no clock to choose.
+        assertFalse(EntryRules.asksWhoseTime(eight.copy(allDay = true, time = null), kolkata, london))
+        assertFalse(EntryRules.asksWhoseTime(eight.copy(date = null), kolkata, london))
+    }
+
+    @Test fun `a repeat asks when the clocks part ways on any of its days`() {
+        val phoenix = ZoneId.of("America/Phoenix")
+        val la = ZoneId.of("America/Los_Angeles")
+        // One clock in July; Los Angeles leaves summer time on 1 Nov and is an hour behind until March.
+        val july = EntryForm(date = LocalDate.of(2026, 7, 4), allDay = false, time = LocalTime.of(19, 0), timeZone = "America/Phoenix")
+        assertFalse(EntryRules.asksWhoseTime(july, phoenix, la))
+        assertTrue(EntryRules.asksWhoseTime(july.copy(repeat = CalendarRepeat.WEEKLY), phoenix, la))
+        assertFalse(EntryRules.asksWhoseTime(july.copy(repeat = CalendarRepeat.WEEKLY, repeatUntil = LocalDate.of(2026, 10, 31)), phoenix, la))
+        assertTrue(EntryRules.asksWhoseTime(july.copy(repeat = CalendarRepeat.MONTHLY, repeatUntil = LocalDate.of(2026, 11, 4)), phoenix, la))
+        // A to-do never repeats, whatever the form still holds.
+        assertFalse(EntryRules.asksWhoseTime(july.copy(kind = CalendarKind.TODO, repeat = CalendarRepeat.WEEKLY), phoenix, la))
     }
 
     @Test fun `emoji keep at most two characters`() {

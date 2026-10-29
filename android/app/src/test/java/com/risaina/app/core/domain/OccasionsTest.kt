@@ -52,6 +52,15 @@ class OccasionsTest {
         assertNull(Occasions.partnerClock("Not/AZone", now))
     }
 
+    @Test fun `no partner clock when it tells this phone's time`() {
+        val now = Instant.parse("2026-10-25T20:30:00Z")
+        assertNull(Occasions.partnerClock("Asia/Kolkata", now, ZoneId.of("Asia/Kolkata")))
+        assertNull(Occasions.partnerClock("Asia/Calcutta", now, ZoneId.of("Asia/Kolkata")))
+        assertNull(Occasions.partnerClock("Europe/Lisbon", now, ZoneId.of("Europe/London")))
+        // Los Angeles keeps summer time a week longer than London: an hour less apart, still two clocks.
+        assertEquals("1:30 pm" to null, Occasions.partnerClock("America/Los_Angeles", now, ZoneId.of("Europe/London")))
+    }
+
     @Test fun `ordinals`() {
         assertEquals("1st", Occasions.ordinal(1)); assertEquals("2nd", Occasions.ordinal(2)); assertEquals("3rd", Occasions.ordinal(3))
         assertEquals("11th", Occasions.ordinal(11)); assertEquals("22nd", Occasions.ordinal(22)); assertEquals("4th", Occasions.ordinal(4))

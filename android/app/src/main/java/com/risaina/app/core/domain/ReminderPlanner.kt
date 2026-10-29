@@ -28,7 +28,7 @@ data class ReminderSettings(
     val milestones: OccasionReminders = OccasionReminders(false, listOf(0)),
     /** All-day entries and occasions remind at this time on this phone's clock. */
     val allDayTime: LocalTime = LocalTime.of(9, 0),
-    /** Also when the partner's birthday begins where they are (only when they share their time zone). */
+    /** Also when the partner's birthday begins where they are (only when they share a zone that tells another time). */
     val partnerMidnight: Boolean = false,
     /** Nothing due before this is posted: a new install or a new couple gets no burst of old reminders. */
     val since: Instant? = null,
@@ -141,7 +141,10 @@ object ReminderPlanner {
                 }
                 if (o.kind == OccasionKind.PARTNER_BIRTHDAY && s.partnerMidnight && input.partnerZone != null) {
                     val fireAt = day.date.atStartOfDay(input.partnerZone).toInstant()
-                    consider(Reminder("${o.key}|${day.date}|midnight", fireAt, Reminder.MIDNIGHT, day.date, allDay = false, occasion = day), null)
+                    // On one clock their midnight is this phone's too: nothing "where they are" to tell.
+                    if (!TimeZones.sameClock(input.zone, input.partnerZone, fireAt)) {
+                        consider(Reminder("${o.key}|${day.date}|midnight", fireAt, Reminder.MIDNIGHT, day.date, allDay = false, occasion = day), null)
+                    }
                 }
             }
         }

@@ -58,9 +58,13 @@ object Occasions {
         )
     }
 
-    /** "11:42 pm" in the partner's zone, plus whether it is a different calendar day. */
+    /**
+     * "11:42 pm" in the partner's zone, plus whether it is a different calendar day. Null when they do
+     * not share it, or when it tells this phone's time: on one clock a second clock says nothing.
+     */
     fun partnerClock(zoneId: String?, now: Instant, myZone: ZoneId = ZoneId.systemDefault()): Pair<String, String?>? {
-        val zone = zoneId?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: return null
+        val zone = TimeZones.zoneOf(zoneId) ?: return null
+        if (TimeZones.sameClock(myZone, zone, now)) return null
         val theirs = ZonedDateTime.ofInstant(now, zone)
         val mine = ZonedDateTime.ofInstant(now, myZone)
         val time = theirs.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())).lowercase(Locale.getDefault())

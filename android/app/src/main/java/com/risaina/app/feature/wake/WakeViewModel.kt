@@ -21,6 +21,7 @@ import com.risaina.app.core.data.PreferencesRepository
 import com.risaina.app.core.data.WakeAlarmRepository
 import com.risaina.app.core.data.toDomain
 import com.risaina.app.core.data.toDto
+import com.risaina.app.core.domain.TimeZones
 import com.risaina.app.core.model.Partner
 import com.risaina.app.core.model.PingType
 import com.risaina.app.core.model.WakeAlarm
@@ -129,17 +130,18 @@ class WakeViewModel @Inject constructor(
         val zone = ZoneId.systemDefault()
         val report = WakeReadiness.report(d)
         val partnerName = partner?.displayName ?: local.partnerName ?: "Your partner"
+        val partnerZone = TimeZones.zoneOf(partner?.timeZone)
         val home = WakeHome.pick(local, now)?.let { WakeHomeUi(WakeAlarmRules.label(it), WakeHome.line(it, local.copy(partnerName = partnerName), report, now, zone)) }
         return WakeUi(
-            rows = local.domain().map { row(it, local, report, partnerName, now, zone) },
+            rows = local.domain().map { row(it, local, report, partnerName, partnerZone, now, zone) },
             home = home, me = local.me, partnerName = partnerName,
-            partnerZone = partner?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() },
+            partnerZone = partnerZone,
             checks = WakeReadiness.evaluate(d), device = report, busy = b, available = available, shareLocalTime = share,
             goodMorning = WakeHome.goodMorningFor(local, now) != null,
         )
     }
 
-    private fun row(a: WakeAlarm, local: WakeLocal, report: WakeReadyReport, partnerName: String, now: Instant, zone: ZoneId): WakeRowUi {
+    private fun row(a: WakeAlarm, local: WakeLocal, report: WakeReadyReport, partnerName: String, partnerZone: ZoneId?, now: Instant, zone: ZoneId): WakeRowUi {
         val mine = local.me?.let(a::member)
         val partner = a.members.firstOrNull { it.userId != local.me }
         val myNext = WakeAlarmRules.next(a, mine, now)
@@ -156,7 +158,7 @@ class WakeViewModel @Inject constructor(
                 ring == null -> "Done"
                 else -> WakeAlarmRules.whenText(ring, zone, now)
             },
-            localLine = ring?.let { WakeAlarmRules.localLine(a, it, zone, partnerName.takeIf { a.createdBy != local.me }) },
+            localLine = ring?.let { WakeAlarmRules.localLine(a, it, zone, partnerName.takeIf { a.createdBy != local.me }, partnerZone) },
             me = WakeAlarmRules.myStatus(a, mine, report.ready, report.reason, local.armed[a.id]?.let(Instant::ofEpochMilli), now),
             partner = WakeAlarmRules.memberStatus(a, partner, now),
             myRing = mine?.ring ?: false,

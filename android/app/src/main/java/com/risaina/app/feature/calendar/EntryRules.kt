@@ -6,6 +6,7 @@ import com.risaina.app.core.domain.DateDetector
 import com.risaina.app.core.domain.DateHit
 import com.risaina.app.core.domain.DateOrder
 import com.risaina.app.core.domain.Occurrence
+import com.risaina.app.core.domain.TimeZones
 import com.risaina.app.core.model.CalendarEntry
 import com.risaina.app.core.model.CalendarEntryDraft
 import com.risaina.app.core.model.CalendarKind
@@ -69,15 +70,31 @@ object EntryRules {
         val forThem = at.withZoneSameInstant(partner)
         if (forMe.toLocalDateTime() == forThem.toLocalDateTime()) return null
         val name = partnerName.substringBefore(" ").ifBlank { "them" }
-        fun clock(z: ZonedDateTime) = CalendarText.time(z.toLocalTime(), locale) +
-            if (z.toLocalDate() != date) " " + z.format(DateTimeFormatter.ofPattern("EEE", locale)) else ""
         val text = if (anchor.rules == partner.rules && anchor.rules != mine.rules) {
-            "${clock(forThem)} $name's time = ${clock(forMe)} for you"
+            "${clock(forThem, date, locale)} $name's time = ${clock(forMe, date, locale)} for you"
         } else {
-            "${clock(forMe)} for you = ${clock(forThem)} for $name"
+            "${clock(forMe, date, locale)} for you = ${clock(forThem, date, locale)} for $name"
         }
         return ZoneLine(text, night = isNight(forMe.toLocalTime()) || isNight(forThem.toLocalTime()))
     }
+
+    /**
+     * On one clock, where nothing is asked: a timed entry set in a third zone (made while one of you
+     * was away) says so, "Set in London time: 2:30 am Sat for you both". Without it the time above,
+     * London's 9:00 pm, reads as yours, and a time picked now is London's too. [ZoneLine.night] when
+     * it falls in your night. Null when the anchor tells this phone's time then, or for a floating time.
+     */
+    fun anchorLine(date: LocalDate, time: LocalTime, anchor: ZoneId?, mine: ZoneId, locale: Locale = Locale.getDefault()): ZoneLine? {
+        anchor ?: return null
+        val at = ZonedDateTime.of(date, time, anchor)
+        if (TimeZones.sameClock(mine, anchor, at.toInstant())) return null
+        val forUs = at.withZoneSameInstant(mine)
+        return ZoneLine("Set in ${TimeZones.city(anchor)} time: ${clock(forUs, date, locale)} for you both", night = isNight(forUs.toLocalTime()))
+    }
+
+    /** "2:30 am", with the weekday when it is not on [date]: "2:30 am Sat". */
+    private fun clock(z: ZonedDateTime, date: LocalDate, locale: Locale) = CalendarText.time(z.toLocalTime(), locale) +
+        if (z.toLocalDate() != date) " " + z.format(DateTimeFormatter.ofPattern("EEE", locale)) else ""
 
     private fun isNight(t: LocalTime) = !t.isBefore(LocalTime.of(23, 0)) || t.isBefore(LocalTime.of(7, 0))
 
@@ -175,10 +192,35 @@ object EntryRules {
         )
     }
 
-    /** Whether the two zones tell a different time around [date] (the row is shown only then). */
-    fun zonesDiffer(mine: ZoneId, partner: ZoneId?, date: LocalDate): Boolean {
-        partner ?: return false
-        val noon = date.atTime(12, 0)
-        return mine.rules.getOffset(noon) != partner.rules.getOffset(noon)
+    /**
+     * Whether the two zones tell a different time when [time] on [date] comes in [anchor] (this
+     * phone's zone for a floating time). At that moment, not over the day: Denver leaves summer time
+     * at 1:00 am Phoenix time on 1 Nov, and 7:00 pm that day is one clock. Not when theirs is unknown.
+     */
+    fun zonesDiffer(mine: ZoneId, partner: ZoneId?, date: LocalDate, time: LocalTime, anchor: ZoneId? = mine): Boolean =
+        !TimeZones.sameClock(mine, partner, ZonedDateTime.of(date, time, anchor ?: mine).toInstant())
+
+    /**
+     * Whether the editor asks whose clock a timed entry follows ("Whose time"): only when the partner's
+     * clock tells another time when it starts, on its date or, for a repeat, on any of its dates in
+     * the year after it (or up to its end). On one clock nothing is asked and the zone stays as it is:
+     * the creator's for a new entry, which on one clock is the same time for both.
+     */
+    fun asksWhoseTime(f: EntryForm, mine: ZoneId, partner: ZoneId?): Boolean {
+        val date = f.date ?: return false
+        val time = f.time ?: return false
+        if (f.allDay) return false
+        val anchor = TimeZones.zoneOf(f.timeZone)
+        return startDates(f, date).any { zonesDiffer(mine, partner, it, time, anchor) }
     }
+
+    /** The dates [f] starts on that the editor weighs: [date], and for a repeat each one in the year after it, up to its end. */
+    private fun startDates(f: EntryForm, date: LocalDate): Sequence<LocalDate> {
+        val repeat = if (f.kind == CalendarKind.TODO) CalendarRepeat.NONE else f.repeat
+        if (repeat !in REPEATS) return sequenceOf(date)
+        val last = maxOf(date, minOf(f.repeatUntil ?: date.plusYears(1), date.plusYears(1)))
+        return generateSequence(0L) { it + 1 }.map { CalendarRules.nth(date, repeat, it) }.takeWhile { !it.isAfter(last) }
+    }
+
+    private val REPEATS = setOf(CalendarRepeat.WEEKLY, CalendarRepeat.MONTHLY, CalendarRepeat.YEARLY)
 }
