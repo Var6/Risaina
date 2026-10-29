@@ -2,6 +2,7 @@ package com.risaina.app.core.alarm
 
 import android.Manifest
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -123,7 +124,8 @@ class WakeAlarmNotifier @Inject constructor(@ApplicationContext private val cont
 
     /**
      * The partner set (or changed, or turned on) an alarm that rings here, so a 5 am alarm never
-     * comes as a surprise; "Not on my phone" turns it off here only. [text] from
+     * comes as a surprise; "Not on my phone" turns it off here only. One per alarm (tagged with its
+     * id), so two alarms set in a row each keep their own button. [text] from
      * WakeAlarmRules.noticeText; [previews] off: no times on the lock screen.
      */
     fun postSet(alarmId: String, text: String, quiet: Boolean, previews: Boolean) {
@@ -143,10 +145,10 @@ class WakeAlarmNotifier @Inject constructor(@ApplicationContext private val cont
             .setAutoCancel(true)
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
             .build()
-        notify(SET_ID, n)
+        notify(SET_ID, n, tag = alarmId)
     }
 
-    fun cancelSet() = nm.cancel(SET_ID)
+    fun cancelSet(alarmId: String) = nm.cancel(alarmId, SET_ID)
 
     /** "Raina is up too · 6:34 am", once this person is up themselves. */
     fun postPartnerUp(title: String, quiet: Boolean, previews: Boolean) {
@@ -167,8 +169,13 @@ class WakeAlarmNotifier @Inject constructor(@ApplicationContext private val cont
         notify(PARTNER_UP_ID, n)
     }
 
-    /** Sign-out or unlink: nothing of Wake together stays in the shade. */
-    fun cancelAll() = ALL_IDS.forEach { nm.cancel(it) }
+    /** Sign-out or unlink: nothing of Wake together stays in the shade, the per-alarm notices included. */
+    fun cancelAll() {
+        ALL_IDS.forEach { nm.cancel(it) }
+        runCatching { context.getSystemService(NotificationManager::class.java).activeNotifications }.getOrNull()
+            ?.filter { it.id in ALL_IDS && it.tag != null }
+            ?.forEach { nm.cancel(it.tag, it.id) }
+    }
 
     private fun publicVersion(channel: String): Notification = NotificationCompat.Builder(context, channel)
         .setSmallIcon(R.drawable.ic_notification).setContentTitle("Risaina").setContentText("New activity").build()
@@ -186,8 +193,8 @@ class WakeAlarmNotifier @Inject constructor(@ApplicationContext private val cont
     )
 
     /** False when Android refused it (the permission was revoked meanwhile). */
-    private fun notify(id: Int, n: Notification): Boolean = try {
-        nm.notify(id, n)
+    private fun notify(id: Int, n: Notification, tag: String? = null): Boolean = try {
+        nm.notify(tag, id, n)
         true
     } catch (_: SecurityException) {
         false

@@ -195,9 +195,10 @@ class WakeAlarmController @Inject constructor(
         updated.phase == WakePhase.UP
     }
 
-    /** The alarm was deleted: a ring of it ends quietly (nothing to report on a deleted alarm). */
+    /** The alarm was deleted: a ring of it ends quietly (nothing to report on a deleted alarm), and so does its notice. */
     fun alarmGone(alarmId: String) = synchronized(store.lock) {
         store.current().ring?.takeIf { it.alarmId == alarmId && it.active }?.let { finish(it, WakePhase.MISSED, Instant.now(), report = false) }
+        notifier.cancelSet(alarmId)
     }
 
     /** SosAlarmService started ringing: a wake alarm sounding now steps aside (snoozed). */
@@ -212,7 +213,7 @@ class WakeAlarmController @Inject constructor(
             store.setPendingRing(alarmId, false)
             store.current().ring?.takeIf { it.alarmId == alarmId && it.active }?.let { finish(it, WakePhase.MISSED, now, report = false) }
         }
-        notifier.cancelSet()
+        notifier.cancelSet(alarmId)
         WakeReportWorker.enqueueRing(context, alarmId, false)
         rearm(now)
     }
@@ -239,9 +240,26 @@ class WakeAlarmController @Inject constructor(
             notifier.postMissed(store.current().alarm(id)?.let(WakeAlarmRules::label) ?: WakeAlarmRules.DEFAULT_LABEL, timeText(occurrence), phoneWasOff = true)
             WakeReportWorker.enqueueWake(context, id, occurrence, WakeOutcome.MISSED, now, 0)
         }
+        // One ring at a time: when two lost rings are due at once (a restart between two alarms),
+        // the latest rings and the earlier ones are missed. arm() has already moved them all on to
+        // their next ring, so anything left out here would be lost without a word.
+        val due = result.ringNow.sortedBy { it.second }
+        due.dropLast(1).forEach { (id, occurrence) -> lost(id, occurrence, now) }
         // Rung at once; its fire() re-arms, and this ring is then handled, so this does not repeat.
-        result.ringNow.firstOrNull()?.let { (id, occurrence) -> fire(id, occurrence, now) }
+        due.lastOrNull()?.let { (id, occurrence) -> fire(id, occurrence, now) }
         report()
+    }
+
+    /** A due ring that cannot ring now: handled here (it never rings later), noticed and reported missed. */
+    private fun lost(alarmId: String, occurrence: Instant, now: Instant) {
+        val label = synchronized(store.lock) {
+            val s = store.current()
+            if (s.handled[alarmId] == occurrence.toEpochMilli()) return
+            store.update { it.copy(handled = it.handled + (alarmId to occurrence.toEpochMilli())) }
+            s.alarm(alarmId)?.let(WakeAlarmRules::label) ?: WakeAlarmRules.DEFAULT_LABEL
+        }
+        notifier.postMissed(label, timeText(occurrence), phoneWasOff = true)
+        WakeReportWorker.enqueueWake(context, alarmId, occurrence, WakeOutcome.MISSED, now, 0)
     }
 
     /** Queues POST /alarms/report when this phone's readiness or set rings differ from what the server has. */

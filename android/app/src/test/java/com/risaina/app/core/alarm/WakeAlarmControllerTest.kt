@@ -124,7 +124,30 @@ class WakeAlarmControllerTest {
         controller.notOnMyPhone("a1", occ.minusSeconds(60))
         assertEquals(false, store.current().pendingRing["a1"])
         assertFalse((WakeActions.FIRE to "a1") in clock.set)
-        verify { notifier.cancelSet() }
+        verify { notifier.cancelSet("a1") }
+    }
+
+    @Test fun `two lost rings due at once, the latest rings and the earlier is missed`() {
+        store.upsert(
+            AlarmDto(
+                id = "a2", createdBy = "bea", time = "06:40", timeZone = "Asia/Kolkata", days = listOf(1, 2, 3, 4, 5),
+                createdAt = "2026-10-29T10:00:00.000Z", updatedAt = "2026-10-29T10:00:00.000Z",
+                members = listOf(AlarmMemberDto("me"), AlarmMemberDto("bea")),
+            ),
+            1,
+        )
+        controller.rearm(occ.minusSeconds(3600))
+        // The phone was off over both rings (6:30 and 6:40) and is back at 6:45.
+        controller.rearm(occ.plusSeconds(15 * 60))
+        assertEquals("a2", ring()?.alarmId)
+        assertEquals(WakePhase.RINGING, ring()?.phase)
+        assertEquals(occ.toEpochMilli(), store.current().handled["a1"])
+        verify(exactly = 1) { notifier.postMissed("Wake together", any(), phoneWasOff = true) }
+        // Neither comes back on the next re-arm, and both are set for tomorrow.
+        controller.rearm(occ.plusSeconds(16 * 60))
+        verify(exactly = 1) { notifier.postMissed(any(), any(), any()) }
+        verify(exactly = 1) { notifier.postRing(any(), any(), any()) }
+        assertEquals(tomorrow.toEpochMilli(), clock.set[WakeActions.FIRE to "a1"]!!.second)
     }
 
     @Test fun `a deleted alarm's ring ends quietly`() {
