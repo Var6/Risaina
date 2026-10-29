@@ -124,6 +124,7 @@ class QuickAlertSessionTest {
         val auth = AuthRepository(
             api, sessionStore, preferencesStore, mockk(relaxed = true), mockk(relaxed = true), coupleRepository,
             mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), notifier,
+            mockk(relaxed = true),
         )
 
         assertTrue(auth.login("b@example.com", "password") is AppResult.Success)

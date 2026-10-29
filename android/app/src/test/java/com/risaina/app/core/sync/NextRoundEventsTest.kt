@@ -99,7 +99,7 @@ class NextRoundEventsTest {
             json, session, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
             mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), listDao,
             mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao, mockk(relaxed = true),
-            deletions, {},
+            listSync, deletions, {},
         )
         val before = System.currentTimeMillis()
         r.apply(event(1, "calendar.deleted", mapOf("entryId" to JsonPrimitive("cal"))))
