@@ -61,6 +61,8 @@ import com.risaina.app.core.data.MediaRepository
 import com.risaina.app.core.data.MemoryRepository
 import com.risaina.app.core.data.WidgetBoardRepository
 import com.risaina.app.core.designsystem.components.GhostButton
+import com.risaina.app.core.designsystem.components.HelpAction
+import com.risaina.app.core.designsystem.components.HelpPoint
 import com.risaina.app.core.designsystem.components.PrimaryButton
 import com.risaina.app.core.designsystem.components.RisainaTextField
 import com.risaina.app.core.designsystem.components.SectionHeader
@@ -193,14 +195,14 @@ fun TheirWidgetScreen(onBack: () -> Unit, vm: TheirWidgetViewModel = hiltViewMod
             TopAppBar(
                 title = { Text("${s.partnerName}'s widgets", style = MaterialTheme.typography.headlineSmall) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(BackIcon, contentDescription = "Back") } },
+                actions = { TheirWidgetHelp(s.partnerName) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-            Text("Your mood, a note and an emoji for ${s.partnerName}'s widgets and lock-screen card.", style = MaterialTheme.typography.bodyMedium, color = Risaina.colors.textMuted)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
             // Live preview of their photo widget
             val preview by produceState<Any?>(null, d.photoMediaId) { value = d.photoMediaId?.let { vm.image(it) } }
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).clip(MaterialTheme.shapes.extraLarge).background(Brush.linearGradient(listOf(Risaina.colors.heroGradientStart, Risaina.colors.heroGradientEnd)))) {
@@ -225,8 +227,6 @@ fun TheirWidgetScreen(onBack: () -> Unit, vm: TheirWidgetViewModel = hiltViewMod
                     Box(Modifier.size(46.dp).clip(MaterialTheme.shapes.small).background(if (d.emoji == e) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh).clickable { vm.setEmoji(e) }, contentAlignment = Alignment.Center) { Text(e, fontSize = 22.sp) }
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Text("Their photo widget shows the latest photo you send in chat, so just send one there.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
             Spacer(Modifier.height(24.dp))
             PrimaryButton("Send to ${s.partnerName}'s widgets", onClick = { vm.publish(onBack) }, loading = s.saving, enabled = s.loaded && s.uploading == null, modifier = Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { GhostButton("Clear everything", onClick = vm::clearAll) }
@@ -235,3 +235,14 @@ fun TheirWidgetScreen(onBack: () -> Unit, vm: TheirWidgetViewModel = hiltViewMod
     }
 }
 
+/** The "?" on Their widget: what this screen sends, and where their photo widget's photo comes from. */
+@Composable
+private fun TheirWidgetHelp(partnerName: String) {
+    HelpAction("About $partnerName's widgets") {
+        HelpPoint(
+            "Your mood, a note and an emoji for $partnerName's widgets and lock-screen card. Pick any of them, check the preview, then send.",
+            title = "What you send",
+        )
+        HelpPoint("Their photo widget shows the latest photo you send in chat, so just send one there.", title = "Photos")
+    }
+}
