@@ -70,6 +70,7 @@ import com.risaina.app.core.designsystem.theme.RisainaTextStyles
 import com.risaina.app.core.model.Message
 import com.risaina.app.core.model.MessageSendState
 import com.risaina.app.core.model.MessageType
+import com.risaina.app.core.model.unknownTypeText
 import com.risaina.app.core.network.SocketState
 import com.risaina.app.feature.common.BackIcon
 import com.risaina.app.feature.common.Format
@@ -320,6 +321,7 @@ private fun Bubble(
         ) {
             when (m.type) {
                 MessageType.TEXT -> Text(m.text ?: "", style = MaterialTheme.typography.bodyLarge, color = onContainer)
+                MessageType.UNKNOWN -> Text(m.unknownTypeText(), style = MaterialTheme.typography.bodyLarge, color = onContainer)
                 MessageType.EMOJI -> Text(m.text ?: "", style = RisainaTextStyles.emojiLarge)
                 MessageType.PHOTO -> if (m.viewOnce) {
                     val state = when {

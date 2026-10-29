@@ -5,6 +5,7 @@ import com.risaina.app.core.data.MediaRepository
 import com.risaina.app.core.data.PingRepository
 import com.risaina.app.core.data.toEntity
 import com.risaina.app.core.data.toDomain
+import com.risaina.app.core.database.CalendarDao
 import com.risaina.app.core.database.CoupleDao
 import com.risaina.app.core.database.MemoryDao
 import com.risaina.app.core.database.MessageDao
@@ -13,6 +14,7 @@ import com.risaina.app.core.database.PingDao
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.model.Message
 import com.risaina.app.core.model.Ping
+import com.risaina.app.core.network.CalendarEntryDto
 import com.risaina.app.core.network.CoupleDto
 import com.risaina.app.core.network.EventDto
 import com.risaina.app.core.network.MediaDto
@@ -69,6 +71,7 @@ class EventReducer @Inject constructor(
     private val sosRepository: com.risaina.app.core.data.SosRepository,
     private val safetyEvents: com.risaina.app.core.safety.SafetyEvents,
     private val gameRepository: com.risaina.app.core.data.GameRepository,
+    private val calendarDao: CalendarDao,
 ) {
     /** [replay]: the event is old history being re-applied (ReplayGuard); its receipts are not re-sent. */
     suspend fun apply(event: EventDto, replay: Boolean = false): List<Incoming> {
@@ -127,10 +130,23 @@ class EventReducer @Inject constructor(
                 val partner = json.decodeFromJsonElement(PartnerDto.serializer(), it)
                 if (partner.id != me) coupleDao.replace(coupleDao.couple(), partner.toEntity())
             }
+            // Newer copy wins: this phone's own older saves come back by replay after its newer reply.
             "list.created", "list.updated" -> p.obj("list")?.let {
-                listDao.upsert(json.decodeFromJsonElement(com.risaina.app.core.network.SharedListDto.serializer(), it).toEntity(json))
+                listDao.upsertIfNewer(json.decodeFromJsonElement(com.risaina.app.core.network.SharedListDto.serializer(), it).toEntity(json))
             }
             "list.deleted" -> p.str("listId")?.let { listDao.delete(it) }
+            // An entry that does not decode is skipped, not thrown: the next GET /calendar has it.
+            "calendar.created", "calendar.updated" -> p.obj("entry")?.let {
+                runCatching { json.decodeFromJsonElement(CalendarEntryDto.serializer(), it) }.getOrNull()
+                    ?.let { entry -> calendarDao.upsertIfNewer(entry.toEntity()) }
+                // TODO(P2): when payload.notify == true, event.actorId != me and !replay, add
+                //  Incoming.CalendarShared ("Raina added … to your calendar"); after any calendar,
+                //  couple or partner event, queue a local reminder re-arm.
+            }
+            "calendar.deleted" -> p.str("entryId")?.let { calendarDao.delete(it) } // TODO(P2): re-arm reminders.
+            // Wake together is applied by its own package (store, re-arm, partner notices). Until
+            // then these are passed over like any unknown type, and the cursor still moves on.
+            "alarm.created", "alarm.updated", "alarm.deleted", "alarm.woke" -> Unit // TODO(P3): WakeAlarmRepository/WakeAlarmStore.apply(event, me).
             "widget.updated" -> p.obj("board")?.let {
                 val board = json.decodeFromJsonElement(com.risaina.app.core.network.WidgetBoardDto.serializer(), it)
                 if (event.actorId == me) widgetBoardRepository.store(board, null, replaceMine = true, replaceForMe = false)

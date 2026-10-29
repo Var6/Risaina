@@ -23,6 +23,8 @@ object MessageRules {
             mediaId.isNullOrBlank() -> Validation.Invalid("Attachment is still uploading")
             else -> Validation.Ok
         }
+        // Only ever received from a newer app; this build has nothing to send it with.
+        MessageType.UNKNOWN -> Validation.Invalid("This version of Risaina can't send that")
     }
 
     fun validateVoice(durationMs: Long, sizeBytes: Long): Validation = when {
