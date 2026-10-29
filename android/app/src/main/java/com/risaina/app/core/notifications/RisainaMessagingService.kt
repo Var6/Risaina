@@ -23,7 +23,8 @@ import javax.inject.Inject
  *     start a sync whose first request should carry it to the server;
  *  3. the safety-net SyncWorker is queued, inside FCM's short exemption for expedited work, so it
  *     survives even if the process dies below;
- *  4. notification first: network-free alerts for a ping or a message;
+ *  4. notification first: network-free alerts for a ping or a message, unless this phone already
+ *     handled this very push (HandledPushes);
  *  5. a sync bounded by a short budget; each event's notification is posted as it is applied, and
  *     the widgets are drawn directly at the end (not queued). The sync is shared with the worker
  *     and keeps running if this handler stops waiting;
@@ -64,18 +65,23 @@ class RisainaMessagingService : FirebaseMessagingService() {
         val receivedAt = System.currentTimeMillis()
         val type = message.data["type"]
         val isTest = type == DeliveryDiagnostics.TEST_PUSH_TYPE
+        // The same push twice (an FCM redelivery, a stale second token, an outbox resend): no second
+        // quick alert. It is still acknowledged and still syncs, which costs nothing. After the SOS
+        // above, which has its own de-duplication by SOS id.
+        val firstTime = runCatching { diagnostics.firstTimePush(message.data["eventId"]) }.getOrDefault(true)
         // Also queues "this phone received a push", which rides on the next sync request. Before the
         // worker is queued: WorkManager starts it in this process at once, and its first request
         // must not leave without the ack (the handler would then share that sync and the ack would
         // wait for the next one, maybe the hourly sync).
         runCatching { diagnostics.recordPush(type, message.priority, message.originalPriority, message.sentTime) }
         if (!isTest) runCatching { SyncWorker.enqueueFromPush(applicationContext) }
-        runCatching { runBlocking { handle(type, message.data["ref"]?.takeIf { it.isNotBlank() }, isTest, receivedAt) } }
+        runCatching { runBlocking { handle(type, message.data["ref"]?.takeIf { it.isNotBlank() }, isTest, firstTime, receivedAt) } }
     }
 
-    private suspend fun handle(type: String?, ref: String?, isTest: Boolean, receivedAt: Long) {
+    private suspend fun handle(type: String?, ref: String?, isTest: Boolean, firstTime: Boolean, receivedAt: Long) {
         when {
             isTest -> notifier.notifyTestPush(diagnostics.snapshot().lastPushLatencyMillis)
+            !firstTime -> Unit
             type == "ping.created" -> runCatching { notifier.notifyPingArrivedFast(ref) }
             // Without the message id (an older server) the quick alert could not be replaced, so skip it.
             type == "message.created" && ref != null -> runCatching { notifier.notifyMessageArrivedFast(ref) }

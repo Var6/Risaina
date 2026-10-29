@@ -114,6 +114,20 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
             .apply()
     }
 
+    private val handledLock = Any()
+
+    /**
+     * True the first time a push with this [eventId] arrives (HandledPushes). Cheap: one small string
+     * read and an apply(), run after the SOS ring so it never delays it. Synchronized, in case Firebase
+     * hands two pushes to the handler at once.
+     */
+    fun firstTimePush(eventId: String?): Boolean = synchronized(handledLock) {
+        val stored = prefs.getString(K_HANDLED, null)
+        val (first, next) = HandledPushes.record(stored, eventId)
+        if (next != stored) prefs.edit().putString(K_HANDLED, next).apply()
+        first
+    }
+
     /**
      * "This phone received a push", waiting to ride on the next GET /events (the sync that the push
      * starts anyway), so no extra request is made inside the push handler's few seconds.
@@ -223,6 +237,7 @@ class DeliveryDiagnostics @Inject constructor(@ApplicationContext private val co
         private const val K_FAST_PREFIX = "fast_alert_at_"
         private const val K_FAST_REF_PREFIX = "fast_alert_ref_"
         private const val K_QUICK_MESSAGES = "quick_messages"
+        private const val K_HANDLED = "handled_push_ids"
         private const val K_ACK_PRIORITY = "ack_priority"
         private const val K_ACK_ORIGINAL = "ack_original_priority"
         private const val K_OEM_CONFIRMED = "oem_steps_confirmed_at"
