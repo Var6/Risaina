@@ -16,7 +16,9 @@ export interface ParsedLine {
 const MARKER_RE = /^(?:[-*•·◦‣]|\d{1,3}[.)])(?:\s+|$)/u;
 // A checkbox: Markdown "[ ]" / "[x]", or the glyphs this module writes ("☐", "☑") and common ticks.
 const BOX_RE = /^(\[\s?\]|\[[xX]\]|☐|☑|☒|✓|✔|✅)(?:\s+|$)/u;
-const UNTICKED_BOXES: ReadonlySet<string> = new Set(['[]', '[ ]', '☐']);
+// Only an x or a tick mark ticks a box. Anything else BOX_RE takes is an empty box, including the
+// tab or no-break space a checklist copied from a web page has between its brackets.
+const TICKED_BOX_RE = /^(?:\[[xX]\]|[☑☒✓✔✅])$/u;
 
 /** One body line without its bullet, number and checkbox, or null when nothing is left. */
 export function parseLine(line: string): ParsedLine | null {
@@ -34,7 +36,7 @@ export function parseLine(line: string): ParsedLine | null {
     }
     const b = box ? null : BOX_RE.exec(s);
     if (b) {
-      done = !UNTICKED_BOXES.has(b[1]!);
+      done = TICKED_BOX_RE.test(b[1]!);
       s = s.slice(b[0].length);
       box = true;
       continue;

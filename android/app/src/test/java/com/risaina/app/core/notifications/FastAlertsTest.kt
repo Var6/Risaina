@@ -72,12 +72,76 @@ class FastAlertsTest {
         assertEquals(emptyMap<String, Long>(), QuickAlertRefs.decode("garbage,:5,x:"))
     }
 
-    @Test fun quickRefsLastOnlyAsLongAsTheFastAlertWindow() {
-        val refs = QuickAlertRefs.add(mapOf("old" to now - FastAlerts.WINDOW_MS, "recent" to now - 1_000), "new", now)
-        assertEquals(setOf("recent", "new"), refs.keys)
-        assertEquals(setOf("new"), QuickAlertRefs.fresh(refs, now + FastAlerts.WINDOW_MS - 500).keys)
+    @Test fun quickRefsOutliveTheOldServerWindowButNotADay() {
+        val refs = QuickAlertRefs.add(
+            mapOf("expired" to now - QuickAlertRefs.KEEP_MS, "minutes" to now - 3 * 60_000, "recent" to now - 1_000),
+            "new", now,
+        )
+        assertEquals(setOf("minutes", "recent", "new"), refs.keys)
+        assertEquals(setOf("new"), QuickAlertRefs.fresh(refs, now + QuickAlertRefs.KEEP_MS - 500).keys)
         // A clock that jumped back never keeps one for ever.
         assertTrue(QuickAlertRefs.fresh(mapOf("future" to now + 60_000), now).isEmpty())
+    }
+
+    // --- a sync that comes minutes late (R8) --------------------------------------------------
+
+    @Test fun aSyncMinutesLateStillUpdatesTheQuickAlertInPlace() {
+        // The 4 s inline sync failed and the SyncWorker backed off: the ping syncs 3 minutes after its
+        // quick alert, which is still in the shade. It must be updated without a second buzz.
+        val d = DeliveryDiagnostics(contextWithPrefs())
+        val quickAt = now - 3 * 60_000
+        d.recordFastAlert(DeliveryDiagnostics.QUICK_PING, "p1", quickAt)
+        d.recordQuickAlert(DeliveryDiagnostics.QUICK_PING, "p1", quickAt)
+        val follows = FastAlerts.followsQuick(d.quickAlerts(DeliveryDiagnostics.QUICK_PING, now), quickAt, "p1", "p1", now)
+        assertTrue(follows)
+        assertEquals(DetailedAction.UPDATE, FastAlerts.detailedAction(follows, showing = true))
+        // Another ping in the same sync, with no quick alert of its own, still alerts.
+        assertFalse(FastAlerts.followsQuick(d.quickAlerts(DeliveryDiagnostics.QUICK_PING, now), quickAt, "p1", "p2", now))
+    }
+
+    @Test fun aLateMessageKeepsItsPlaceholderLineUntilItSyncs() {
+        // Before, the "Sent you a message" line went after 2 minutes: a rebuild then dropped it (or the
+        // whole notification), and the message buzzed again when it finally synced.
+        val d = DeliveryDiagnostics(contextWithPrefs())
+        d.recordQuickAlert(DeliveryDiagnostics.QUICK_MESSAGE, "m1", now - 3 * 60_000)
+        val c = ConversationLines.build(emptyList(), d.quickAlerts(DeliveryDiagnostics.QUICK_MESSAGE, now), previews = true)
+        assertEquals(listOf(ConversationLines.PLACEHOLDER), c.lines.map { it.text })
+    }
+
+    @Test fun aQuickAlertWithoutAnItemIdStillOnlyCoversTwoMinutes() {
+        // An older server's ping push names no ping, so it matches any: it must not mute a new one later.
+        assertTrue(FastAlerts.followsQuick(emptyMap(), now - 30_000, null, "p9", now))
+        assertFalse(FastAlerts.followsQuick(emptyMap(), now - 3 * 60_000, null, "p9", now))
+        assertFalse(FastAlerts.followsQuick(emptyMap(), 0, null, "p9", now))
+    }
+
+    @Test fun signOutForgetsEveryQuickAlert() {
+        val d = DeliveryDiagnostics(contextWithPrefs())
+        d.recordQuickAlert(DeliveryDiagnostics.QUICK_PING, "p1", now - 1_000)
+        d.recordQuickAlert(DeliveryDiagnostics.QUICK_MESSAGE, "m1", now - 1_000)
+        d.clearQuickAlerts()
+        assertTrue(d.quickAlerts(DeliveryDiagnostics.QUICK_PING, now).isEmpty())
+        assertTrue(d.quickAlerts(DeliveryDiagnostics.QUICK_MESSAGE, now).isEmpty())
+    }
+
+    // --- only for this phone's couple ---------------------------------------------------------
+
+    @Test fun aPushForThisCoupleGetsItsQuickAlert() {
+        assertTrue(FastAlerts.forThisCouple(coupleId = "c1", pushCoupleId = "c1"))
+        // A push that names no couple (an older server) is trusted once a couple is here.
+        assertTrue(FastAlerts.forThisCouple(coupleId = "c1", pushCoupleId = null))
+    }
+
+    @Test fun aSignedOutPhoneGetsNoQuickAlert() {
+        // Its device row lingered on the server (a password reset, a sign-out while offline): the item
+        // never syncs here, and a remembered message would haunt the next account's chat notification.
+        assertFalse(FastAlerts.forThisCouple(coupleId = null, pushCoupleId = "c1"))
+        assertFalse(FastAlerts.forThisCouple(coupleId = null, pushCoupleId = null))
+    }
+
+    @Test fun aPushForAnotherCoupleGetsNoQuickAlert() {
+        // Just signed in to another account, before this phone registered its token for it.
+        assertFalse(FastAlerts.forThisCouple(coupleId = "c2", pushCoupleId = "c1"))
     }
 
     @Test fun quickRefsAreBounded() {

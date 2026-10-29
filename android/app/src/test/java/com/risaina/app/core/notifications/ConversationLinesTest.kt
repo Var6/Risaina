@@ -99,4 +99,40 @@ class ConversationLinesTest {
         // Anything with a group of its own is a notification of this version.
         assertFalse(ConversationLines.isLeftover(1234, NotificationChannels.MESSAGES, NotificationGroups.CHAT))
     }
+
+    // --- a refresh after a read or a delete never alerts -----------------------------------------
+
+    @Test fun theFirstRefreshAfterAnUpgradeStandsInForOldNotificationsWithoutAlerting() {
+        // Opening the chat cancels an older version's per-message notifications. The conversation that
+        // takes their place is a new post, where onlyAlertOnce does nothing: it must be muted.
+        val how = ConversationLines.refreshPost(showing = false, leftovers = 2, mayPost = true)
+        assertEquals(ConversationPost.SILENT, how)
+        assertTrue(how!!.muted)
+        assertEquals(NotificationCompat.GROUP_ALERT_SUMMARY, NotificationGroups.alertBehavior(how.muted))
+    }
+
+    @Test fun whenAndroidWillNotSayWhatIsShowingTheRefreshIsMuted() {
+        assertEquals(ConversationPost.SILENT, ConversationLines.refreshPost(showing = null, leftovers = 0, mayPost = true))
+    }
+
+    @Test fun oneInTheShadeIsUpdatedInPlaceSoAHeadsUpKeepsShowing() {
+        val how = ConversationLines.refreshPost(showing = true, leftovers = 0, mayPost = true)
+        assertEquals(ConversationPost.UPDATE, how)
+        assertTrue(how!!.onlyAlertOnce)
+        assertFalse(how.muted)
+        assertEquals(ConversationPost.UPDATE, ConversationLines.refreshPost(showing = true, leftovers = 1, mayPost = true))
+    }
+
+    @Test fun oneSwipedAwayOrWithNotificationsOffIsNotPosted() {
+        assertEquals(null, ConversationLines.refreshPost(showing = false, leftovers = 0, mayPost = true))
+        assertEquals(null, ConversationLines.refreshPost(showing = true, leftovers = 0, mayPost = false))
+        assertEquals(null, ConversationLines.refreshPost(showing = false, leftovers = 3, mayPost = false))
+    }
+
+    @Test fun onlyANewMessageAlerts() {
+        assertFalse(ConversationPost.ALERT.onlyAlertOnce)
+        assertFalse(ConversationPost.ALERT.muted)
+        assertEquals(NotificationCompat.GROUP_ALERT_ALL, NotificationGroups.alertBehavior(ConversationPost.ALERT.muted))
+        assertTrue(ConversationPost.entries.filter { it != ConversationPost.ALERT }.all { it.onlyAlertOnce })
+    }
 }

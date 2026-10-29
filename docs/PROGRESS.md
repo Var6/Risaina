@@ -388,3 +388,47 @@ and on the pairing screen (an email to the developer). The terms review also fou
 code left the acceptor's own open code alive, so after an unlink the same partner could re-pair the couple with
 it. Accepting now revokes it (test in `invitations.test.ts`). Backend 344/344. Upload build `0.2.0+65b9116`,
 versionCode 75, replaces 72 in the production review.
+
+## Notifications: one per partner action (2026-10-29)
+Goal: one partner action gives one notification and one buzz on the partner's phone. The live data showed
+the server sends each push once (one device row per phone, no retries, no duplicate events), so the doubles
+were made on the phone (`dup-notifications.md`). Checked with unit tests only: not yet on the real phones.
+
+- ✅ **The lock-screen card never repeats a notification** (the likely double when the card is on). It
+  announces an unseen gift, then an unseen ping, only while the ping notification (4242) is not in the shade:
+  notifications off, the Touch Pings channel blocked, or the notification swiped away. Otherwise it shows a
+  calm line from "their widget" only: the board's note, else its mood, with the board's emoji in the title
+  and no time. It no longer quotes chat messages or pings, so a new message or ping leaves the card as it
+  was and it is not posted again. The home-screen widgets still show the newest note from chat. The
+  Widgets screen now says the card "never repeats a notification you already have".
+- ✅ **One chat notification** (MessagingStyle, id 4343) instead of one per message. It is rebuilt from Room
+  each time: the partner's unread, undeleted messages, the newest 6, with all of them counted on the badge.
+  Previews off reads "New message"; photo, view-once and voice keep their labels. A burst stays one
+  notification. It is rebuilt quietly or removed when messages are read (in the chat, or on the person's
+  other phone), each time the chat screen comes to the front, and when the partner deletes a message (its
+  line goes). Opening the app on Home leaves it, as before. Per-message notifications left by an older build
+  are removed on the first post or refresh.
+- ✅ **Quick alert, then the real text**: a message push adds a "Sent you a message" line at once; the sync
+  puts the real text in its place in the same notification. The detailed post updates the quick alert
+  without a second buzz while it is showing, posts nothing once it was swiped or tapped, and alerts only
+  when no quick alert came first. Each quick alert is remembered per item, until that item syncs (at most
+  24 hours), so a sync that comes minutes late does not buzz again and keeps the placeholder line.
+  Sign-out and unlink forget them.
+- ✅ **No sound when the chat is tidied**: a rebuild after a read never alerts. When it has to create the
+  notification (right after an upgrade removed the old ones), it is posted muted.
+- ✅ **Explicit groups, no setSilent**: chat, ping, game, widget, system (unlink, test) and safety ("is
+  sharing" and the missed / safe now / tap to respond / not sent SOS notices) each have their own group, so
+  Android 15+ and ColorOS do not bundle them. The ringing SOS alarm keeps its own group. "Tap to respond" is
+  muted with the group alert setting instead of setSilent.
+- ✅ Also: a push the phone already handled (last 64 event ids) gets no second quick alert; a panic share
+  linked to an SOS removes the "may be in trouble" notice; Android 11 and below no longer show "Catching
+  up" on each push; a second action on the same game within 30 s, while its notification shows, updates it
+  without a buzz; Delivery health shows how many phones are registered on the account and, when there are
+  several, warns and offers "Remove the others". Backend: dead duplicate device rows are pruned, devices
+  report `sdkInt`, and the outbox carries a lease id.
+- ❌ Not verified on real phones yet. Device checks: with the lock card on and Risaina closed, one text, one
+  ping, one gift and one widget update each give exactly one notification; on API 36/37 with a ping, a chat
+  burst and a game showing, `dumpsys notification` shows no "Aggregate" group for com.risaina.app; the chat
+  notification goes when the chat is opened or read on the other phone and loses a deleted message's line;
+  upgrading with old per-message notifications showing replaces them silently; two device rows for one user
+  show the warning.

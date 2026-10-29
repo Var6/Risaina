@@ -75,6 +75,7 @@ class RisainaNotifier @Inject constructor(
      */
     fun clearAllPartnerNotifications() {
         clearPartnerAlerts()
+        diagnostics.clearQuickAlerts()
         val nm = NotificationManagerCompat.from(context)
         // The known ids first, without relying on activeNotifications (which can fail or lag).
         PARTNER_IDS.forEach { nm.cancel(it) }
@@ -86,17 +87,26 @@ class RisainaNotifier @Inject constructor(
     }
 
     /**
-     * A generic alert for this very item ([ref]) was posted from its push moments ago. The detailed
-     * notification then updates it in place without alerting, or is left out when the person already
-     * tapped or dismissed the generic one (FastAlerts.detailedAction). Matched per item, so another
-     * ping or message that came in the same sync (and had no quick alert of its own) still alerts,
-     * and in a burst each one alerts once. A quick alert from an older server carries no item id and
-     * matches any item of its kind. Called once per item: it forgets the item's quick alert.
+     * A session starts with no quick alert remembered. One from before it names an item that never
+     * syncs here (a push for the account signed in before, or a sign-out cut short before
+     * [clearAllPartnerNotifications]), and a message's would show as "Sent you a message" in this
+     * account's chat notification for a day, with no read to clear it.
+     */
+    fun forgetQuickAlerts() = diagnostics.clearQuickAlerts()
+
+    /**
+     * A generic alert for this very item ([ref]) was posted from its push, however long ago. The
+     * detailed notification then updates it in place without alerting, or is left out when the person
+     * already tapped or dismissed the generic one (FastAlerts.detailedAction). Matched per item, so
+     * another ping or message that came in the same sync (and had no quick alert of its own) still
+     * alerts, and in a burst each one alerts once. A quick alert from an older server carries no item
+     * id and matches any item of its kind for 2 minutes. Called once per item: it forgets the item's
+     * quick alert.
      */
     private fun followsQuickAlert(kind: String, ref: String): Boolean {
         val now = System.currentTimeMillis()
         val (at, fastRef) = diagnostics.lastFastAlert(kind)
-        val follows = ref in diagnostics.quickAlerts(kind, now) || (fastRef == null && FastAlerts.follows(at, null, ref, now))
+        val follows = FastAlerts.followsQuick(diagnostics.quickAlerts(kind, now), at, fastRef, ref, now)
         diagnostics.forgetQuickAlert(kind, ref)
         return follows
     }
@@ -220,12 +230,14 @@ class RisainaNotifier @Inject constructor(
      * Called straight from the FCM service, before any network sync, so the partner's phone buzzes
      * within a second. Content is generic (the push carries no content, only the ping's opaque id
      * [pingId], absent from older servers); the sync that follows updates the same notification
-     * silently with the real ping.
+     * silently with the real ping. Nothing for a push of another couple ([coupleId]), or with no
+     * couple here (signed out): FastAlerts.forThisCouple.
      */
-    suspend fun notifyPingArrivedFast(pingId: String?) {
+    suspend fun notifyPingArrivedFast(pingId: String?, coupleId: String?) {
         if (!canPost()) return
         val prefs = preferencesStore.current()
         if (!prefs.notificationsEnabled || appInForeground()) return
+        if (!FastAlerts.forThisCouple(coupleDao.couple()?.id, coupleId)) return
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
         val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
         postLock.withLock {
@@ -248,12 +260,14 @@ class RisainaNotifier @Inject constructor(
      * Straight from a message push, before the network: the phone alerts within a second even when
      * the sync after a Doze wake is slow or fails. The push carries no content, only the message's
      * opaque id [messageId], so the chat notification gets a generic "Sent you a message" line for
-     * it, which the sync replaces with the real text in the same notification.
+     * it, which the sync replaces with the real text in the same notification. Only for this phone's
+     * couple ([coupleId], see notifyPingArrivedFast): that line stays until its message syncs.
      */
-    suspend fun notifyMessageArrivedFast(messageId: String) {
+    suspend fun notifyMessageArrivedFast(messageId: String, coupleId: String?) {
         if (!canPost()) return
         val prefs = preferencesStore.current()
         if (!prefs.notificationsEnabled || appInForeground()) return
+        if (!FastAlerts.forThisCouple(coupleDao.couple()?.id, coupleId)) return
         val partner = coupleDao.partner()?.displayName ?: "Your partner"
         val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, time.now())
         postLock.withLock {

@@ -22,6 +22,20 @@ data class Conversation(val lines: List<ConversationLine>, val total: Int) {
 }
 
 /**
+ * How the chat notification is posted. [onlyAlertOnce] keeps an update of the one in the shade quiet
+ * (a heads-up then shows the new text). Android ignores it for a new post, so a post that may create
+ * the notification without alerting is [muted] (NotificationGroups.alertBehavior).
+ */
+enum class ConversationPost(val onlyAlertOnce: Boolean, val muted: Boolean) {
+    /** A new message: sound and buzz. */
+    ALERT(onlyAlertOnce = false, muted = false),
+    /** The one in the shade, changed in place. */
+    UPDATE(onlyAlertOnce = true, muted = false),
+    /** Rebuilt after a read or a delete when it may not be in the shade: it never alerts. */
+    SILENT(onlyAlertOnce = true, muted = true),
+}
+
+/**
  * What the one chat notification (RisainaNotifier.MESSAGES_ID) says. Rebuilt from Room every time,
  * so reading or deleting a message takes its line away and a burst stays one notification. Pure
  * (ConversationLinesTest).
@@ -52,6 +66,20 @@ object ConversationLines {
         m.type == "photo" -> "Sent you a photo"
         m.type == "voice" -> "Sent you a voice note"
         else -> m.text?.takeIf { it.isNotBlank() } ?: HIDDEN
+    }
+
+    /**
+     * What a refresh after a read or a delete does with a conversation that still has lines, or null
+     * to post nothing. [showing]: it is in the shade (null when Android will not say). [leftovers]: old
+     * per-message notifications just removed, which it stands in for. One the person swiped away is
+     * not brought back. When it may be a new post it is SILENT: the first refresh after an upgrade
+     * usually runs as the person opens the chat, and must not sound or pop up there.
+     */
+    fun refreshPost(showing: Boolean?, leftovers: Int, mayPost: Boolean): ConversationPost? = when {
+        !mayPost -> null
+        showing == true -> ConversationPost.UPDATE
+        showing == null || leftovers > 0 -> ConversationPost.SILENT
+        else -> null
     }
 
     private val MESSAGE_CHANNELS = setOf(NotificationChannels.MESSAGES, NotificationChannels.MESSAGES_QUIET)

@@ -79,6 +79,9 @@ class AuthRepository @Inject constructor(
     suspend fun resendVerification(): AppResult<Unit> = apiCall { api.resendVerification() }
 
     private suspend fun onAuthenticated(tokens: TokensDto, userId: String, displayName: String, avatarMediaId: String?, emailVerified: Boolean = false) {
+        // Quick alerts from before this session go. First, so a push that lands as soon as the new
+        // session is saved keeps its own.
+        notifier.forgetQuickAlerts()
         val deviceId = sessionStore.deviceId()
         sessionStore.save(
             Session(

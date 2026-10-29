@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Every kind of partner notification carries a group of its own, so Android 15+ and ColorOS never
@@ -14,7 +15,7 @@ class NotificationGroupsTest {
     @Test fun everyKindHasItsOwnGroup() {
         assertEquals(NotificationGroups.ALL.size, NotificationGroups.ALL.toSet().size)
         assertEquals(
-            setOf("risaina_chat", "risaina_ping", "risaina_game", "risaina_widget", "risaina_system"),
+            setOf("risaina_chat", "risaina_ping", "risaina_game", "risaina_widget", "risaina_system", "risaina_safety"),
             NotificationGroups.ALL.toSet(),
         )
     }
@@ -28,7 +29,23 @@ class NotificationGroupsTest {
 
     @Test fun theGroupsDoNotClashWithTheOtherOwnGroups() {
         // The lock card, the live location and the SOS alarm keep their own groups too.
-        val others = setOf("risaina_lock_card", com.risaina.app.core.location.LiveLocationService.LOCATION_GROUP)
+        val others = setOf("risaina_lock_card", com.risaina.app.core.location.LiveLocationService.LOCATION_GROUP, SosAlert.SOS_GROUP)
         assertTrue(NotificationGroups.ALL.none { it in others })
+    }
+
+    @Test fun aMutedPostKeepsItsGroupAndOnlyChangesHowItAlerts() {
+        assertEquals(NotificationCompat.GROUP_ALERT_SUMMARY, NotificationGroups.alertBehavior(muted = true))
+        assertEquals(NotificationCompat.GROUP_ALERT_ALL, NotificationGroups.alertBehavior(muted = false))
+    }
+
+    @Test fun noNotificationCallsSetSilent() {
+        // setSilent(true) puts a notification without a group into "silent": the partner's "is sharing"
+        // and the SOS "tap to respond" were the last ones. Only this phone's own service notifications
+        // keep it: the live location (alone in its group) and "Catching up" (a worker's, never a partner's).
+        val root = File("src/main/java/com/risaina/app")
+        assertTrue("run from the app module: ${root.absolutePath}", root.isDirectory)
+        val own = setOf("LiveLocationService.kt", "SyncWorker.kt")
+        val offenders = root.walk().filter { it.extension == "kt" && it.name !in own && ".setSilent(" in it.readText() }.map { it.name }.toList()
+        assertEquals(emptyList<String>(), offenders)
     }
 }

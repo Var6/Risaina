@@ -75,16 +75,17 @@ class RisainaMessagingService : FirebaseMessagingService() {
         // wait for the next one, maybe the hourly sync).
         runCatching { diagnostics.recordPush(type, message.priority, message.originalPriority, message.sentTime) }
         if (!isTest) runCatching { SyncWorker.enqueueFromPush(applicationContext) }
-        runCatching { runBlocking { handle(type, message.data["ref"]?.takeIf { it.isNotBlank() }, isTest, firstTime, receivedAt) } }
+        val coupleId = message.data["coupleId"]?.takeIf { it.isNotBlank() }
+        runCatching { runBlocking { handle(type, message.data["ref"]?.takeIf { it.isNotBlank() }, coupleId, isTest, firstTime, receivedAt) } }
     }
 
-    private suspend fun handle(type: String?, ref: String?, isTest: Boolean, firstTime: Boolean, receivedAt: Long) {
+    private suspend fun handle(type: String?, ref: String?, coupleId: String?, isTest: Boolean, firstTime: Boolean, receivedAt: Long) {
         when {
             isTest -> notifier.notifyTestPush(diagnostics.snapshot().lastPushLatencyMillis)
             !firstTime -> Unit
-            type == "ping.created" -> runCatching { notifier.notifyPingArrivedFast(ref) }
+            type == "ping.created" -> runCatching { notifier.notifyPingArrivedFast(ref, coupleId) }
             // Without the message id (an older server) the quick alert could not be replaced, so skip it.
-            type == "message.created" && ref != null -> runCatching { notifier.notifyMessageArrivedFast(ref) }
+            type == "message.created" && ref != null -> runCatching { notifier.notifyMessageArrivedFast(ref, coupleId) }
         }
         val start = SystemClock.elapsedRealtime()
         val result = withTimeoutOrNull(BUDGET_MS) {
