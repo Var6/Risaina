@@ -76,10 +76,18 @@ class WakeAlarmController @Inject constructor(
         rearm(now)
     }
 
-    /** "Test on this phone": the same ring, labelled a test, with nothing reported. */
-    private fun fireTest(now: Instant) = synchronized(store.lock) {
+    /**
+     * "Test on this phone": the same ring, labelled a test, with nothing reported. Never while a
+     * real ring is going or snoozed (it went off in the 10 seconds): the test would take its place,
+     * and stopping the test would end the real ring with nothing set, posted or reported.
+     */
+    internal fun fireTest(now: Instant) = synchronized(store.lock) {
+        if (realRing() != null) return@synchronized
         startRing(WakeRing(WakeAlarmRules.TEST_ID, now.toEpochMilli(), label = "Test alarm", startedAt = now.toEpochMilli(), test = true), now)
     }
+
+    /** Under the lock: a real alarm's ring that is ringing or snoozed on this phone. */
+    private fun realRing(): WakeRing? = store.current().ring?.takeIf { it.active && !it.test }
 
     /** Under the lock. A ring of another alarm still going is replaced: one ring at a time. */
     private fun startRing(ring: WakeRing, now: Instant) {
@@ -226,8 +234,16 @@ class WakeAlarmController @Inject constructor(
         rearm()
     }
 
-    /** "Test on this phone": rings in 10 seconds through the alarm clock and the full-screen path. */
-    fun scheduleTest(now: Instant = Instant.now()) = scheduler.setTest(now.toEpochMilli() + WakeAlarmRules.TEST_DELAY_MS)
+    /**
+     * "Test on this phone": rings in 10 seconds through the alarm clock and the full-screen path.
+     * Returns the real ring that is ringing or snoozed instead, and sets nothing: the test waits
+     * until that ring is over.
+     */
+    fun scheduleTest(now: Instant = Instant.now()): WakeRing? = synchronized(store.lock) {
+        realRing()?.let { return@synchronized it }
+        scheduler.setTest(now.toEpochMilli() + WakeAlarmRules.TEST_DELAY_MS)
+        null
+    }
 
     /**
      * Sets every alarm's next ring, posts "missed" for rings that passed unrung (phone off), rings

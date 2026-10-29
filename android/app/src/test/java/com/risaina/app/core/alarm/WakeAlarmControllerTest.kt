@@ -171,6 +171,31 @@ class WakeAlarmControllerTest {
         assertEquals(tomorrow.toEpochMilli(), clock.set[WakeActions.FIRE to "a1"]!!.second)
     }
 
+    @Test fun `a test never takes the place of a snoozed alarm`() {
+        controller.fire("a1", occ, occ)
+        controller.snooze("a1", occ.plusSeconds(60))
+        val until = ring()!!.until!!
+        // Tapped from the Wake screen while snoozed: refused, nothing set.
+        assertEquals(WakePhase.SNOOZED, controller.scheduleTest(occ.plusSeconds(120))?.phase)
+        assertFalse((WakeActions.FIRE to WakeAlarmRules.TEST_ID) in clock.set)
+        // A test set just before the alarm went off fires during the snooze: nothing changes,
+        // and "Stop test" has no test to stop.
+        controller.fireTest(occ.plusSeconds(130))
+        controller.snooze(WakeAlarmRules.TEST_ID, occ.plusSeconds(140))
+        controller.up(WakeAlarmRules.TEST_ID, occ.plusSeconds(150))
+        assertEquals("a1", ring()?.alarmId)
+        assertEquals(WakePhase.SNOOZED, ring()?.phase)
+        assertEquals(until, clock.set[WakeActions.SNOOZE_FIRE to "a1"]!!.second)
+        verify(exactly = 1) { notifier.postRing(any(), any(), any()) }
+        // The "Snoozed until" notice stays: only the real ring's start cleared the status.
+        verify(exactly = 1) { notifier.cancelStatus() }
+        // Once the real ring is over, the test can ring.
+        controller.handleSnoozeFire(occ, Instant.ofEpochMilli(until))
+        controller.up("a1", Instant.ofEpochMilli(until).plusSeconds(30))
+        assertNull(controller.scheduleTest(Instant.ofEpochMilli(until).plusSeconds(60)))
+        assertTrue((WakeActions.FIRE to WakeAlarmRules.TEST_ID) in clock.set)
+    }
+
     @Test fun `a deleted alarm's ring ends quietly`() {
         controller.fire("a1", occ, occ)
         controller.alarmGone("a1")

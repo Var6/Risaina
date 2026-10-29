@@ -9,6 +9,7 @@ import com.risaina.app.core.alarm.WakeAlarmStore
 import com.risaina.app.core.alarm.WakeAlarmSync
 import com.risaina.app.core.alarm.WakeDeviceState
 import com.risaina.app.core.alarm.WakeLocal
+import com.risaina.app.core.alarm.WakePhase
 import com.risaina.app.core.alarm.WakeReadiness
 import com.risaina.app.core.alarm.WakeReadinessProbe
 import com.risaina.app.core.alarm.WakeReadyReport
@@ -327,8 +328,14 @@ class WakeViewModel @Inject constructor(
     }
 
     fun test() {
-        controller.scheduleTest()
-        say("It rings in 10 seconds. Lock your phone to see it the way it rings in the morning.")
+        val busyWith = controller.scheduleTest()
+        say(
+            when (busyWith?.phase) {
+                null -> "It rings in 10 seconds. Lock your phone to see it the way it rings in the morning."
+                WakePhase.SNOOZED -> "Your alarm is snoozed. Try the test once you're up."
+                else -> "Your alarm is ringing. Try the test once you're up."
+            },
+        )
     }
 
     /** The server's copy after this phone's own change, set at once. */
