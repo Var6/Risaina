@@ -356,6 +356,17 @@ describe('POST /lists/:id/convert', () => {
     expect(ev!.payload).toEqual({ list });
   });
 
+  it('note → checklist: a box pasted from a web page (no-break space inside) stays open, unstamped', async () => {
+    const body = '[ ] milk\n[\t] eggs\n[x] bread';
+    const note = (await createList(a, { title: 'Pasted', kind: 'note', body })).json().list;
+    const items = (await convert(b, note.id, { to: 'checklist' })).json().list.items as Item[];
+    expect(items.map((i) => [i.text, i.done, i.doneBy === null, i.doneAt === null])).toEqual([
+      ['milk', false, true, true],
+      ['eggs', false, true, true],
+      ['bread', true, false, false],
+    ]);
+  });
+
   it('applies marker/checkboxes from the request', async () => {
     const note = (await createList(a, { title: 'Steps', kind: 'note', body: '1. one\n2. two' })).json().list;
     const res = await convert(a, note.id, { to: 'checklist', marker: 'number', checkboxes: false });
@@ -556,6 +567,17 @@ describe('convert helpers (pure)', () => {
     expect(parseLine('-')).toBeNull();
     expect(parseLine('[ ]')).toBeNull();
     expect(parseLine('   ')).toBeNull();
+  });
+
+  it('parseLine leaves a box open unless it holds an x or a tick (a pasted no-break space stays open)', () => {
+    expect(parseLine('[ ] milk')).toEqual({ text: 'milk', done: false });
+    expect(parseLine('[\t] eggs')).toEqual({ text: 'eggs', done: false });
+    expect(parseLine('[ ] bread')).toEqual({ text: 'bread', done: false });
+    expect(parseLine('1. [ ] tea')).toEqual({ text: 'tea', done: false });
+    expect(parseLine('[X] coffee')).toEqual({ text: 'coffee', done: true });
+    for (const tick of ['☑', '☒', '✓', '✔', '✅']) {
+      expect(parseLine(`${tick} jam`)).toEqual({ text: 'jam', done: true });
+    }
   });
 
   it('splitText cuts at spaces, hard-cuts a long word, never splits a surrogate pair', () => {
