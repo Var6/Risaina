@@ -19,14 +19,16 @@ class RisainaApp : Application(), Configuration.Provider {
     @Inject lateinit var syncManager: com.risaina.app.core.sync.EventSyncManager
     @Inject lateinit var widgetSnapshotUpdater: com.risaina.app.core.sync.WidgetSnapshotUpdater
     @Inject lateinit var safety: com.risaina.app.core.safety.SafetyLifecycle
+    @Inject lateinit var wake: com.risaina.app.core.alarm.WakeLifecycle
 
     override fun onCreate() {
         super.onCreate()
         NotificationChannels.ensure(this)
-        // The SOS alarm screen over the lock screen is not "Risaina is open" (see AppVisibility).
-        AppVisibility.register(this) { it is com.risaina.app.core.sos.SosAlarmActivity }
+        // The SOS and wake alarm screens over the lock screen are not "Risaina is open" (see AppVisibility).
+        AppVisibility.register(this) { it is com.risaina.app.core.sos.SosAlarmActivity || it is com.risaina.app.core.alarm.WakeAlarmActivity }
         watchForeground()
         safety.start() // SOS alarm volume restore, live location re-check, stop on sign-out/unlink
+        wake.start() // Wake together: re-arm, refresh on open and sign-in, clear on sign-out/unlink
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.risaina.app.core.sync
 
+import com.risaina.app.core.alarm.WakeAlarmSync
 import com.risaina.app.core.data.toEntity
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.model.Session
@@ -25,8 +26,8 @@ import org.junit.Test
 import java.time.Instant
 
 /**
- * The reducer branches added for this round: calendar.* update Room, alarm.* are passed over until
- * the wake package handles them, list.* never write an older copy. The cursor moves on for all.
+ * The reducer branches added for this round: calendar.* update Room, alarm.* go to Wake together
+ * (WakeAlarmSync), list.* never write an older copy. The cursor moves on for all.
  */
 class NextRoundEventsTest {
     private val json = NetworkModule.json
@@ -38,10 +39,11 @@ class NextRoundEventsTest {
     }
     private val listDao = FakeListDao()
     private val calendarDao = FakeCalendarDao()
+    private val wake = mockk<WakeAlarmSync>(relaxed = true)
     private val reducer = EventReducer(
         json, session, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
         mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), listDao,
-        mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao, mockk(relaxed = true),
+        mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao, mockk(relaxed = true), wake,
     )
 
     private fun event(seq: Long, type: String, payload: Map<String, JsonElement>, actor: String = "bea") =
@@ -69,12 +71,15 @@ class NextRoundEventsTest {
         assertEquals(1L, cursor.value)
     }
 
-    @Test fun `alarm events are passed over for now, without failing the sync`() = runTest {
+    @Test fun `alarm events go to Wake together, and the cursor moves on`() = runTest {
         for ((seq, type) in listOf("alarm.created", "alarm.updated", "alarm.woke", "alarm.deleted").withIndex()) {
             assertTrue(reducer.apply(event(seq + 1L, type, mapOf("alarm" to JsonObject(emptyMap()), "alarmId" to JsonPrimitive("a")))).isEmpty())
         }
-        assertEquals(4L, cursor.value)
-        coVerify(exactly = 4) { session.setLastEventSeq(any()) }
+        reducer.apply(event(5, "alarm.updated", mapOf("alarm" to JsonObject(emptyMap()))), replay = true)
+        assertEquals(5L, cursor.value)
+        coVerify(exactly = 4) { wake.apply(any(), "me", false) }
+        coVerify(exactly = 1) { wake.apply(match { it.seq == 5L }, "me", true) }
+        coVerify(exactly = 5) { session.setLastEventSeq(any()) }
     }
 
     @Test fun `a replayed older list version does not replace the newer one`() = runTest {
