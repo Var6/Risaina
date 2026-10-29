@@ -1,5 +1,6 @@
 package com.risaina.app.core.notifications
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,5 +29,23 @@ class FastAlertsTest {
     @Test fun noQuickAlertOrAClockJumpMeansAlert() {
         assertFalse(FastAlerts.follows(fastAt = 0, fastRef = null, ref = "m1", now = now))
         assertFalse(FastAlerts.follows(fastAt = now + 60_000, fastRef = "m1", ref = "m1", now = now))
+    }
+
+    // --- what the detailed post does ----------------------------------------------------------
+
+    @Test fun afterAQuickAlertStillShowingTheDetailedOneUpdatesItInPlace() {
+        assertEquals(DetailedAction.UPDATE, FastAlerts.detailedAction(followsFast = true, showing = true))
+        assertTrue("an update in place must not alert again", DetailedAction.UPDATE.onlyAlertOnce)
+    }
+
+    @Test fun aQuickAlertTheyAlreadySwipedOrTappedIsNotBroughtBack() {
+        assertEquals(DetailedAction.SKIP, FastAlerts.detailedAction(followsFast = true, showing = false))
+    }
+
+    @Test fun withoutAQuickAlertTheDetailedPostAlerts() {
+        assertEquals(DetailedAction.ALERT, FastAlerts.detailedAction(followsFast = false, showing = true))
+        assertEquals(DetailedAction.ALERT, FastAlerts.detailedAction(followsFast = false, showing = false))
+        // A new item replacing an older one under the same id must still sound.
+        assertFalse(DetailedAction.ALERT.onlyAlertOnce)
     }
 }

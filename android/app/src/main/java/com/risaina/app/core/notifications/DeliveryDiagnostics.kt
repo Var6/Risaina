@@ -60,6 +60,32 @@ object FastAlerts {
      */
     fun follows(fastAt: Long, fastRef: String?, ref: String, now: Long): Boolean =
         fastAt > 0 && now - fastAt in 0 until WINDOW_MS && (fastRef == null || fastRef == ref)
+
+    /**
+     * What the detailed post does. After a quick alert for this item ([followsFast]) it only updates
+     * the quick one in place while that is still [showing], and posts nothing once the person swiped
+     * or tapped it away (posting again would bring it back, which looks like a second notification).
+     * Anything else alerts. [showing] comes from activeNotifications; when Android will not say,
+     * callers pass true, so a notification is never lost.
+     */
+    fun detailedAction(followsFast: Boolean, showing: Boolean): DetailedAction = when {
+        !followsFast -> DetailedAction.ALERT
+        showing -> DetailedAction.UPDATE
+        else -> DetailedAction.SKIP
+    }
+}
+
+/**
+ * See [FastAlerts.detailedAction]. UPDATE posts with onlyAlertOnce and never with setSilent:
+ * setSilent is what put the notification into AndroidX's "silent" group (NotificationGroups).
+ */
+enum class DetailedAction(val onlyAlertOnce: Boolean) {
+    /** Replace the quick alert in place, without a second sound or buzz. */
+    UPDATE(onlyAlertOnce = true),
+    /** The quick alert was dismissed or tapped: post nothing. */
+    SKIP(onlyAlertOnce = true),
+    /** No quick alert came first: a normal, alerting post. */
+    ALERT(onlyAlertOnce = false),
 }
 
 /**

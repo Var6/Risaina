@@ -86,16 +86,23 @@ class RisainaNotifier @Inject constructor(
 
     /**
      * A generic alert for this very item ([ref]) was posted from its push moments ago. The detailed
-     * notification then arrives silently: updating the same id in place is silent anyway
-     * (onlyAlertOnce), but if the person already tapped or dismissed the generic one, a fresh post
-     * would buzz a second time. Matched per item, so another ping or message that came in the same
-     * sync (and had no quick alert of its own) still alerts. A quick alert from an older server
-     * carries no item id and matches any item of its kind.
+     * notification then updates it in place without alerting, or is left out when the person already
+     * tapped or dismissed the generic one (FastAlerts.detailedAction). Matched per item, so another
+     * ping that came in the same sync (and had no quick alert of its own) still alerts. A quick alert
+     * from an older server carries no item id and matches any item of its kind.
      */
     private fun followsFastAlert(kind: String, ref: String): Boolean {
         val (at, fastRef) = diagnostics.lastFastAlert(kind)
         return FastAlerts.follows(at, fastRef, ref, System.currentTimeMillis())
     }
+
+    /**
+     * Whether notification [id] is in the shade now. True when Android will not say (activeNotifications
+     * can fail or lag on some phone makers): an update in place is then the safe choice, never a skip.
+     */
+    private fun showing(id: Int): Boolean = runCatching {
+        context.getSystemService(android.app.NotificationManager::class.java)!!.activeNotifications.any { it.id == id }
+    }.getOrDefault(true)
 
     suspend fun notifyIncoming(item: Incoming) {
         if (!canPost()) return
@@ -123,10 +130,11 @@ class RisainaNotifier @Inject constructor(
                     gift -> com.risaina.app.feature.ping.Expressions.giftLine(p.message)!!
                     else -> p.message ?: p.type.defaultMessage.ifBlank { "Tap to see" }
                 }
+                val action = FastAlerts.detailedAction(followsFastAlert(FAST_PING, p.id), showing(PING_NOTIFICATION_ID))
+                if (action == DetailedAction.SKIP) return
                 post(
-                    id = PING_NOTIFICATION_ID,
-                    onlyAlertOnce = true,
-                    silent = followsFastAlert(FAST_PING, p.id),
+                    id = PING_NOTIFICATION_ID, group = NotificationGroups.PING,
+                    onlyAlertOnce = action.onlyAlertOnce,
                     channel = if (quiet) NotificationChannels.PINGS_QUIET else NotificationChannels.PINGS,
                     title = title, body = body, deepLink = "risaina://app/ping/${p.id}",
                     category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
@@ -143,10 +151,12 @@ class RisainaNotifier @Inject constructor(
                 }
                 // Same id as the quick "sent you a message" posted from the push (messageNotificationId),
                 // so this replaces it in place without a second alert.
+                val id = messageNotificationId(m.id)
+                val action = FastAlerts.detailedAction(followsFastAlert(FAST_MESSAGE, m.id), showing(id))
+                if (action == DetailedAction.SKIP) return
                 post(
-                    id = messageNotificationId(m.id),
-                    onlyAlertOnce = true,
-                    silent = followsFastAlert(FAST_MESSAGE, m.id),
+                    id = id, group = NotificationGroups.CHAT,
+                    onlyAlertOnce = action.onlyAlertOnce,
                     channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
                     title = partner, body = body, deepLink = "risaina://app/messages",
                     category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
@@ -157,7 +167,7 @@ class RisainaNotifier @Inject constructor(
             Incoming.WidgetChanged -> {
                 ensureWidgetChannel()
                 post(
-                    id = WIDGET_NOTIFICATION_ID, onlyAlertOnce = true, channel = WIDGET_CHANNEL,
+                    id = WIDGET_NOTIFICATION_ID, group = NotificationGroups.WIDGET, onlyAlertOnce = true, channel = WIDGET_CHANNEL,
                     title = partner, body = "${partner.substringBefore(" ")} updated your widget", deepLink = "risaina://app/home",
                     category = NotificationCompat.CATEGORY_STATUS, priority = NotificationCompat.PRIORITY_LOW,
                 )
@@ -176,14 +186,15 @@ class RisainaNotifier @Inject constructor(
                     return
                 }
                 post(
-                    id = GAME_NOTIFICATION_ID, channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
+                    id = GAME_NOTIFICATION_ID, group = NotificationGroups.GAME,
+                    channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
                     title = partner, body = if (prefs.previewInNotifications) "${partner.substringBefore(" ")} $body" else "New activity",
                     deepLink = "risaina://app/messages", category = NotificationCompat.CATEGORY_MESSAGE, priority = NotificationCompat.PRIORITY_DEFAULT,
                     onlyAlertOnce = GameNotificationText.alertOnce(item.action),
                 )
             }
             Incoming.Unlinked -> post(
-                id = 9001, channel = NotificationChannels.SYSTEM, title = "Risaina",
+                id = 9001, group = NotificationGroups.SYSTEM, channel = NotificationChannels.SYSTEM, title = "Risaina",
                 body = "Your pairing has ended.", deepLink = "risaina://app/home",
                 category = NotificationCompat.CATEGORY_STATUS, priority = NotificationCompat.PRIORITY_LOW,
             )
@@ -208,7 +219,7 @@ class RisainaNotifier @Inject constructor(
             // Checked under the lock, so the sync cannot post in between (see postLock).
             if (pingId != null && pingDao.byId(pingId) != null) return
             post(
-                id = PING_NOTIFICATION_ID,
+                id = PING_NOTIFICATION_ID, group = NotificationGroups.PING,
                 channel = if (quiet) NotificationChannels.PINGS_QUIET else NotificationChannels.PINGS,
                 title = "$partner is thinking of you", body = "Tap to see", deepLink = "risaina://app/home",
                 category = NotificationCompat.CATEGORY_SOCIAL, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH,
@@ -234,7 +245,7 @@ class RisainaNotifier @Inject constructor(
             // left out on purpose; a generic "Sent you a message" must not replace it.
             if (messageDao.byId(messageId) != null) return
             post(
-                id = messageNotificationId(messageId),
+                id = messageNotificationId(messageId), group = NotificationGroups.CHAT,
                 channel = if (quiet) NotificationChannels.MESSAGES_QUIET else NotificationChannels.MESSAGES,
                 title = partner, body = "Sent you a message", deepLink = "risaina://app/messages",
                 category = NotificationCompat.CATEGORY_MESSAGE, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
@@ -252,7 +263,7 @@ class RisainaNotifier @Inject constructor(
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val took = latencyMillis?.let { " It took ${formatLatency(it)}." } ?: ""
         post(
-            id = TEST_NOTIFICATION_ID, channel = NotificationChannels.PINGS,
+            id = TEST_NOTIFICATION_ID, group = NotificationGroups.SYSTEM, channel = NotificationChannels.PINGS,
             title = "Test notification ✓", body = "Pushes reach this phone.$took", deepLink = "risaina://app/home",
             category = NotificationCompat.CATEGORY_STATUS, priority = NotificationCompat.PRIORITY_HIGH,
         )
@@ -315,7 +326,11 @@ class RisainaNotifier @Inject constructor(
         )
     }
 
-    private fun post(id: Int, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int, onlyAlertOnce: Boolean = false, silent: Boolean = false) {
+    /**
+     * [group] is the kind's own group (NotificationGroups). No setSilent: it put the notification into
+     * AndroidX's "silent" group; a quiet update uses [onlyAlertOnce] instead.
+     */
+    private fun post(id: Int, group: String, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int, onlyAlertOnce: Boolean = false) {
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(deepLink)).apply {
             setPackage(context.packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -330,8 +345,8 @@ class RisainaNotifier @Inject constructor(
             .setPriority(priority)
             .setAutoCancel(true)
             .setOnlyAlertOnce(onlyAlertOnce)
-            .setSilent(silent)
-            .setVibrate(if (channel == NotificationChannels.PINGS && !silent) NotificationChannels.HEARTBEAT else null)
+            .setVibrate(if (channel == NotificationChannels.PINGS) NotificationChannels.HEARTBEAT else null)
+            .setGroup(group)
             .setContentIntent(pending)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(
