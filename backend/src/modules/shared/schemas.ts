@@ -7,6 +7,7 @@ import {
   GAME_PRIZES,
   GAME_STATUSES,
   LIST_KINDS,
+  LIST_MARKERS,
   LIVE_LOCATION_REASONS,
   MEDIA_CATEGORIES,
   MESSAGE_TYPES,
@@ -331,6 +332,7 @@ export const Milestone = z
 // --- Lists --------------------------------------------------------------------------------
 
 export const ListKind = z.enum(LIST_KINDS);
+export const ListMarker = z.enum(LIST_MARKERS);
 
 export const ListItem = z
   .object({
@@ -339,6 +341,8 @@ export const ListItem = z
     done: z.boolean(),
     doneBy: IdString.nullable(),
     doneAt: IsoDateTimeNullable,
+    addedBy: IdString.nullable().meta({ description: 'Who added the item; null on items from before' }),
+    addedAt: IsoDateTimeNullable.meta({ description: 'When it was added; null on items from before' }),
   })
   .meta({ id: 'ListItem' });
 
@@ -356,6 +360,13 @@ export const List = z
     version: z.number().int().min(1),
     createdAt: IsoDateTime,
     updatedAt: IsoDateTime,
+    // A plain string in RESPONSES (tolerant reader, as game kinds): an enum here would turn every
+    // GET /lists into a 500 once the database holds a marker this build does not know.
+    marker: z.string().meta({
+      description:
+        "Row marker: 'none' (default), 'number' or 'bullet'. Clients must tolerate unknown values.",
+    }),
+    checkboxes: z.boolean().meta({ description: 'Rows show checkboxes (default true)' }),
   })
   .meta({ id: 'List' });
 
@@ -622,7 +633,13 @@ export const Event = z
     id: IdString,
     coupleId: IdString,
     seq: z.number().int().min(1),
-    type: EventType,
+    // A plain string in RESPONSES on purpose (tolerant reader): GET /events serializes through this
+    // schema, so an enum would answer 500 for the whole feed once the log holds a type this build
+    // does not know (a rollback after a newer build stored calendar.* or alarm.* events), stalling
+    // sync on both phones. The values on the wire are the same.
+    type: z.string().meta({
+      description: `Event type, e.g. ${EVENT_TYPES.slice(0, 3).join(', ')}. Clients must ignore types they do not know.`,
+    }),
     actorId: IdString,
     payload: z.record(z.string(), z.unknown()),
     createdAt: IsoDateTime,

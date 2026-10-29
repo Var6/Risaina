@@ -379,6 +379,9 @@ export const VALIDATORS: Record<string, Document> = {
               done: bool,
               doneBy: nullableObjectId,
               doneAt: nullableDate,
+              // optional (item attribution, added later; never in `required`)
+              addedBy: nullableObjectId,
+              addedAt: nullableDate,
             },
           },
         },
@@ -387,6 +390,12 @@ export const VALIDATORS: Record<string, Document> = {
         createdAt: date,
         updatedAt: date,
         deletedAt: nullableDate,
+        // Format and retry key: OPTIONAL and never in `required`. Only fresh databases get these
+        // rules: the live validator cannot change (no collMod), and it accepts them as extra fields.
+        // marker is a plain string so a new marker never needs collMod (Zod is the allow-list).
+        marker: { bsonType: 'string', minLength: 1, maxLength: 20 },
+        checkboxes: bool,
+        clientKey: { bsonType: 'string', minLength: 1, maxLength: 64 },
       },
     },
   },

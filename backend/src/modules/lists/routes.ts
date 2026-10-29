@@ -4,7 +4,7 @@ import type { AppContext } from '../../app-context.js';
 import { errors } from '../../lib/errors.js';
 import { parseId } from '../../lib/ids.js';
 import { ErrorEnvelope, IdParams, NoContent } from '../shared/schemas.js';
-import { CreateListBody, ListListResponse, ListResponse, PatchListBody } from './schemas.js';
+import { ConvertListBody, CreateListBody, ListListResponse, ListResponse, PatchListBody } from './schemas.js';
 import { ListService } from './service.js';
 
 const TAG = 'Lists';
@@ -15,7 +15,7 @@ export const listRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
   const security = [{ bearerAuth: [] }];
   const errs = { 401: ErrorEnvelope, 404: ErrorEnvelope, 409: ErrorEnvelope };
 
-  // One per-user budget shared by POST/PATCH/DELETE (the global per-IP limit still applies first).
+  // One per-user budget shared by POST/PATCH/DELETE and convert (the global per-IP limit still applies first).
   // createRateLimit is used instead of route config because route limits run onRequest, before
   // authentication, so they could only key by IP.
   const writeLimiter = app.createRateLimit({
@@ -53,12 +53,56 @@ export const listRoutes: FastifyPluginAsync<AppContext> = async (app, ctx) => {
       schema: {
         tags: [TAG],
         summary: 'Create a note or checklist',
+        description:
+          'With clientKey, a repeat with the same key answers 200 with the list the first request created ' +
+          '(404 if it has been deleted since) and emits nothing.',
         security,
         body: CreateListBody,
-        response: { 201: ListResponse, 400: ErrorEnvelope, 429: ErrorEnvelope, ...errs },
+        response: { 201: ListResponse, 200: ListResponse, 400: ErrorEnvelope, 429: ErrorEnvelope, ...errs },
       },
     },
-    async (req, reply) => reply.code(201).send(await service.create(req.couple!, req.user!.id, req.body)),
+    async (req, reply) => {
+      const { list, created } = await service.create(req.couple!, req.user!.id, req.body);
+      return reply.code(created ? 201 : 200).send({ list });
+    },
+  );
+
+  r.get(
+    '/lists/:id',
+    {
+      ...guarded,
+      schema: {
+        tags: [TAG],
+        summary: 'One shared list (404 when deleted or not in the couple)',
+        security,
+        params: IdParams,
+        response: { 200: ListResponse, ...errs },
+      },
+    },
+    async (req) => service.get(req.couple!, parseId(req.params.id, 'List')),
+  );
+
+  r.post(
+    '/lists/:id/convert',
+    {
+      ...guardedWrite,
+      schema: {
+        tags: [TAG],
+        summary: 'Turn a note into a checklist or a checklist into a note',
+        description:
+          'note → checklist: each non-blank body line becomes an item (bullets, numbers and [ ] / [x] are ' +
+          'stripped; [x] ticks it; lines over 300 characters become several items). Once 200 items are ' +
+          'reached, the remaining lines stay in the body. checklist → note: the items are written as lines ' +
+          'below the body (numbers, bullets, ☐ / ☑ as the list was drawn); items that would take the body ' +
+          'over 10,000 characters stay items. Converting to the current kind only applies marker/checkboxes. ' +
+          'Increments version and emits list.updated; expectedVersion as for PATCH.',
+        security,
+        params: IdParams,
+        body: ConvertListBody,
+        response: { 200: ListResponse, 400: ErrorEnvelope, 429: ErrorEnvelope, ...errs },
+      },
+    },
+    async (req) => service.convert(req.couple!, req.user!.id, parseId(req.params.id, 'List'), req.body),
   );
 
   r.patch(
