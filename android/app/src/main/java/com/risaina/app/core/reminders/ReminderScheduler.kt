@@ -15,6 +15,7 @@ import com.risaina.app.core.database.ReminderLogEntity
 import com.risaina.app.core.datastore.ReminderSettingsStore
 import com.risaina.app.core.datastore.SessionStore
 import com.risaina.app.core.domain.CalendarOccasions
+import com.risaina.app.core.domain.Reminder
 import com.risaina.app.core.domain.ReminderInput
 import com.risaina.app.core.domain.ReminderPlanner
 import dagger.Binds
@@ -26,8 +27,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -36,6 +40,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -106,12 +111,17 @@ class ReminderScheduler @Inject constructor(
         }
     }
 
+    /**
+     * Debounced: a newer request cancels an older one only while it is still waiting. Once a run has
+     * begun it finishes (a newer request runs after it), so a cancel never lands between claiming a
+     * reminder and posting it.
+     */
     override fun request() {
         synchronized(lock) {
             pending?.cancel()
             pending = scope.launch {
                 delay(DEBOUNCE_MS)
-                runQuietly()
+                withContext(NonCancellable) { runQuietly() }
             }
         }
     }
@@ -143,10 +153,8 @@ class ReminderScheduler @Inject constructor(
         )
         val entries = calendarDao.all().first().mapNotNull { it.toDomain() }
         val plan = ReminderPlanner.plan(ReminderInput(entries, occasions, settings, session.userId, time.zone(), now, partnerZone))
-        for (r in plan.due) {
-            // Claimed even when nothing can be posted (notifications off): it is not owed later.
-            if (logDao.insertOrIgnore(ReminderLogEntity(r.key, now.toEpochMilli())) != -1L) notifier.post(r, partner, partnerZone)
-        }
+        // Claimed even when nothing can be posted (notifications off): it is not owed later.
+        claimAndPost(plan.due, { key -> logDao.insertOrIgnore(ReminderLogEntity(key, now.toEpochMilli())) != -1L }) { r -> notifier.post(r, partner, partnerZone) }
         logDao.prune(now.minus(LOG_KEEP).toEpochMilli())
         plan.next?.let(::arm) ?: cancelAlarm()
     }
@@ -182,6 +190,19 @@ class ReminderScheduler @Inject constructor(
     )
 
     companion object {
+        /**
+         * Each reminder is claimed ([claim] true: this run won its key), then posted. The two go
+         * together even when the run is cancelled (a receiver's time running out): a key claimed
+         * but not posted would never be posted. Cancelled, the run stops before the next reminder,
+         * whose key stays free for the next run.
+         */
+        internal suspend fun claimAndPost(due: List<Reminder>, claim: suspend (String) -> Boolean, post: suspend (Reminder) -> Unit) {
+            for (r in due) {
+                currentCoroutineContext().ensureActive()
+                withContext(NonCancellable) { if (claim(r.key)) post(r) }
+            }
+        }
+
         const val ACTION_REMIND = "com.risaina.app.REMIND"
         private const val REQUEST_CODE = 6060
         private const val DEBOUNCE_MS = 2_000L
