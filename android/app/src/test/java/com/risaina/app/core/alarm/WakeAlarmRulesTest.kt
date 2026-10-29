@@ -294,8 +294,8 @@ class WakeAlarmRulesTest {
             ZoneLines("6:00 pm for you · 6:30 am for Raina · the next day for them", null),
             WakeAlarmRules.zoneLines(ring, india, la, india, "Raina", uk),
         )
-        // Theirs not shared: nothing to compare, unless the alarm was set on another clock.
-        assertNull(WakeAlarmRules.zoneLines(ring, india, india, null, "Raina", uk))
+        // Theirs not shared: they may be far away, so the line still says it is one moment, not one clock time.
+        assertEquals(ZoneLines("Rings at the same moment on both phones", null), WakeAlarmRules.zoneLines(ring, india, india, null, "Raina", uk))
         assertEquals(
             ZoneLines("4:30 am for you. Rings at the same moment on both phones", "That's 4:30 am for you"),
             WakeAlarmRules.zoneLines(londonRing, london, india, null, "Raina", uk),

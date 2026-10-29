@@ -279,19 +279,22 @@ object WakeAlarmRules {
     /**
      * The editor's two-zone line for a ring at [ring] set in [anchor]: "6:30 am for you · 9:00 am for
      * Aanya · tomorrow for them", and a warning when it falls in someone's night (00:00–05:00), as
-     * in "That's 2:00 am for Aanya". Null when the two of you are on one clock (or theirs is not
-     * shared) and it is the anchor's time too. Set in a third zone, one line: "12:00 pm for you
-     * both", or, theirs unknown, "12:00 pm for you. Rings at the same moment on both phones".
+     * in "That's 2:00 am for Aanya". Null when the two of you are on one clock and it is the
+     * anchor's time too; set in a third zone, one line: "12:00 pm for you both". With the partner's
+     * zone unknown (they hide their local time) nothing shows you share a clock, and they may be far
+     * away: only "the same moment on both phones".
      */
     fun zoneLines(ring: Instant, anchor: ZoneId, mine: ZoneId, partnerZone: ZoneId?, partnerName: String, locale: Locale = Locale.getDefault()): ZoneLines? {
         val myTime = ring.atZone(mine).toLocalTime()
-        if (partnerZone == null || TimeZones.sameClock(mine, partnerZone, ring)) {
+        if (partnerZone == null) {
+            return ZoneLines(
+                if (TimeZones.sameClock(mine, anchor, ring)) "Rings at the same moment on both phones" else "${timeText(myTime, locale)} for you. Rings at the same moment on both phones",
+                nightWarning(myTime, "you", locale),
+            )
+        }
+        if (TimeZones.sameClock(mine, partnerZone, ring)) {
             if (TimeZones.sameClock(mine, anchor, ring)) return null
-            return if (partnerZone == null) {
-                ZoneLines("${timeText(myTime, locale)} for you. Rings at the same moment on both phones", nightWarning(myTime, "you", locale))
-            } else {
-                ZoneLines("${timeText(myTime, locale)} for you both", nightWarning(myTime, "you both", locale))
-            }
+            return ZoneLines("${timeText(myTime, locale)} for you both", nightWarning(myTime, "you both", locale))
         }
         val theirTime = ring.atZone(partnerZone).toLocalTime()
         val dayNote = when (ring.atZone(partnerZone).toLocalDate().compareTo(ring.atZone(mine).toLocalDate())) {
