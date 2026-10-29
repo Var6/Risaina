@@ -285,19 +285,19 @@ class ListSyncEngine @Inject constructor(
 
     /** Deletes the list for both people. A list only on this phone is simply dropped. */
     suspend fun delete(id: String): AppResult<Unit> {
-        val key = resolve(id)
-        val s = sessions[key]
-        s?.debounce?.cancel()
-        if (isLocal(key)) {
-            s?.let(::close)
-            draftDao.delete(key)
-            return AppResult.Success(Unit)
+        val s = sessions[resolve(id)] ?: return deleteById(resolve(id))
+        s.debounce?.cancel()
+        // After any send on its way: a create that lands meanwhile is deleted on the server too.
+        val r = s.mutex.withLock {
+            deleteById(s.id).also { if (it is AppResult.Success) close(s) }
         }
-        val r = s?.mutex?.withLock { lists.delete(key) } ?: lists.delete(key)
-        if (r is AppResult.Success) {
-            s?.let(::close)
-            draftDao.delete(key)
-        } else if (s != null && s.state.value.dirty) scheduleSend(s)
+        if (r is AppResult.Failure && s.state.value.dirty) scheduleSend(s)
+        return r
+    }
+
+    private suspend fun deleteById(key: String): AppResult<Unit> {
+        val r = if (isLocal(key)) AppResult.Success(Unit) else lists.delete(key)
+        if (r is AppResult.Success) draftDao.delete(key)
         return r
     }
 
