@@ -19,11 +19,13 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,7 +42,12 @@ class WakeAlarmSyncTest {
     private val notifier = mockk<WakeAlarmNotifier>(relaxed = true)
     private val repository = mockk<WakeAlarmRepository>()
     private val coupleDao = mockk<CoupleDao>().also { coEvery { it.partner() } returns PartnerEntity("bea", "Raina", null) }
-    private val session = mockk<SessionStore>().also { coEvery { it.current() } returns Session("me", "a", Instant.MAX, "r", Instant.MAX, "d") }
+    private val signedIn = Session("me", "a", Instant.MAX, "r", Instant.MAX, "d")
+    private val couple = MutableStateFlow<String?>("c")
+    private val session = mockk<SessionStore>().also {
+        coEvery { it.current() } returns signedIn
+        every { it.activeCoupleId } returns couple
+    }
     private val prefs = mockk<PreferencesStore>().also { coEvery { it.current() } returns Preferences() }
     private val sync = WakeAlarmSync(
         json, store, controller, notifier, repository, coupleDao, session, prefs, FixedTimeProvider(Clock.fixed(now, ZoneId.of("Asia/Kolkata"))),
@@ -151,6 +158,46 @@ class WakeAlarmSyncTest {
         // Not again on the next refresh.
         sync.refresh()
         verify(exactly = 1) { notifier.postSet(any(), any(), any(), any()) }
+    }
+
+    @Test fun `a sign-out while GET alarms is out leaves the store empty`() = runTest {
+        sync.apply(alarmEvent(1, "alarm.created", dto("old")), "me", replay = true)
+        // The GET leaves, a cold server keeps it a while, and meanwhile Settings signs out
+        // (WakeLifecycle's clearAll empties the store). Then the GET answers.
+        coEvery { repository.list() } coAnswers {
+            store.clear()
+            AppResult.Success(listOfNotNull(dto().toDomain(), dto("b2").toDomain()))
+        }
+        sync.refresh()
+        assertEquals(WakeLocal(), store.current())
+        verify(exactly = 0) { notifier.postSet(any(), any(), any(), any()) }
+        // So the next account's first refresh primes, and announces nothing it already had.
+        assertFalse(store.current().primed)
+    }
+
+    @Test fun `another account signed in while GET alarms was out is not given the old one's alarms`() = runTest {
+        coEvery { repository.list() } coAnswers {
+            coEvery { session.current() } returns signedIn.copy(userId = "someone")
+            AppResult.Success(listOfNotNull(dto().toDomain()))
+        }
+        sync.refresh()
+        assertTrue(store.current().alarms.isEmpty())
+        verify(exactly = 0) { notifier.postSet(any(), any(), any(), any()) }
+    }
+
+    @Test fun `an alarm event that arrives across a sign-out or an unlink is not written back`() = runTest {
+        // Cleared while the event was being applied (the partner's name is read first).
+        coEvery { coupleDao.partner() } coAnswers { store.clear(); PartnerEntity("bea", "Raina", null) }
+        sync.apply(alarmEvent(1, "alarm.created", dto()), "me", replay = false)
+        assertTrue(store.current().alarms.isEmpty())
+        assertNull(store.current().me)
+        coEvery { coupleDao.partner() } returns PartnerEntity("bea", "Raina", null)
+        // Unlinked before it was applied.
+        couple.value = null
+        sync.apply(alarmEvent(2, "alarm.created", dto()), "me", replay = false)
+        assertTrue(store.current().alarms.isEmpty())
+        verify(exactly = 0) { notifier.postSet(any(), any(), any(), any()) }
+        verify(exactly = 0) { controller.rearm(any()) }
     }
 
     @Test fun `nothing here can fail the event, so the cursor always moves on`() = runTest {

@@ -108,7 +108,20 @@ class WakeAlarmStore @Inject constructor(@ApplicationContext context: Context) {
      */
     private val deleted = HashMap<String, Long>()
 
+    /**
+     * Bumped by every [clear] (sign-out, unlink). A GET or an event that started before it carries
+     * the old couple's alarms, so its writes go through [ifCurrent] and are dropped. In memory
+     * only, like [deleted]: neither outlives the process.
+     */
+    @Volatile var generation: Long = 0L
+        private set
+
     fun current(): WakeLocal = _state.value
+
+    /** Runs [block] under the lock, unless the store was cleared since [generation] was read: then null. */
+    fun <T> ifCurrent(generation: Long, block: () -> T): T? = synchronized(lock) {
+        if (generation == this.generation) block() else null
+    }
 
     private fun load(): WakeLocal = runCatching {
         prefs.getString(KEY, null)?.let { json.decodeFromString(WakeLocal.serializer(), it) }
@@ -125,6 +138,7 @@ class WakeAlarmStore @Inject constructor(@ApplicationContext context: Context) {
     }
 
     fun clear() = synchronized(lock) {
+        generation++
         deleted.clear()
         prefs.edit { remove(KEY) }
         _state.value = WakeLocal()

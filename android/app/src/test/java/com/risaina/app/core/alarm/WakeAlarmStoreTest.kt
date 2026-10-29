@@ -94,4 +94,13 @@ class WakeAlarmStoreTest {
         assertEquals(WakeLocal(), store.current())
         assertEquals(WakeLocal(), WakeAlarmStore(context).current())
     }
+
+    @Test fun `a write begun before a clear is dropped, one begun after it goes through`() {
+        val before = store.generation
+        store.clear()
+        assertNull(store.ifCurrent(before) { store.upsert(dto(), 1) })
+        assertTrue(store.current().alarms.isEmpty())
+        assertEquals(true, store.ifCurrent(store.generation) { store.upsert(dto(), 1) })
+        assertEquals(listOf("a1"), store.current().alarms.map { it.id })
+    }
 }

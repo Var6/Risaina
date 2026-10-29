@@ -14,6 +14,7 @@ import com.risaina.app.core.network.AlarmDto
 import com.risaina.app.core.network.AlarmWakeDto
 import com.risaina.app.core.network.EventDto
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -50,7 +51,11 @@ class WakeAlarmSync @Inject constructor(
      */
     suspend fun apply(event: EventDto, me: String, replay: Boolean) {
         try {
-            applyOrThrow(event, me, replay)
+            val generation = store.generation
+            // Signed out or unlinked while this event was on its way: the store is emptied (or about
+            // to be) for that, and the old couple's alarm must not be written back.
+            if (sessionStore.current()?.userId != me || sessionStore.activeCoupleId.first() != event.coupleId) return
+            applyOrThrow(event, me, replay, generation)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -58,19 +63,21 @@ class WakeAlarmSync @Inject constructor(
         }
     }
 
-    private suspend fun applyOrThrow(event: EventDto, me: String, replay: Boolean) {
-        identify(me)
+    private suspend fun applyOrThrow(event: EventDto, me: String, replay: Boolean, generation: Long) {
+        identify(me, generation)
         val p = event.payload
         when (event.type) {
             "alarm.created", "alarm.updated" -> {
                 // One that does not decode is skipped, not thrown: the next GET /alarms has it.
                 val dto = p.obj("alarm")?.let { runCatching { json.decodeFromJsonElement(AlarmDto.serializer(), it) }.getOrNull() } ?: return
-                store.upsert(dto, time.now().toEpochMilli())
-                if (event.actorId == me) store.update { it.copy(announced = it.announced + dto.id) }
+                store.ifCurrent(generation) {
+                    store.upsert(dto, time.now().toEpochMilli())
+                    if (event.actorId == me) store.update { it.copy(announced = it.announced + dto.id) }
+                } ?: return
                 controller.rearm()
                 if (!replay && event.actorId != me) {
                     val change = if (event.type == "alarm.created") "created" else p.str("change") ?: "edited"
-                    store.current().alarm(dto.id)?.let { announce(it, me, change, notify = p.bool("notify") == true) }
+                    store.current().alarm(dto.id)?.let { announce(it, me, change, notify = p.bool("notify") == true, generation) }
                 }
             }
             "alarm.deleted" -> p.str("alarmId")?.let { id ->
@@ -102,11 +109,16 @@ class WakeAlarmSync @Inject constructor(
      */
     suspend fun refresh(): AppResult<Unit> {
         val me = sessionStore.current()?.userId ?: return AppResult.Success(Unit)
-        identify(me)
+        val generation = store.generation
+        identify(me, generation)
         val requestedAt = time.now().toEpochMilli()
         return when (val r = repository.list()) {
             is AppResult.Success -> {
-                val added = store.replaceAll(r.value.map { it.toDto() }, requestedAt)
+                // Signed out, or into another account, while the GET was out (a cold server can take
+                // half a minute): the store was emptied for that, and stays empty of this answer.
+                if (sessionStore.current()?.userId != me) return AppResult.Success(Unit)
+                val added = store.ifCurrent(generation) { store.replaceAll(r.value.map { it.toDto() }, requestedAt) }
+                    ?: return AppResult.Success(Unit)
                 val s = store.current()
                 if (!s.primed) {
                     // Already there at sign-in: seen on this person's other phone, unless none of
@@ -114,10 +126,12 @@ class WakeAlarmSync @Inject constructor(
                     // build that understands alarms (an update from one without), and the partner's
                     // alarm would otherwise ring here at 5 am unannounced.
                     val unseen = s.domain().filter { it.createdBy != me && it.member(me)?.ready == null }.map { it.id }.toSet()
-                    store.update { it.copy(primed = true, announced = it.announced + (it.alarms.map { a -> a.id } - unseen)) }
-                    for (id in unseen) store.current().alarm(id)?.let { announce(it, me, "created", notify = false) }
+                    store.ifCurrent(generation) {
+                        store.update { it.copy(primed = true, announced = it.announced + (it.alarms.map { a -> a.id } - unseen)) }
+                    } ?: return AppResult.Success(Unit)
+                    for (id in unseen) store.current().alarm(id)?.let { announce(it, me, "created", notify = false, generation) }
                 } else {
-                    for (id in added) s.alarm(id)?.let { announce(it, me, "created", notify = false) }
+                    for (id in added) s.alarm(id)?.let { announce(it, me, "created", notify = false, generation) }
                 }
                 controller.rearm()
                 AppResult.Success(Unit)
@@ -127,10 +141,12 @@ class WakeAlarmSync @Inject constructor(
     }
 
     /** The receivers know whose phone this is, and the ring screen the partner's name, without the database. */
-    private suspend fun identify(me: String) {
+    private suspend fun identify(me: String, generation: Long) {
         val partner = runCatching { coupleDao.partner()?.displayName }.getOrNull()
-        val s = store.current()
-        if (s.me != me || (partner != null && partner != s.partnerName)) store.setIdentity(me, partner)
+        store.ifCurrent(generation) {
+            val s = store.current()
+            if (s.me != me || (partner != null && partner != s.partnerName)) store.setIdentity(me, partner)
+        }
     }
 
     /**
@@ -138,13 +154,14 @@ class WakeAlarmSync @Inject constructor(
      * their change for notice ([notify]). Follows the in-app notification switch, previews and
      * quiet hours (a silent channel then).
      */
-    private suspend fun announce(alarm: WakeAlarm, me: String, change: String, notify: Boolean) {
+    private suspend fun announce(alarm: WakeAlarm, me: String, change: String, notify: Boolean, generation: Long) {
         val now = time.now()
         val mine = alarm.member(me)
         if (WakeAlarmRules.next(alarm, mine, now) == null) return
         val first = alarm.id !in store.current().announced && alarm.createdBy != me
         if (!first && !notify) return
-        store.update { it.copy(announced = it.announced + alarm.id) }
+        // Cleared meanwhile: nothing is posted for a couple that is no longer on this phone.
+        store.ifCurrent(generation) { store.update { it.copy(announced = it.announced + alarm.id) } } ?: return
         val prefs = preferencesStore.current()
         if (!prefs.notificationsEnabled) return
         val quiet = !QuietHoursPolicy.shouldAlert(prefs.quietHours, prefs.allowPushInQuietHours, now)
