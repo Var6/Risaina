@@ -1,5 +1,6 @@
 package com.risaina.app.ui
 
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -10,6 +11,8 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.risaina.app.core.designsystem.components.EmptyState
 import com.risaina.app.core.designsystem.components.ErrorState
+import com.risaina.app.core.designsystem.components.HelpAction
+import com.risaina.app.core.designsystem.components.HelpPoint
 import com.risaina.app.core.designsystem.theme.RisainaTheme
 import com.risaina.app.core.model.PingStatus
 import com.risaina.app.feature.onboarding.WelcomeScreen
@@ -101,6 +104,15 @@ class ComposeScreensTest {
     fun reducedMotion_stillRendersStates() {
         rule.setContent { RisainaTheme(reducedMotion = true) { TouchPingButton(state = PingButtonState.Failed("Offline"), emoji = "💭", burstKey = 3, onTap = {}, onLongPress = {}) } }
         rule.onNodeWithContentDescription("Send a touch ping").assertIsDisplayed()
+    }
+
+    @Test
+    fun helpAction_opensItsSheet_withTheInstructions() {
+        rule.setContent { RisainaTheme { HelpAction("About widgets") { HelpPoint("Long-press your home screen.", title = "Adding one") } } }
+        rule.onNodeWithText("About widgets").assertDoesNotExist()
+        rule.onNodeWithContentDescription("Help").assertHasClickAction().performClick()
+        rule.onNodeWithText("About widgets").assertIsDisplayed()
+        rule.onNodeWithText("Long-press your home screen.").assertIsDisplayed()
     }
 
     @Suppress("unused")
