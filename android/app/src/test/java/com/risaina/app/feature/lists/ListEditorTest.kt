@@ -259,9 +259,10 @@ class ListEditorTest {
     }
 
     @Test fun `numbered and bulleted cards, and a note card`() {
-        val numbered = ListPreview.card(entry(ListDoc(marker = "number", checkboxes = false, items = listOf(DocItem("a", "One"), DocItem("b", "Two")))), People(null, null, null), now, zone)
+        val numbered = ListPreview.card(entry(ListDoc(marker = "number", checkboxes = false, items = listOf(DocItem("a", "One"), DocItem("b", "Two", done = true, doneBy = "bea")))), People(null, null, null), now, zone)
         assertEquals(listOf("1.", "2."), numbered.lines.map { it.prefix })
         assertFalse(numbered.showProgress)
+        assertEquals("a tick from the older app (boxes on every list) shows here too", listOf(false, true), numbered.lines.map { it.done })
         val note = ListPreview.card(entry(ListDoc(kind = "note", title = "Ideas", body = "first\n\nsecond")), People(null, null, null), now, zone)
         assertEquals(listOf("first", "second"), note.lines.map { it.text })
         assertEquals("Note", note.kindLabel)

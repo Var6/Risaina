@@ -475,9 +475,12 @@ private fun LazyItemScope.RowItem(
     }
     var menu by remember { mutableStateOf(false) }
     val dragging = reorder.isDragging(key)
-    val struck = row.done && doc.checkboxes
+    // A tick shows with checkboxes off too: the older app has boxes on every list, so a partner
+    // on it can tick a row of a numbered list. It can be unticked from the row's menu.
+    val struck = row.done
     val label = row.text.ifBlank { "Empty item" }
     val moves = buildList {
+        if (row.done && !doc.checkboxes) add(CustomAccessibilityAction("Untick") { vm.toggle(row.id, false); true })
         if (index > 0) add(CustomAccessibilityAction("Move up") { vm.move(row.id, index - 1); true })
         if (index < count - 1) add(CustomAccessibilityAction("Move down") { vm.move(row.id, index + 1); true })
         if (index > 0) add(CustomAccessibilityAction("Move to top") { vm.move(row.id, 0); true })
@@ -506,6 +509,7 @@ private fun LazyItemScope.RowItem(
                     leadingIcon = { Icon(CalendarIcon, contentDescription = null) },
                     onClick = { menu = false; onAddToCalendar() },
                 )
+                if (row.done && !doc.checkboxes) DropdownMenuItem(text = { Text("Untick") }, onClick = { menu = false; vm.toggle(row.id, false) })
                 if (index > 0) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; vm.move(row.id, index - 1) })
                 if (index < count - 1) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; vm.move(row.id, index + 1) })
                 DropdownMenuItem(text = { Text("Delete item", color = Risaina.colors.danger) }, onClick = { menu = false; onDelete() })
@@ -556,7 +560,7 @@ private fun LazyItemScope.RowItem(
                     }
                 },
             )
-            people.tickLine(row, now)?.takeIf { doc.checkboxes }?.let {
+            people.tickLine(row, now)?.let {
                 Text(it, style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 2.dp))
             }
         }
