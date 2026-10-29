@@ -93,7 +93,14 @@ class ListsOverviewViewModel @Inject constructor(
     init {
         refresh()
         viewModelScope.launch {
-            engine.notices.filter { it is ListNotice.DeletedBeforeSaved }.collect { effects.trySend(noticeText(it, people.value.partnerName)) }
+            // Kept in Room until said here, so one that came while Lists was closed is said when it opens.
+            val said = HashSet<String>()
+            engine.dropped.collect { notices ->
+                for (n in notices) {
+                    if (said.add(n.listId)) effects.trySend(noticeText(n, people.value.partnerName))
+                    engine.acknowledge(n)
+                }
+            }
         }
     }
 

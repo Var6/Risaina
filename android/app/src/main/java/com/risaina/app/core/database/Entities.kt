@@ -133,7 +133,7 @@ data class ListDraftEntity(
     val baseJson: String,
     val mineJson: String,
     val editedAt: Long,
-    /** pending | sending | failed | orphaned (the list was deleted while this was unsent). */
+    /** pending | sending | failed | orphaned (the list was deleted while this was unsent) | dropped (a new list deleted before it was saved, until the overview says so). */
     val state: String,
     val lastError: String?,
     val attempts: Int,

@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -427,8 +428,6 @@ class ListSyncEngineTest {
 
     @Test fun `a new list whose create reply was lost is retried with its key, and a 404 then drops it and says so`() = runTest {
         val e = engine()
-        val notices = mutableListOf<ListNotice>()
-        engineScope().launch { e.notices.collect { notices += it } }
         server.loseCreateReply = true
         val id = e.createLocal(ListDoc(kind = "checklist", title = "Weekend", items = listOf(DocItem("c1", "Hike"))))
         val snap = open(e, id)
@@ -437,12 +436,24 @@ class ListSyncEngineTest {
         assertNotNull(draftDao.rows.value[id])
 
         server.lists.clear() // the partner deleted it meanwhile
-        e.sendAll()
+        e.sendAll() // the worker, with Lists not open
         runCurrent()
         assertEquals("both tries carry the same key", List(2) { "POST ${id.removePrefix(ListSyncEngine.LOCAL_PREFIX)}" }, server.calls)
-        assertTrue(draftDao.rows.value.isEmpty())
         assertEquals(SyncStatus.Gone, snap().status)
-        assertEquals(ListNotice.DeletedBeforeSaved(id, "Weekend"), notices.single())
+        // Kept until the overview has said so: not a card, never sent again.
+        assertEquals(ListSyncEngine.STATE_DROPPED, draftDao.rows.value.getValue(id).state)
+        assertTrue(ListOverview.entries(emptyList(), draftDao.all(), json).isEmpty())
+        assertTrue(e.sendAll())
+        assertEquals(2, server.calls.size)
+        e.release(id); advanceUntilIdle()
+        assertTrue("the editor closing does not take it", open(e, id)().status == SyncStatus.Gone && draftDao.rows.value[id] != null)
+
+        // Lists opens later: it is said once, then forgotten.
+        val dropped = e.dropped.first()
+        assertEquals(listOf(ListNotice.DeletedBeforeSaved(id, "Weekend")), dropped)
+        e.acknowledge(dropped.single())
+        assertTrue(draftDao.rows.value.isEmpty())
+        assertTrue(e.dropped.first().isEmpty())
     }
 
     @Test fun `a create retried after its reply was lost keeps what the partner did meanwhile`() = runTest {
