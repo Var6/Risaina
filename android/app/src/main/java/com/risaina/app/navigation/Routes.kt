@@ -28,6 +28,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object VerifyEmail
 @Serializable data object Lists
 @Serializable data object TheirWidget
+@Serializable data object WakeTogether
 @Serializable data class Sos(val id: String)
 @Serializable data class ListDetail(val id: String)
 // safety stream: Settings → Safety, the launcher "I'm in trouble" screen, and the partner's live location
