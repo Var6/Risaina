@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,6 +47,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.risaina.app.app.LocalSnackbar
 import com.risaina.app.core.designsystem.components.GhostButton
+import com.risaina.app.core.designsystem.components.HelpAction
+import com.risaina.app.core.designsystem.components.HelpPoint
 import com.risaina.app.core.designsystem.components.OutlineButton
 import com.risaina.app.core.designsystem.components.PrimaryButton
 import com.risaina.app.core.designsystem.components.RisainaCard
@@ -83,12 +86,13 @@ internal fun shareText(context: Context, body: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SafetyFrame(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+private fun SafetyFrame(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}, content: @Composable () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(title, style = MaterialTheme.typography.headlineSmall) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(BackIcon, contentDescription = "Back") } },
+                actions = actions,
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -114,23 +118,15 @@ fun SafetyScreen(onBack: () -> Unit, vm: SafetyViewModel = hiltViewModel()) {
         vm.refreshDevice()
         onPauseOrDispose { }
     }
-    SafetyFrame("Safety", onBack) {
+    SafetyFrame("Safety", onBack, actions = { SafetyHelp(s.partnerName) }) {
         Spacer(Modifier.height(8.dp))
         SectionHeader("Live location")
         LiveLocationControl(vm = vm)
-        Text(
-            "${s.partnerName} sees your position with an Open in Maps link, how accurate it is, your battery level and when it last updated.",
-            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
-        )
         HorizontalDivider(Modifier.padding(vertical = 16.dp))
         SectionHeader("Panic button")
         Spacer(Modifier.height(8.dp))
         PanicPanel(s, vm)
         GhostButton("Add \"I'm in trouble\" to your home screen", onClick = vm::pinPanicShortcut)
-        Text(
-            "You can also long-press the Risaina icon and choose \"I'm in trouble\". Nothing is sent until you hold the button.",
-            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
-        )
         HorizontalDivider(Modifier.padding(vertical = 16.dp))
         ReadinessCard(s, vm)
         HorizontalDivider(Modifier.padding(vertical = 16.dp))
@@ -151,6 +147,24 @@ fun SafetyScreen(onBack: () -> Unit, vm: SafetyViewModel = hiltViewModel()) {
                 "Risaina keeps only your latest position while you share and deletes it as soon as you stop, when the time runs out, " +
                 "when you sign out, or if you unlink. There is no location history.",
             style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
+        )
+    }
+}
+
+/**
+ * The "?" on Safety: what live location shows, and the other ways to the panic button. The privacy
+ * promise stays on the screen itself, next to what it covers.
+ */
+@Composable
+private fun SafetyHelp(partnerName: String) {
+    HelpAction("About Safety") {
+        HelpPoint(
+            "$partnerName sees your position with an Open in Maps link, how accurate it is, your battery level and when it last updated.",
+            title = "Live location",
+        )
+        HelpPoint(
+            "Add \"I'm in trouble\" to your home screen, or long-press the Risaina icon and choose \"I'm in trouble\". Nothing is sent until you hold the button.",
+            title = "Panic button shortcut",
         )
     }
 }
