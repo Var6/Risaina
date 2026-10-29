@@ -27,9 +27,12 @@ fun calendarEntry(
     updatedAt: Instant = Instant.parse("2026-01-01T00:00:00Z"),
     source: CalendarSource? = null,
     emoji: String? = null,
+    notes: String? = null,
+    durationMinutes: Int? = null,
+    version: Int = 1,
 ) = CalendarEntry(
-    id = id, coupleId = "c", createdBy = createdBy, updatedBy = createdBy, kind = kind, title = title, notes = null, emoji = emoji,
-    date = date, endDate = endDate, time = time, durationMinutes = null, timeZone = timeZone, repeat = repeat, repeatUntil = repeatUntil,
+    id = id, coupleId = "c", createdBy = createdBy, updatedBy = createdBy, kind = kind, title = title, notes = notes, emoji = emoji,
+    date = date, endDate = endDate, time = time, durationMinutes = durationMinutes, timeZone = timeZone, repeat = repeat, repeatUntil = repeatUntil,
     reminders = reminders, remindUserIds = remindUserIds, pinned = pinned, done = done, doneAt = null, doneBy = null, source = source,
-    clientKey = null, version = 1, createdAt = updatedAt, updatedAt = updatedAt,
+    clientKey = null, version = version, createdAt = updatedAt, updatedAt = updatedAt,
 )

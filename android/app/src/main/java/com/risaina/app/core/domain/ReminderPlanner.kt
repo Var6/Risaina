@@ -55,8 +55,11 @@ data class ReminderInput(
 )
 
 /**
- * One reminder. [key] ("{entry id or occasion key}|{occurrence date}|{offset}") is claimed in
- * reminder_log before posting, so the alarm, the hourly sync and app start never post it twice.
+ * One reminder. [key] is claimed in reminder_log before posting, so the alarm, the hourly sync and
+ * app start never post it twice: "{occasion key}|{occurrence date}|{offset}" for an occasion, and
+ * "{entry id}|{occurrence date}|{offset}|v{version}" for an entry. The version lets an entry moved
+ * later the same day remind again at its new time; the fire times before that change are skipped
+ * (updatedAt), so a rename or a tick never posts an old reminder a second time.
  */
 data class Reminder(
     val key: String,
@@ -121,7 +124,7 @@ object ReminderPlanner {
             for (occ in CalendarRules.occurrences(e, from, to)) {
                 val base = if (e.allDay) ZonedDateTime.of(occ, s.allDayTime, input.zone) else CalendarRules.start(e, occ, input.zone)!!.atZone(input.zone)
                 for (offset in e.reminders) {
-                    consider(Reminder("${e.id}|$occ|$offset", before(base, offset, e.allDay), offset, occ, e.allDay, entry = e), notBefore = e.updatedAt)
+                    consider(Reminder("${e.id}|$occ|$offset|v${e.version}", before(base, offset, e.allDay), offset, occ, e.allDay, entry = e), notBefore = e.updatedAt)
                 }
                 // Occurrences only get later: once the earliest reminder of this one is past the next found, stop.
                 val earliest = base.minusMinutes(furthest).toInstant()

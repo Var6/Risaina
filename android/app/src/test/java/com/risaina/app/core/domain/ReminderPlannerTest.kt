@@ -41,7 +41,7 @@ class ReminderPlannerTest {
         val e = calendarEntry(date = LocalDate.of(2026, 11, 14), reminders = listOf(1440))
         assertEquals(at(2026, 11, 13, 9), plan(listOf(e)).next)
         val due = plan(listOf(e), now = at(2026, 11, 13, 9)).due.single()
-        assertEquals("e1|2026-11-14|1440", due.key)
+        assertEquals("e1|2026-11-14|1440|v1", due.key)
         assertEquals(at(2026, 11, 13, 9), due.fireAt)
         // The all-day time is this phone's setting.
         assertEquals(at(2026, 11, 13, 8, 30), plan(listOf(e), settings = nothing.copy(allDayTime = LocalTime.of(8, 30))).next)
@@ -57,7 +57,7 @@ class ReminderPlannerTest {
     @Test fun `an all-day on-the-day reminder is still posted until eleven at night`() {
         val e = calendarEntry(date = LocalDate.of(2026, 10, 29), reminders = listOf(0, 1440))
         val late = plan(listOf(e), now = at(2026, 10, 29, 22, 30)).due
-        assertEquals(listOf("e1|2026-10-29|0"), late.map { it.key })
+        assertEquals(listOf("e1|2026-10-29|0|v1"), late.map { it.key })
         assertTrue(plan(listOf(e), now = at(2026, 10, 29, 23, 30)).due.isEmpty())
     }
 
@@ -67,6 +67,36 @@ class ReminderPlannerTest {
         val p = plan(listOf(e), now = now.plusSeconds(30))
         assertTrue(p.due.isEmpty())
         assertEquals(at(2026, 10, 29, 10, 10), p.next)
+    }
+
+    @Test fun `an entry moved later the same day after its reminder went off reminds again at the new time`() {
+        // "Call mum" at 18:00, 10 minutes before: posted at 17:50 and claimed under its key.
+        val call = calendarEntry(title = "Call mum", date = LocalDate.of(2026, 10, 29), time = LocalTime.of(18, 0), reminders = listOf(10))
+        val first = plan(listOf(call), now = at(2026, 10, 29, 17, 50)).due.single()
+        val claimed = setOf(first.key)
+        // At 17:55 Bea moves it to 21:00: the server's copy has a newer version and updatedAt.
+        val moved = call.copy(time = LocalTime.of(21, 0), version = 2, updatedAt = at(2026, 10, 29, 17, 55))
+        assertTrue(plan(listOf(moved), now = at(2026, 10, 29, 17, 56)).due.isEmpty())
+        assertEquals(at(2026, 10, 29, 20, 50), plan(listOf(moved), now = at(2026, 10, 29, 17, 56)).next)
+        val again = plan(listOf(moved), now = at(2026, 10, 29, 20, 50)).due.single()
+        assertTrue("the new reminder must not be taken for the one already posted", again.key !in claimed)
+        assertEquals(at(2026, 10, 29, 20, 50), again.fireAt)
+        // Posted once: the next run finds its key claimed, like any other.
+        assertEquals(again.key, plan(listOf(moved), now = at(2026, 10, 29, 20, 51)).due.single().key)
+    }
+
+    @Test fun `an edit after a reminder went off does not post that reminder again under the new version`() {
+        val call = calendarEntry(title = "Call mum", date = LocalDate.of(2026, 10, 29), time = LocalTime.of(18, 0), reminders = listOf(10))
+        assertEquals(1, plan(listOf(call), now = at(2026, 10, 29, 17, 50)).due.size)
+        // Renamed at 17:55, the time unchanged: the 17:50 reminder is before the change, so it is skipped.
+        val renamed = call.copy(title = "Call mum and dad", version = 2, updatedAt = at(2026, 10, 29, 17, 55))
+        assertTrue(plan(listOf(renamed), now = at(2026, 10, 29, 17, 56)).due.isEmpty())
+        // An all-day "on the day" given a time later that day, "at the time": it reminds at that time.
+        val allDay = calendarEntry(date = LocalDate.of(2026, 10, 29), reminders = listOf(0))
+        val dayKey = plan(listOf(allDay), now = at(2026, 10, 29, 9)).due.single().key
+        val timed = allDay.copy(time = LocalTime.of(19, 0), timeZone = "Asia/Kolkata", version = 2, updatedAt = at(2026, 10, 29, 12))
+        val atTime = plan(listOf(timed), now = at(2026, 10, 29, 19)).due.single()
+        assertTrue(atTime.key != dayKey)
     }
 
     @Test fun `nothing from before the reminders were first set up`() {
