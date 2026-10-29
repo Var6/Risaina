@@ -410,7 +410,14 @@ class ListSyncEngine @Inject constructor(
         }
     }
 
-    private suspend fun load(s: Session) = s.mutex.withLock {
+    private suspend fun load(s: Session) {
+        // Already open: no wait for the lock, which a send holds for its whole request (reopening a
+        // list just left, or one the worker is sending, would show "loading" until it is answered).
+        if (s.state.value.loaded || s.closed) return
+        loadLocked(s)
+    }
+
+    private suspend fun loadLocked(s: Session) = s.mutex.withLock {
         if (s.state.value.loaded || s.closed) return@withLock
         val id = s.id
         val draft = draftDao.get(id)

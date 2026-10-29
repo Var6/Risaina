@@ -230,6 +230,22 @@ class ListSyncEngineTest {
         assertNull(draftDao.rows.value["l"])
     }
 
+    @Test fun `reopening a list while its save is on its way shows it at once`() = runTest {
+        seed("l", 1, item("a", "Milk"))
+        val e = engine()
+        open(e, "l")
+        server.patchDelayMs = 5_000
+        e.edit("l", addRow("x", "Eggs"))
+        e.flush("l"); runCurrent()
+        assertEquals("the save is on its way", listOf("PATCH l@1"), server.calls)
+        var reopened: EditorSnapshot? = null
+        engineScope().launch { e.observe("l").collect { reopened = it } }
+        runCurrent()
+        assertEquals(listOf("Milk", "Eggs"), reopened?.doc?.items?.map { it.text })
+        advanceUntilIdle()
+        assertEquals(SyncStatus.Saved, reopened?.status)
+    }
+
     @Test fun `a trailing space is not sent again and never replaced by the trimmed copy`() = runTest {
         seed("l", 1, item("a", "Milk"))
         val e = engine()
