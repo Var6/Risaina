@@ -80,8 +80,9 @@ class WakeReportWorker @AssistedInject constructor(
                 }
                 is AppResult.Failure -> return when {
                     r.error.isRetryable && runAttemptCount < MAX_ATTEMPTS -> Result.retry()
-                    // An older server without alarms, or nothing left to report on: drop it.
-                    else -> { store.update { it.copy(pendingReport = null) }; Result.success() }
+                    // An older server without alarms, or nothing left to report on: counted as sent,
+                    // so it is not asked again on every re-arm, only after the next change.
+                    else -> { store.update { it.copy(reported = it.reported + pending, pendingReport = null) }; Result.success() }
                 }
             }
         }

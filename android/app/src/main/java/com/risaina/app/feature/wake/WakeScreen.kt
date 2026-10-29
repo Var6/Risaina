@@ -225,14 +225,18 @@ private fun AlarmCard(
             val zone = ZoneId.systemDefault()
             val now = Instant.now()
             row.skipped?.let { at ->
-                GhostButton("Undo skip (${WakeAlarmRules.dayText(at, zone, now).lowercase()})", onClick = { onSkip(at, false) }, enabled = enabled)
+                GhostButton("Undo skip (${dayWord(at, zone, now)})", onClick = { onSkip(at, false) }, enabled = enabled)
             }
             if (row.skipped == null) row.skippable?.let { at ->
-                GhostButton("Skip ${WakeAlarmRules.dayText(at, zone, now).lowercase()} on my phone", onClick = { onSkip(at, true) }, enabled = enabled)
+                GhostButton("Skip ${dayWord(at, zone, now)} on my phone", onClick = { onSkip(at, true) }, enabled = enabled)
             }
         }
     }
 }
+
+/** "today", "tomorrow" or "Fri 14 Nov", for the middle of a sentence. */
+private fun dayWord(at: Instant, zone: ZoneId, now: Instant): String =
+    WakeAlarmRules.dayText(at, zone, now).let { if (it == "Today" || it == "Tomorrow") it.lowercase() else it }
 
 private fun tone(status: MemberStatus): PillTone = when (status) {
     MemberStatus.READY -> PillTone.Success
