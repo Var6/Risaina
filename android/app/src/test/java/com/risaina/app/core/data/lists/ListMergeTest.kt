@@ -155,6 +155,24 @@ class ListMergeTest {
         assertEquals(null, unticked.items[0].doneBy)
     }
 
+    @Test fun `a created list's rows take the server's ids, and a later copy merges over what the first try sent`() {
+        val sent = doc(row("c1", "Milk "), row("c2", ""), row("c3", "Eggs"))
+        val reply = doc(row("s1", "Milk"), row("s2", "Eggs"))
+        val first = ListMerge.created(null, sent, reply)
+        assertEquals(mapOf("c1" to "s1", "c3" to "s2"), first.ids)
+        assertEquals("the base is what the server stored", reply, first.base)
+        assertEquals("as typed, with the server's ids", listOf("Milk ", "", "Eggs"), merge(first.base, ListMerge.remapIds(sent, first.ids), reply).items.map { it.text })
+
+        // Retried later: the partner put Bread first and reworded Eggs; Jam was typed after the first try.
+        val now = doc(row("p", "Bread"), row("s1", "Milk"), row("s2", "Brown eggs"))
+        val retry = sent.copy(items = sent.items + row("c4", "Jam"))
+        val later = ListMerge.created(sent, retry, now)
+        assertEquals(mapOf("c1" to "s1"), later.ids)
+        assertEquals(listOf("s1", "c3"), ids(later.base))
+        val merged = merge(later.base, ListMerge.remapIds(retry, later.ids), now)
+        assertEquals("their changes stay, and so does what was typed since", listOf("Bread", "Milk ", "", "Jam", "Brown eggs"), merged.items.map { it.text })
+    }
+
     @Test fun `a new list's rows take the server's ids`() {
         val r = ListMerge.remapIds(doc(row("c1", "Milk"), row("c2", "")), mapOf("c1" to "s1"))
         assertEquals(listOf("s1", "c2"), ids(r))

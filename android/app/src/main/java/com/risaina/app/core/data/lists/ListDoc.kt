@@ -96,7 +96,13 @@ object ListWire {
     fun body(d: ListDoc): String = TodoAppend.cut(d.body, ListLimits.MAX_BODY)
     fun sentRows(d: ListDoc): List<DocItem> = d.items.filter { it.text.isNotBlank() }
     fun items(d: ListDoc): List<ListItemDto> = sentRows(d).map { ListItemDto(id = it.id, text = itemText(it.text), done = it.done) }
-    private fun itemText(t: String) = TodoAppend.cut(t.trim()).trim()
+    fun itemText(t: String) = TodoAppend.cut(t.trim()).trim()
+
+    /** [d] as the server stores it once created (texts trimmed and cut, empty rows left out), with this phone's row ids. */
+    fun asCreated(d: ListDoc): ListDoc = d.copy(
+        title = displayTitle(title(d)), body = body(d), marker = d.marker.takeIf { it in SENDABLE_MARKERS } ?: ListMarker.NONE.wire,
+        items = sentRows(d).map { DocItem(it.id, itemText(it.text), it.done) },
+    )
 
     private data class Shape(val title: String, val body: String, val pinned: Boolean, val marker: String, val checkboxes: Boolean, val items: List<Triple<String, String, Boolean>>)
     private fun shape(d: ListDoc) = Shape(title(d), body(d), d.pinned, d.marker, d.checkboxes, itemsShape(d))

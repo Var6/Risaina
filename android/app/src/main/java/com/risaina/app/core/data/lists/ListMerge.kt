@@ -129,7 +129,31 @@ object ListMerge {
         )
     }
 
-    /** A new list's rows take the ids the server gave them on create ([ids]: phone id → server id, by position). */
+    /** How a list made here maps onto the server's copy once created: row ids (phone → server), and the merge base. */
+    data class Created(val ids: Map<String, String>, val base: ListDoc)
+
+    /**
+     * A list made here was created; [reply] is the server's copy. It is usually exactly what was
+     * [sent], but a create retried after its reply was lost gets the list as it is now: perhaps made
+     * by an earlier try with other rows, and changed by the partner since. So rows are matched by text
+     * (in order), and the base for a three-way merge onto [reply] is what the first try sent
+     * ([firstTry], as the server would have stored it): the partner's changes are kept, and so is
+     * what was typed since. A first-try row with no match was deleted or reworded there; a row typed
+     * after the first try counts as new here.
+     */
+    fun created(firstTry: ListDoc?, sent: ListDoc, reply: ListDoc): Created {
+        val first = ListWire.asCreated(firstTry?.takeIf { ListWire.hasContent(it) } ?: sent)
+        val free = reply.items.toMutableList()
+        val ids = HashMap<String, String>()
+        for (r in first.items + ListWire.asCreated(sent).items) {
+            if (r.id in ids) continue
+            val i = free.indexOfFirst { it.text == r.text }
+            if (i >= 0) ids[r.id] = free.removeAt(i).id
+        }
+        return Created(ids, remapIds(first, ids))
+    }
+
+    /** A new list's rows take the ids the server gave them on create ([ids]: phone id → server id). */
     fun remapIds(doc: ListDoc, ids: Map<String, String>): ListDoc =
         if (ids.isEmpty()) doc else doc.copy(items = doc.items.map { r -> ids[r.id]?.let { r.copy(id = it) } ?: r })
 }

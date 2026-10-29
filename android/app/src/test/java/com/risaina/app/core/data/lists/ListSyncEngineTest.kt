@@ -412,6 +412,48 @@ class ListSyncEngineTest {
         assertEquals(ListNotice.DeletedBeforeSaved(id, "Weekend"), notices.single())
     }
 
+    @Test fun `a create retried after its reply was lost keeps what the partner did meanwhile`() = runTest {
+        val e = engine()
+        server.loseCreateReply = true
+        val id = e.createLocal(ListDoc(kind = "checklist", title = "Groceries", items = listOf(DocItem("c1", "Milk"), DocItem("c2", "Eggs "), DocItem("c3", "Rice"))))
+        val snap = open(e, id)
+        advanceUntilIdle()
+        assertEquals(SyncStatus.Offline, snap().status)
+        val made = server.lists.values.single().id
+        // The partner heard list.created: ticks Milk, deletes Eggs, adds Bread (v2). Here, Jam is typed.
+        server.partnerEdit(made) { l ->
+            l.copy(items = listOf(l.items[0].copy(done = true, doneBy = "bea", doneAt = t0), item("p", "Bread").copy(addedBy = "bea"), l.items[2]))
+        }
+        e.edit(id, addRow("c4", "Jam"))
+        e.sendAll()
+        advanceUntilIdle()
+
+        val items = server.lists.getValue(made).items
+        assertEquals(setOf("Milk", "Bread", "Rice", "Jam"), items.map { it.text }.toSet())
+        assertEquals(4, items.size)
+        assertTrue("their tick is kept", items.first { it.text == "Milk" }.done)
+        assertEquals("bea", items.first { it.text == "Bread" }.addedBy)
+        assertEquals(items.map { it.text }, snap().doc.items.map { it.text })
+        assertEquals("only Jam was sent on top of their v2", listOf("PATCH $made@2"), server.calls.filter { it.startsWith("PATCH") })
+        assertEquals(SyncStatus.Saved, snap().status)
+        assertTrue(draftDao.rows.value.isEmpty())
+    }
+
+    @Test fun `a retried create that finds the partner's changes and nothing new here sends nothing more`() = runTest {
+        val e = engine()
+        server.loseCreateReply = true
+        val id = e.createLocal(ListDoc(kind = "checklist", title = "Trip", items = listOf(DocItem("c1", "Tickets"))))
+        val snap = open(e, id)
+        advanceUntilIdle()
+        val made = server.lists.values.single().id
+        server.partnerEdit(made) { it.copy(items = it.items + item("p", "Passports")) }
+        e.sendAll()
+        advanceUntilIdle()
+        assertEquals(listOf("Tickets", "Passports"), snap().doc.items.map { it.text })
+        assertTrue(server.calls.none { it.startsWith("PATCH") })
+        assertEquals(SyncStatus.Saved, snap().status)
+    }
+
     @Test fun `a list deleted by the partner marks a stored draft orphaned`() = runTest {
         seed("l", 1, item("a", "Milk"))
         draftDao.upsert(ListDraftEntity("l", 1, "{}", "{}", 5, ListSyncEngine.STATE_PENDING, null, 0))

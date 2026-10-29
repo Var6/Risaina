@@ -534,6 +534,8 @@ class ListSyncEngine @Inject constructor(
             }
             if (ListWire.tooManyItems(st.mine)) return fail(s, TOO_MANY_ITEMS)
             val sent = st.mine
+            // A new list's base is what its first try sent: what the server may have made if that reply is lost.
+            if (local && !ListWire.hasContent(base)) s.state.update { it.copy(base = ListWire.asCreated(sent)) }
             s.state.update { it.copy(sending = true, status = if (it.status is SyncStatus.Offline) SyncStatus.Offline else SyncStatus.Saving) }
             val r = if (local) apiCall { api.createList(ListWire.create(sent, st.listId.removePrefix(LOCAL_PREFIX))) }
             else apiCall { api.patchList(st.listId, ListWire.patch(base, sent, st.baseVersion)) }
@@ -593,18 +595,26 @@ class ListSyncEngine @Inject constructor(
         }
     }
 
-    /** A list made here now exists: the session takes the server's id, and its rows the server's ids (by position). */
+    /**
+     * A list made here now exists: the session takes the server's id, and its rows the server's ids.
+     * A retried create can bring back a copy the partner has changed since (ListMerge.created): it is
+     * merged, so their changes are not sent back over.
+     */
     private suspend fun adoptCreated(s: Session, sent: ListDoc, dto: SharedListDto) {
         listDao.upsertIfNewer(dto.toEntity(json, syncedAt = now()))
         val localId = s.id
-        val ids = ListWire.sentRows(sent).map { it.id }.zip(dto.items.mapNotNull { it.id }).toMap()
         val reply = dto.toDoc()
+        var conflict = false
         s.state.update { cur ->
+            val made = ListMerge.created(cur.base, sent, reply)
+            val merged = ListMerge.merge3(made.base, ListMerge.remapIds(cur.mine, made.ids), reply)
+            conflict = merged.bodyConflict
             cur.copy(
                 listId = dto.id, base = reply, baseVersion = dto.version, server = dto.meta(),
-                mine = ListMerge.adoptServerMeta(ListMerge.remapIds(cur.mine, ids), reply), draftStored = false,
+                mine = ListMerge.adoptServerMeta(merged.doc, reply), draftStored = false,
             )
         }
+        if (conflict) _notices.tryEmit(ListNotice.BothKept(dto.id))
         aliases[localId] = dto.id
         s.id = dto.id
         sessions[dto.id] = s
