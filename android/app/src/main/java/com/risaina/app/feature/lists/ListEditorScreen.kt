@@ -253,7 +253,9 @@ private fun EditorBody(
     val firstFocus = remember { FocusRequester() }
 
     LazyColumn(state = listState, modifier = modifier.fillMaxSize(), contentPadding = PaddingValues(start = 8.dp, end = 12.dp, top = 4.dp, bottom = 24.dp)) {
-        item(key = "title") { TitleField(doc, vm, onNext = { if (doc.isNote) firstFocus.requestFocus() else vm.focusFirstRow() }) }
+        item(key = "title") {
+            TitleField(doc, vm, autoFocus = snap.isLocal && !ListWire.hasContent(doc), onNext = { if (doc.isNote) firstFocus.requestFocus() else vm.focusFirstRow() })
+        }
         if (snap.status == SyncStatus.Orphaned) item(key = "orphan") { OrphanBanner(vm) }
         (snap.status as? SyncStatus.Failed)?.let { f -> item(key = "failed") { FailedBanner(f.reason, vm) } }
         if (doc.isNote) {
@@ -296,8 +298,11 @@ private fun rememberNow(): Long {
 }
 
 @Composable
-private fun TitleField(doc: ListDoc, vm: ListEditorViewModel, onNext: () -> Unit) {
+private fun TitleField(doc: ListDoc, vm: ListEditorViewModel, autoFocus: Boolean, onNext: () -> Unit) {
     var value by remember { mutableStateOf(TextFieldValue(doc.title, TextRange(doc.title.length))) }
+    val focus = remember { FocusRequester() }
+    // A list just made from the New sheet starts with the keyboard on its title.
+    LaunchedEffect(Unit) { if (autoFocus) runCatching { focus.requestFocus() } }
     // A title from elsewhere (the partner, a merge) is taken only while it is the newest one.
     LaunchedEffect(doc.title) { if (doc.title != value.text && vm.latestTitle() == doc.title) value = TextFieldValue(doc.title, TextRange(doc.title.length)) }
     val style = MaterialTheme.typography.headlineMedium.copy(color = MaterialTheme.colorScheme.onSurface)
@@ -314,7 +319,7 @@ private fun TitleField(doc: ListDoc, vm: ListEditorViewModel, onNext: () -> Unit
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
         keyboardActions = KeyboardActions(onNext = { onNext() }),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp).semantics { contentDescription = "Title" },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp).focusRequester(focus).semantics { contentDescription = "Title" },
         decorationBox = { inner ->
             Box {
                 if (value.text.isEmpty()) Text("Untitled", style = style, color = Risaina.colors.textMuted)
