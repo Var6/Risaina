@@ -52,7 +52,9 @@ fun HelpSheet(title: String, onDismiss: () -> Unit, content: @Composable ColumnS
     val scope = rememberCoroutineScope()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).navigationBarsPadding()) {
-            SectionHeader(title, modifier = Modifier.semantics { heading() })
+            // SectionHeader puts the modifier on its outer Row, which holds no text itself, so merge the
+            // title Text into it: TalkBack then focuses one node that reads the title as a heading.
+            SectionHeader(title, modifier = Modifier.semantics(mergeDescendants = true) { heading() })
             Spacer(Modifier.height(8.dp))
             content()
             Spacer(Modifier.height(8.dp))

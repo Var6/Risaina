@@ -1,5 +1,8 @@
 package com.risaina.app.ui
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -112,6 +115,7 @@ class ComposeScreensTest {
         rule.onNodeWithText("About widgets").assertDoesNotExist()
         rule.onNodeWithContentDescription("Help").assertHasClickAction().performClick()
         rule.onNodeWithText("About widgets").assertIsDisplayed()
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
         rule.onNodeWithText("Long-press your home screen.").assertIsDisplayed()
     }
 
