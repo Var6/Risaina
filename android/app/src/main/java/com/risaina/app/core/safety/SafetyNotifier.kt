@@ -16,6 +16,7 @@ import com.risaina.app.core.datastore.PreferencesStore
 import com.risaina.app.core.domain.QuietHoursPolicy
 import com.risaina.app.core.network.LiveLocationDto
 import com.risaina.app.core.notifications.NotificationChannels
+import com.risaina.app.core.notifications.NotificationGroups
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Duration
 import java.time.Instant
@@ -76,6 +77,9 @@ class SafetyNotifier @Inject constructor(
             .setVisibility(if (prefs.previewInNotifications) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(open)
             .setAutoCancel(true)
+            // Its own group: without one, Android 15+ may bundle it with the SOS notices or other
+            // partner notifications, so one emergency would look like several.
+            .setGroup(NotificationGroups.SAFETY)
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
         expiresAt?.let { b.setTimeoutAfter(Duration.between(now, it).toMillis()) }
         try { NotificationManagerCompat.from(context).notify(PARTNER_LOCATION_ID, b.build()) } catch (_: SecurityException) {}

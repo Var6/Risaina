@@ -7,7 +7,8 @@ import androidx.core.app.NotificationCompat
  * location and the lock card. Without a group, Android 15+ and ColorOS bundle an app's notifications
  * into an automatic group of their own, and AndroidX's setSilent(true) put a notification into a
  * group called "silent" (NotificationCompat.GROUP_KEY_SILENT), outside that bundle: one item could
- * then look like two. Each group holds one notification, so none needs a summary.
+ * then look like two. Each group holds one notification (the safety notices seldom more), so none
+ * needs a summary.
  *
  * A new kind of notification gets a new group here. Pure, so NotificationGroupsTest checks that
  * no two kinds share one and none is "silent".
@@ -20,8 +21,14 @@ object NotificationGroups {
     const val WIDGET = "risaina_widget"
     /** Unlink and the test push. */
     const val SYSTEM = "risaina_system"
+    /**
+     * The partner's "is sharing their live location" (SafetyNotifier) and the notices around an SOS
+     * (SosAlert: missed, safe now, tap to respond, not sent). Not the ringing alarm, which keeps
+     * SosAlert.SOS_GROUP.
+     */
+    const val SAFETY = "risaina_safety"
 
-    val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM)
+    val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM, SAFETY)
 
     /**
      * For a post that must not sound, buzz or pop up even when it creates the notification.
