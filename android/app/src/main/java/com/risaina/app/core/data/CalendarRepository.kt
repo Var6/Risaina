@@ -15,6 +15,7 @@ import com.risaina.app.core.network.PatchCalendarRequest
 import com.risaina.app.core.network.RisainaApi
 import com.risaina.app.core.network.apiCall
 import com.risaina.app.core.network.entry
+import com.risaina.app.core.reminders.ReminderRearm
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +38,7 @@ class CalendarRepository @Inject constructor(
     private val coupleDao: CoupleDao,
     private val json: Json,
     private val deletions: CalendarDeletions,
+    private val reminders: ReminderRearm,
 ) {
     val all: Flow<List<CalendarEntry>> = dao.all().map { l -> l.mapNotNull { it.toDomain() } }
     fun observe(id: String): Flow<CalendarEntry?> = dao.observe(id).map { it?.toDomain() }
@@ -51,6 +53,18 @@ class CalendarRepository @Inject constructor(
      */
     val available: StateFlow<Boolean?> = _available.asStateFlow()
 
+    @Volatile private var refreshedAt = 0L
+
+    /**
+     * The calendar's own GET, at most every [maxAgeMs] in this process: the SyncWorker runs it, so
+     * calendar events that reached this phone only live (a stale events validator, calendar.md §10)
+     * still arrive within the hour.
+     */
+    suspend fun refreshIfStale(maxAgeMs: Long = 30 * 60_000L): AppResult<Unit> {
+        if (_available.value == false || System.currentTimeMillis() - refreshedAt < maxAgeMs) return AppResult.Success(Unit)
+        return refresh()
+    }
+
     /**
      * Every entry (the server caps a couple at 1000), so the table becomes the server's list, except
      * for what changed while the GET was on its way: an entry saved or received meanwhile is kept
@@ -62,6 +76,7 @@ class CalendarRepository @Inject constructor(
         when (r) {
             is AppResult.Success -> {
                 _available.value = true
+                refreshedAt = System.currentTimeMillis()
                 dao.syncFromServer(r.value.items.filterNot { deletions.deletedSince(it.id, requestedAt) }.map { it.toEntity() }, requestedAt)
                 onChanged()
             }
@@ -129,10 +144,8 @@ class CalendarRepository @Inject constructor(
 
     private suspend fun changedMeanwhile(): String = "${coupleDao.partner()?.displayName ?: "Your partner"} changed this meanwhile"
 
-    /** After every change to the stored entries. */
-    private fun onChanged() {
-        // TODO(P2): ask the ReminderScheduler to re-arm (debounced, local only, no network).
-    }
+    /** After every change to the stored entries: the reminders are worked out again (debounced, local only). */
+    private fun onChanged() = reminders.request()
 }
 
 /**

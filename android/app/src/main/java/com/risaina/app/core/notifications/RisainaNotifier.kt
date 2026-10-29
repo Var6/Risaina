@@ -208,6 +208,23 @@ class RisainaNotifier @Inject constructor(
                 )
                 diagnostics.recordGameNotification(item.id)
             }
+            // The partner ticked "Let me know" when they saved it. Not a reminder: one notice per entry.
+            is Incoming.CalendarShared -> {
+                val e = item.entry
+                val first = partner.substringBefore(" ").ifBlank { partner }
+                val title = when {
+                    !prefs.previewInNotifications -> "$first added something to your calendar"
+                    item.updated -> "$first changed “${e.title}” in your calendar"
+                    else -> "$first added “${e.title}” to your calendar"
+                }
+                val body = if (prefs.previewInNotifications) calendarLine(e) else "Tap to see"
+                post(
+                    id = e.id.hashCode(), tag = CALENDAR_TAG, group = NotificationGroups.CALENDAR,
+                    channel = if (quiet) NotificationChannels.REMINDERS_QUIET else NotificationChannels.CALENDAR_UPDATES,
+                    title = title, body = body, deepLink = "risaina://app/calendar/${e.id}",
+                    category = NotificationCompat.CATEGORY_EVENT, priority = if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT,
+                )
+            }
             Incoming.Unlinked -> post(
                 id = 9001, group = NotificationGroups.SYSTEM, channel = NotificationChannels.SYSTEM, title = "Risaina",
                 body = "Your pairing has ended.", deepLink = "risaina://app/home",
@@ -289,6 +306,8 @@ class RisainaNotifier @Inject constructor(
         const val MESSAGES_ID = 4343
         /** Low importance: no sound, no buzz, no heads-up. */
         const val WIDGET_CHANNEL = "widget_updates"
+        /** "Bea added … to your calendar", one per entry (id = the entry id's hash). */
+        const val CALENDAR_TAG = "calendar"
 
         /**
          * The safety stream's "is sharing their live location" has no timeout for an "until I turn it
@@ -301,6 +320,8 @@ class RisainaNotifier @Inject constructor(
             NotificationChannels.PINGS, NotificationChannels.PINGS_QUIET,
             NotificationChannels.MESSAGES, NotificationChannels.MESSAGES_QUIET, WIDGET_CHANNEL,
             NotificationChannels.PARTNER_LOCATION, NotificationChannels.PARTNER_LOCATION_QUIET,
+            // The couple's calendar goes with the couple: its reminders and "added to your calendar".
+            NotificationChannels.REMINDERS, NotificationChannels.REMINDERS_QUIET, NotificationChannels.CALENDAR_UPDATES,
         )
         private val PARTNER_IDS = setOf(
             PING_NOTIFICATION_ID, GAME_NOTIFICATION_ID, TEST_NOTIFICATION_ID, WIDGET_NOTIFICATION_ID, MESSAGES_ID,
@@ -338,7 +359,21 @@ class RisainaNotifier @Inject constructor(
      * [group] is the kind's own group (NotificationGroups). No setSilent: it put the notification into
      * AndroidX's "silent" group; a quiet update uses [onlyAlertOnce] instead.
      */
-    private fun post(id: Int, group: String, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int, onlyAlertOnce: Boolean = false) {
+    /** "Sat 14 Nov, 8:00 pm" on this phone's clock, with the partner's when it differs. */
+    private suspend fun calendarLine(e: com.risaina.app.core.model.CalendarEntry): String {
+        val zone = time.zone()
+        val local = com.risaina.app.core.domain.CalendarRules.localStart(e, e.date, zone)
+        val day = com.risaina.app.core.domain.CalendarText.dayTime(local.toLocalDate(), local.toLocalTime().takeIf { e.time != null })
+        val partnerZone = coupleDao.partner()?.timeZone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
+        val theirs = com.risaina.app.core.domain.CalendarRules.partnerStart(e, e.date, zone, partnerZone)
+        return day + (theirs?.let { " (${com.risaina.app.core.domain.CalendarText.time(it.toLocalTime())} for them)" } ?: "")
+    }
+
+    /**
+     * [tag]: for notifications with one per item (calendar notices), so their ids can never clash
+     * with the fixed ones above.
+     */
+    private fun post(id: Int, group: String, channel: String, title: String, body: String, deepLink: String, category: String, priority: Int, onlyAlertOnce: Boolean = false, tag: String? = null) {
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(deepLink)).apply {
             setPackage(context.packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -364,7 +399,7 @@ class RisainaNotifier @Inject constructor(
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
             .build()
         try {
-            NotificationManagerCompat.from(context).notify(id, notification)
+            NotificationManagerCompat.from(context).notify(tag, id, notification)
         } catch (_: SecurityException) {
             // Permission revoked between check and post; nothing to do.
         }

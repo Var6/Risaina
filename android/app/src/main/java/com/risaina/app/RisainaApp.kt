@@ -19,6 +19,7 @@ class RisainaApp : Application(), Configuration.Provider {
     @Inject lateinit var syncManager: com.risaina.app.core.sync.EventSyncManager
     @Inject lateinit var widgetSnapshotUpdater: com.risaina.app.core.sync.WidgetSnapshotUpdater
     @Inject lateinit var safety: com.risaina.app.core.safety.SafetyLifecycle
+    @Inject lateinit var reminders: com.risaina.app.core.reminders.ReminderScheduler
 
     override fun onCreate() {
         super.onCreate()
@@ -27,6 +28,9 @@ class RisainaApp : Application(), Configuration.Provider {
         AppVisibility.register(this) { it is com.risaina.app.core.sos.SosAlarmActivity }
         watchForeground()
         safety.start() // SOS alarm volume restore, live location re-check, stop on sign-out/unlink
+        // Calendar reminders: post any that came due while the app was not running, set the next
+        // alarm (a phone maker's battery manager may have dropped it), follow sign-out and unlink.
+        reminders.start()
     }
 
     /**

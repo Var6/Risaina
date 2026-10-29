@@ -18,6 +18,10 @@ object NotificationGroups {
     const val WIDGET = "risaina_widget"
     /** Unlink and the test push. */
     const val SYSTEM = "risaina_system"
+    /** Calendar reminders, posted on this phone at their time (ReminderNotifier). */
+    const val REMINDER = "risaina_reminder"
+    /** "Bea added … to your calendar". */
+    const val CALENDAR = "risaina_calendar"
 
-    val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM)
+    val ALL = listOf(CHAT, PING, GAME, WIDGET, SYSTEM, REMINDER, CALENDAR)
 }

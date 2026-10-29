@@ -42,6 +42,14 @@ class NotifierPurgeTest {
         assertFalse(RisainaNotifier.clearedOnPurge(com.risaina.app.core.location.LiveLocationService.NOTIFICATION_ID, NotificationChannels.LOCATION_SHARING))
     }
 
+    @Test fun calendarRemindersAndNoticesGoWithTheCouple() {
+        assertTrue(RisainaNotifier.clearedOnPurge("e1|2026-11-14|60".hashCode(), NotificationChannels.REMINDERS))
+        assertTrue(RisainaNotifier.clearedOnPurge("occ:anniversary|2026-11-14|0".hashCode(), NotificationChannels.REMINDERS_QUIET))
+        assertTrue(RisainaNotifier.clearedOnPurge("e1".hashCode(), NotificationChannels.CALENDAR_UPDATES))
+        // Still never the SOS, whatever channel.
+        assertFalse(RisainaNotifier.clearedOnPurge(SosAlert.ID, NotificationChannels.REMINDERS))
+    }
+
     @Test fun aRingingSosStays() {
         assertFalse(RisainaNotifier.clearedOnPurge(SosAlert.ID, "sos"))
         assertFalse(RisainaNotifier.clearedOnPurge(SosAlert.ID, "sos_dnd"))

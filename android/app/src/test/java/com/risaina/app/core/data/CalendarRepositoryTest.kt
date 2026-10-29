@@ -97,7 +97,8 @@ class CalendarRepositoryTest {
     private val dao = FakeCalendarDao()
     private val coupleDao = mockk<CoupleDao>().also { coEvery { it.partner() } returns PartnerEntity("bea", "Bea", null) }
     private val deletions = CalendarDeletions()
-    private val repo = CalendarRepository(RisainaApi(client, client), dao, coupleDao, json, deletions)
+    private var rearms = 0
+    private val repo = CalendarRepository(RisainaApi(client, client), dao, coupleDao, json, deletions) { rearms++ }
 
     @Test fun `refresh makes Room the server's list and marks the calendar available`() = runTest {
         dao.upsert(dto("stale", 1).toEntity(syncedAt = 0))
@@ -120,6 +121,27 @@ class CalendarRepositoryTest {
         getHook = { dao.upsert(dto("new", 1).toEntity()) }
         assertTrue(repo.refresh().isSuccess)
         assertEquals(setOf("a", "new"), dao.rows.value.keys)
+    }
+
+    @Test fun `every stored change asks for the reminders to be worked out again`() = runTest {
+        repo.create(CalendarEntryDraft(CalendarKind.EVENT, "Picnic", LocalDate.of(2026, 11, 1)), notifyPartner = false)
+        assertEquals(1, rearms)
+        repo.delete("new")
+        assertEquals(2, rearms)
+        repo.refresh()
+        assertEquals(3, rearms)
+    }
+
+    @Test fun `refreshIfStale asks the server at most every half hour, and never an old server`() = runTest {
+        assertTrue(repo.refreshIfStale().isSuccess)
+        assertTrue(repo.refreshIfStale().isSuccess)
+        assertEquals(1, requests.count { it == "GET calendar" })
+        oldServer = true
+        repo.refreshIfStale(maxAgeMs = 0)
+        assertEquals(2, requests.count { it == "GET calendar" })
+        assertEquals(false, repo.available.value)
+        repo.refreshIfStale(maxAgeMs = 0)
+        assertEquals(2, requests.count { it == "GET calendar" })
     }
 
     @Test fun `an older server's 404 marks the calendar unavailable`() = runTest {

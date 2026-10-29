@@ -47,6 +47,8 @@ class SyncWorker @AssistedInject constructor(
     private val diagnostics: DeliveryDiagnostics,
     private val deferred: DeferredEffects,
     private val safetyNotifier: com.risaina.app.core.safety.SafetyNotifier,
+    private val calendarRepository: com.risaina.app.core.data.CalendarRepository,
+    private val reminders: com.risaina.app.core.reminders.ReminderScheduler,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -62,6 +64,10 @@ class SyncWorker @AssistedInject constructor(
         runCatching { syncManager.runDeferred() }
         messageRepository.drainOutbox()
         preferencesRepository.pushIfDirty()
+        // The calendar's own small GET (at most every half hour), then the reminders: any that came
+        // due while the process was frozen are posted, and the alarm is set again.
+        runCatching { calendarRepository.refreshIfStale() }
+        runCatching { reminders.run() }
         return when (result) {
             is AppResult.Success -> Result.success()
             is AppResult.Failure -> if (result.error.isRetryable && runAttemptCount < 4) Result.retry() else Result.failure()
