@@ -316,6 +316,10 @@ export const EVENT_TYPES = [
   'sos.resolved',
   'location.started',
   'location.stopped',
+  // shared calendar (events and dated to-dos)
+  'calendar.created',
+  'calendar.updated',
+  'calendar.deleted',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -358,6 +362,56 @@ export interface ListDoc {
   marker?: ListMarker;
   checkboxes?: boolean;
   clientKey?: string; // the creating phone's retry key (unique per couple while present)
+}
+
+// --- Calendar ------------------------------------------------------------------------------
+
+export const CALENDAR_KINDS = ['event', 'todo'] as const;
+export type CalendarKind = (typeof CALENDAR_KINDS)[number];
+export const CALENDAR_REPEATS = ['none', 'weekly', 'monthly', 'yearly'] as const;
+export type CalendarRepeat = (typeof CALENDAR_REPEATS)[number];
+export const CALENDAR_SOURCE_KINDS = ['message', 'list', 'list_item'] as const;
+export type CalendarSourceKind = (typeof CALENDAR_SOURCE_KINDS)[number];
+
+/** Where an entry was made from. Ids only, never copied text, so a deleted message leaves nothing. */
+export interface CalendarSource {
+  kind: CalendarSourceKind; // plain string in the validator
+  messageId?: ObjectId; // kind 'message'
+  listId?: ObjectId; // kinds 'list' and 'list_item'
+  itemId?: string; // kind 'list_item'
+}
+
+/**
+ * One shared calendar entry: an event or a dated to-do. Milestones, the anniversary, birthdays and
+ * the next visit are NOT copied here; the app derives them. The server stores wall-clock fields and
+ * never computes occurrences or reminder times: each phone schedules its own reminders.
+ */
+export interface CalendarEntryDoc {
+  _id: ObjectId;
+  coupleId: ObjectId;
+  createdBy: ObjectId;
+  updatedBy: ObjectId;
+  kind: CalendarKind; // plain string in the validator (Zod is the allow-list)
+  title: string; // 1–120
+  notes: string | null; // ≤ 2000
+  emoji: string | null; // 1–2 graphemes
+  date: string; // YYYY-MM-DD: the first (or only) occurrence; a to-do's due date
+  endDate: string | null; // YYYY-MM-DD, all-day only, date..date+366
+  time: string | null; // HH:mm; null = all day
+  durationMinutes: number | null; // 1–10080, timed only
+  timeZone: string | null; // IANA anchor zone, timed only; null = each phone's own clock
+  repeat: CalendarRepeat; // plain string in the validator
+  repeatUntil: string | null; // YYYY-MM-DD, inclusive
+  reminders: number[]; // minutes before, 0..40320, ≤ 4, unique, ascending
+  remindUserIds: ObjectId[]; // members whose phones remind (also a to-do's assignees)
+  pinned: boolean;
+  doneAt: Date | null; // to-dos only
+  doneBy: ObjectId | null;
+  source: CalendarSource | null;
+  clientKey: string | null; // the creating phone's retry key (unique per couple while a string)
+  version: number; // starts at 1, +1 per change (optimistic concurrency via expectedVersion)
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /** What one partner shows on the OTHER partner's home-screen widgets (one per author per couple). */

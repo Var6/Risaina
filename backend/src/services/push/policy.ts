@@ -107,7 +107,9 @@ export function pushPolicyFor(type: string, payload?: Record<string, unknown> | 
   }
   // Receipts, media.ready, lists, memories, milestones, profile/couple changes, the SOS sender's
   // "seen"/"delivered" ticks, location.stopped, a panic share linked to its SOS and anything
-  // unknown: a silent refresh.
+  // unknown: a silent refresh. calendar.* stay here even with `notify: true`: the partner's app
+  // posts its "added to your calendar" notice when this sync applies the event, and a calendar
+  // change is never urgent enough to spend the high-priority budget the SOS depends on.
   return { ...NORMAL };
 }
 

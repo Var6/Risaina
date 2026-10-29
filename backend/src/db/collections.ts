@@ -1,5 +1,6 @@
 import type { Collection, Db } from 'mongodb';
 import type {
+  CalendarEntryDoc,
   CoupleDoc,
   DeviceTokenDoc,
   EmailVerificationDoc,
@@ -39,6 +40,7 @@ export const COLLECTION_NAMES = {
   sos: 'sos',
   games: 'games',
   liveLocations: 'liveLocations', // safety: one overwrite document per sharer, never a history
+  calendarEntries: 'calendarEntries',
 } as const;
 
 export interface Collections {
@@ -60,6 +62,7 @@ export interface Collections {
   sos: Collection<SosDoc>;
   games: Collection<GameDoc>;
   liveLocations: Collection<LiveLocationDoc>;
+  calendarEntries: Collection<CalendarEntryDoc>;
 }
 
 export function getCollections(db: Db): Collections {
@@ -82,5 +85,6 @@ export function getCollections(db: Db): Collections {
     sos: db.collection<SosDoc>(COLLECTION_NAMES.sos),
     games: db.collection<GameDoc>(COLLECTION_NAMES.games),
     liveLocations: db.collection<LiveLocationDoc>(COLLECTION_NAMES.liveLocations),
+    calendarEntries: db.collection<CalendarEntryDoc>(COLLECTION_NAMES.calendarEntries),
   };
 }

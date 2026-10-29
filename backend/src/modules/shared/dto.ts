@@ -1,4 +1,5 @@
 import type {
+  CalendarEntryDoc,
   CoupleDoc,
   EventDoc,
   GameDoc,
@@ -20,6 +21,7 @@ import { iso, isoOrNull } from '../../lib/time.js';
 import { OPENTDB_ATTRIBUTION } from '../games/catalog.js';
 import { bothFinished, requestedCategory } from '../games/rules/quiz.js';
 import type {
+  CalendarEntryDto,
   CoupleDto,
   EventDto,
   GameDto,
@@ -108,6 +110,45 @@ export function toListDto(l: ListDoc): ListDto {
     // lists from before the format fields: a plain checklist / note
     marker: l.marker ?? 'none',
     checkboxes: l.checkboxes ?? true,
+  };
+}
+
+export function toCalendarEntryDto(e: CalendarEntryDoc): CalendarEntryDto {
+  const s = e.source;
+  return {
+    id: e._id.toHexString(),
+    coupleId: e.coupleId.toHexString(),
+    createdBy: e.createdBy.toHexString(),
+    updatedBy: e.updatedBy.toHexString(),
+    kind: e.kind,
+    title: e.title,
+    notes: e.notes ?? null,
+    emoji: e.emoji ?? null,
+    date: e.date,
+    endDate: e.endDate ?? null,
+    time: e.time ?? null,
+    durationMinutes: e.durationMinutes ?? null,
+    timeZone: e.timeZone ?? null,
+    repeat: e.repeat,
+    repeatUntil: e.repeatUntil ?? null,
+    reminders: [...e.reminders],
+    remindUserIds: e.remindUserIds.map((u) => u.toHexString()),
+    pinned: e.pinned ?? false,
+    done: e.doneAt instanceof Date,
+    doneAt: isoOrNull(e.doneAt),
+    doneBy: e.doneBy ? e.doneBy.toHexString() : null,
+    source: s
+      ? {
+          kind: s.kind,
+          ...(s.messageId ? { messageId: s.messageId.toHexString() } : {}),
+          ...(s.listId ? { listId: s.listId.toHexString() } : {}),
+          ...(s.itemId ? { itemId: s.itemId } : {}),
+        }
+      : null,
+    clientKey: e.clientKey ?? null,
+    version: e.version,
+    createdAt: iso(e.createdAt),
+    updatedAt: iso(e.updatedAt),
   };
 }
 

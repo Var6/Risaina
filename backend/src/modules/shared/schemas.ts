@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import {
+  CALENDAR_KINDS,
+  CALENDAR_REPEATS,
   CHALLENGE_KINDS,
   CHAT_WALLPAPER_STYLES,
   EVENT_TYPES,
@@ -370,6 +372,61 @@ export const List = z
   })
   .meta({ id: 'List' });
 
+// --- Calendar -------------------------------------------------------------------------------
+
+export const CalendarKind = z.enum(CALENDAR_KINDS);
+export const CalendarRepeat = z.enum(CALENDAR_REPEATS);
+
+export const CalendarSource = z
+  .object({
+    kind: z
+      .string()
+      .meta({ description: "'message', 'list' or 'list_item'. Clients must tolerate unknown values." }),
+    messageId: IdString.optional().meta({ description: "kind 'message'" }),
+    listId: IdString.optional().meta({ description: "kinds 'list' and 'list_item'" }),
+    itemId: z.string().optional().meta({ description: "kind 'list_item'" }),
+  })
+  .meta({ id: 'CalendarSource', description: 'Where the entry was made from (ids only, never copied text)' });
+
+export const CalendarEntry = z
+  .object({
+    id: IdString,
+    coupleId: IdString,
+    createdBy: IdString,
+    updatedBy: IdString,
+    // Plain strings in RESPONSES (tolerant reader, as game kinds); requests use the enums.
+    kind: z.string().meta({ description: "'event' or 'todo'. Clients must tolerate unknown values." }),
+    title: z.string(),
+    notes: z.string().nullable(),
+    emoji: z.string().nullable(),
+    date: z.string().meta({ description: "YYYY-MM-DD: the first (or only) occurrence; a to-do's due date" }),
+    endDate: z.string().nullable().meta({ description: 'YYYY-MM-DD, all-day entries only' }),
+    time: z.string().nullable().meta({ description: 'HH:mm; null = all day' }),
+    durationMinutes: z.number().int().nullable(),
+    timeZone: z
+      .string()
+      .nullable()
+      .meta({ description: "IANA zone the time is anchored to; null = each phone's own clock" }),
+    repeat: z
+      .string()
+      .meta({ description: "'none', 'weekly', 'monthly' or 'yearly'. Tolerate unknown values." }),
+    repeatUntil: z.string().nullable().meta({ description: 'YYYY-MM-DD, inclusive' }),
+    reminders: z.array(z.number().int()).meta({ description: 'Minutes before, ascending' }),
+    remindUserIds: z
+      .array(IdString)
+      .meta({ description: "Members whose phones remind (a to-do's assignees)" }),
+    pinned: z.boolean(),
+    done: z.boolean().meta({ description: 'To-dos: ticked (doneAt is set)' }),
+    doneAt: IsoDateTimeNullable,
+    doneBy: IdString.nullable(),
+    source: CalendarSource.nullable(),
+    clientKey: z.string().nullable(),
+    version: z.number().int().min(1),
+    createdAt: IsoDateTime,
+    updatedAt: IsoDateTime,
+  })
+  .meta({ id: 'CalendarEntry' });
+
 // --- Widget board ---------------------------------------------------------------------------
 
 export const WidgetBoard = z
@@ -659,6 +716,7 @@ export type MilestoneDto = z.infer<typeof Milestone>;
 export type EventDto = z.infer<typeof Event>;
 export type ListDto = z.infer<typeof List>;
 export type ListItemDto = z.infer<typeof ListItem>;
+export type CalendarEntryDto = z.infer<typeof CalendarEntry>;
 export type WidgetBoardDto = z.infer<typeof WidgetBoard>;
 export type SosDto = z.infer<typeof Sos>;
 export type ChatWallpaperDto = z.infer<typeof ChatWallpaper>;

@@ -1,6 +1,7 @@
 import type { ObjectId } from 'mongodb';
 import type { Collections } from '../../db/collections.js';
 import type {
+  CalendarEntryDoc,
   CoupleDoc,
   GameDoc,
   ListDoc,
@@ -145,5 +146,13 @@ export class MeRepo {
 
   milestones(coupleId: ObjectId, limit: number): Promise<MilestoneDoc[]> {
     return this.db.milestones.find({ coupleId }).sort({ date: 1 }).limit(limit).toArray();
+  }
+
+  calendar(coupleId: ObjectId, limit: number): Promise<CalendarEntryDoc[]> {
+    return this.db.calendarEntries
+      .find({ coupleId })
+      .sort({ date: 1, time: 1, _id: 1 })
+      .limit(limit)
+      .toArray();
   }
 }

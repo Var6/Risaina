@@ -139,6 +139,22 @@ export const INDEXES: Record<string, IndexDescription[]> = {
     // TTL backstop: timed expiry, 12 h without a check-in, and the 10-minute tombstone
     { key: { purgeAt: 1 }, name: 'purgeAt_ttl', expireAfterSeconds: 0 },
   ],
+  [COLLECTION_NAMES.calendarEntries]: [
+    { key: { coupleId: 1, date: 1 }, name: 'coupleId_date' }, // GET /calendar, count, export, unlink purge
+    // POST /calendar retry key: one entry per key per couple (only entries created with one)
+    {
+      key: { coupleId: 1, clientKey: 1 },
+      unique: true,
+      name: 'coupleId_clientKey_unique',
+      partialFilterExpression: { clientKey: { $type: 'string' } },
+    },
+    // "is this message in the calendar" (entries made from a chat message)
+    {
+      key: { coupleId: 1, 'source.messageId': 1 },
+      name: 'coupleId_sourceMessageId',
+      partialFilterExpression: { 'source.messageId': { $type: 'objectId' } },
+    },
+  ],
   [COLLECTION_NAMES.events]: [
     { key: { coupleId: 1, seq: 1 }, unique: true, name: 'coupleId_seq_unique' }, // sync replay, GET /events
     { key: { 'push.state': 1, 'push.leaseUntil': 1 }, name: 'push_state_leaseUntil' }, // outbox worker lease

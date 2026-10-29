@@ -61,6 +61,14 @@ export const REDACT_PATHS = [
   '*.sos.message',
   'city',
   '*.city',
+  // calendar entries and wake-together alarms: notes and labels are private content (titles are
+  // covered above)
+  'notes',
+  '*.notes',
+  'entry',
+  '*.entry',
+  'label',
+  '*.label',
   // live location: coordinates must never reach logs
   'fix',
   '*.fix',

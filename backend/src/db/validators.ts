@@ -26,6 +26,11 @@ const bool = { bsonType: 'bool' } as const;
 const nullableInt = { bsonType: ['int', 'long', 'double', 'null'] } as const;
 
 const hhmm = { bsonType: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' } as const;
+/**
+ * A short snake_case value (a kind, a mode, an outcome) in collections created after the live
+ * database stopped accepting collMod: a pattern, never an enum, so a later value passes as it is.
+ */
+const code = { bsonType: 'string', pattern: '^[a-z][a-z0-9_]{0,31}$' } as const;
 
 const preferences = {
   bsonType: 'object',
@@ -576,6 +581,67 @@ export const VALIDATORS: Record<string, Document> = {
         },
         lastSeenAt: date,
         stoppedAt: nullableDate,
+        updatedAt: date,
+      },
+    },
+  },
+  // A new collection, so it is created with this validator at boot (no collMod needed). No enums and
+  // no additionalProperties: the production DB user can never change this validator afterwards, so
+  // a new kind, repeat or field must already pass it (Zod is the allow-list).
+  [COLLECTION_NAMES.calendarEntries]: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: [
+        'coupleId',
+        'createdBy',
+        'updatedBy',
+        'kind',
+        'title',
+        'date',
+        'repeat',
+        'reminders',
+        'remindUserIds',
+        'version',
+        'createdAt',
+        'updatedAt',
+      ],
+      properties: {
+        coupleId: objectId,
+        createdBy: objectId,
+        updatedBy: objectId,
+        kind: code,
+        title: { bsonType: 'string', minLength: 1, maxLength: 120 },
+        notes: { bsonType: ['string', 'null'], maxLength: 2000 },
+        emoji: { bsonType: ['string', 'null'], minLength: 1, maxLength: 16 },
+        date: { bsonType: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        endDate: { bsonType: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        time: { bsonType: ['string', 'null'], pattern: hhmm.pattern },
+        durationMinutes: { bsonType: ['int', 'long', 'double', 'null'], minimum: 1 },
+        timeZone: { bsonType: ['string', 'null'], minLength: 1, maxLength: 64 },
+        repeat: code,
+        repeatUntil: { bsonType: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        reminders: {
+          bsonType: 'array',
+          maxItems: 16,
+          items: { bsonType: ['int', 'long', 'double'], minimum: 0 },
+        },
+        remindUserIds: { bsonType: 'array', maxItems: 2, items: objectId },
+        pinned: bool,
+        doneAt: nullableDate,
+        doneBy: nullableObjectId,
+        source: {
+          bsonType: ['object', 'null'],
+          required: ['kind'],
+          properties: {
+            kind: code,
+            messageId: objectId,
+            listId: objectId,
+            itemId: { bsonType: 'string', minLength: 1, maxLength: 32 },
+          },
+        },
+        clientKey: { bsonType: ['string', 'null'], minLength: 1, maxLength: 64 },
+        version: { bsonType: ['int', 'long', 'double'], minimum: 1 },
+        createdAt: date,
         updatedAt: date,
       },
     },

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DisplayName } from '../auth/schemas.js';
 import {
   Birthday,
+  CalendarEntry,
   CityInput,
   Couple,
   Game,
@@ -83,5 +84,6 @@ export const ExportResponse = z.object({
   liveLocation: LiveLocation.nullable().meta({
     description: "My own live-location session while I share it (never my partner's); no history exists",
   }),
+  calendar: z.array(CalendarEntry).meta({ description: 'Shared calendar entries, by date' }),
   truncated: z.boolean(),
 });

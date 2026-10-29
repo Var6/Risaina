@@ -56,6 +56,14 @@ const TABLE: [
   // Linked to its SOS: the app posts nothing (the SOS alarm is the alert), so a silent refresh.
   ['location.started', { sharing: { reason: 'panic', sosId: '65f000000000000000000001' } }, 'normal', false],
   ['location.stopped', {}, 'normal', false],
+  // Calendar: always a silent sync, even when the creator asked to tell the partner (the app posts
+  // that notice when the sync applies the event).
+  ['calendar.created', {}, 'normal', false],
+  ['calendar.created', { notify: false }, 'normal', false],
+  ['calendar.created', { notify: true }, 'normal', false],
+  ['calendar.updated', { notify: false }, 'normal', false],
+  ['calendar.updated', { notify: true }, 'normal', false],
+  ['calendar.deleted', {}, 'normal', false],
   ['something.new', {}, 'normal', false],
   // Games: by action.
   ['game.updated', { action: 'created' }, 'high', false],
