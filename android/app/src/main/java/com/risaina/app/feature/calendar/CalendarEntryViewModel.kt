@@ -144,13 +144,16 @@ class CalendarEntryViewModel @Inject constructor(
         val time = savedState.get<String>("time").toLocalTimeOrNull()
         val date = savedState.get<String>("date").toLocalDateOrNull()
         val kind = savedState.get<String>("kind")?.let(CalendarKind::fromWire)?.takeIf { it != CalendarKind.UNKNOWN } ?: CalendarKind.EVENT
-        val source = savedState.get<String>("sourceKind")?.let {
-            CalendarSource(CalendarSourceKind.fromWire(it), savedState["sourceMessageId"], savedState["sourceListId"], savedState["sourceItemId"])
-        }
+        val source = CalendarPrefills.source(
+            savedState["sourceKind"], savedState["sourceMessageId"], savedState["sourceListId"], savedState["sourceItemId"],
+        )
+        // A time read from the partner's message is on their clock.
+        val author = source?.messageId?.let { messageDao.byId(it) }?.senderId
+        val authorZone = partnerZone.takeIf { author != null && author != me && author == partner?.id }
         val allDay = time == null
         val form = EntryForm(
             kind = kind, title = title.orEmpty().trim().take(120), date = date, allDay = allDay, time = time,
-            timeZone = if (time != null) myZone.id else null, reminders = EntryRules.defaultReminders(allDay),
+            timeZone = CalendarPrefills.zoneFor(time, date, myZone, authorZone), reminders = EntryRules.defaultReminders(allDay),
         )
         // Only a title came (the composer's "Add to calendar" with a draft, a note's line): offer its date.
         val suggestion = if (!title.isNullOrBlank() && date == null) {
@@ -265,14 +268,22 @@ class CalendarEntryViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(saving = true) }
             val base = s.existing
-            val r = if (base == null) calendar.create(draft, f.notifyPartner, clientKey) else calendar.update(base, draft, f.notifyPartner)
+            var r = if (base == null) calendar.create(draft, f.notifyPartner, clientKey) else calendar.update(base, draft, f.notifyPartner)
+            // A new entry's 404 is the message or list it came from, deleted meanwhile: it goes in
+            // without the link (the same clientKey: nothing was stored by the refused request).
+            if (base == null && draft.source != null && r is AppResult.Failure && r.error is AppError.NotFound) {
+                r = calendar.create(draft.copy(source = null), f.notifyPartner, clientKey)
+            }
             _state.update { it.copy(saving = false) }
             when (r) {
                 is AppResult.Success -> closes.send(if (base == null) "Added to your calendar" else "Saved")
                 is AppResult.Failure -> when (val e = r.error) {
                     // Room already holds the partner's copy: show it, and say so.
                     is AppError.VersionConflict -> { base?.let { calendar.byId(it.id) }?.let { show(it) }; effects.trySend(e.message ?: "Changed meanwhile") }
-                    is AppError.NotFound -> closes.send("That was deleted meanwhile")
+                    is AppError.NotFound ->
+                        if (base != null) closes.send("That was deleted meanwhile")
+                        // Only a server from before the calendar answers a create with 404.
+                        else effects.trySend("The calendar isn't on the server yet. Try again later.")
                     else -> effects.trySend(e.message ?: "Couldn't save")
                 }
             }
