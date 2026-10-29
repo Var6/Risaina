@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -163,6 +164,9 @@ class ListSyncEngine @Inject constructor(
     private fun sessionFor(id: String): Session = resolve(id).let { key -> sessions.computeIfAbsent(key) { Session(key) } }
 
     // ---- what the screens use ----
+
+    /** Every list for the overview, drafts over server copies (ListOverview). */
+    val overview: Flow<List<OverviewEntry>> = combine(listDao.all(), draftDao.observeAll()) { rows, drafts -> ListOverview.entries(rows, drafts, json) }
 
     /** The editor's view of [id], loading the draft or the server copy first. */
     fun observe(id: String): Flow<EditorSnapshot> = flow {
