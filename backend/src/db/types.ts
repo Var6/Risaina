@@ -571,6 +571,9 @@ export interface EventPush {
   lastError: string | null;
   skipReason: string | null;
   sentAt: Date | null;
+  // The current lease (added later; absent on older events): only the worker holding it records the
+  // result, so a send that outlived its lease cannot overwrite a newer one.
+  leaseId?: string | null;
 }
 
 export interface EventDoc {

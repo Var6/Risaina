@@ -741,6 +741,7 @@ export const VALIDATORS: Record<string, Document> = {
             lastError: nullableString,
             skipReason: nullableString,
             sentAt: nullableDate,
+            leaseId: nullableString, // optional (outbox lease id, added later)
           },
         },
       },

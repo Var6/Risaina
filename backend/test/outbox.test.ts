@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { ObjectId } from 'mongodb';
+import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { isInQuietHours, parseHHmm } from '../src/lib/quiet-hours.js';
+import { OutboxWorker } from '../src/workers/outbox.js';
 import {
   API,
   bearer,
@@ -283,6 +285,108 @@ describe('outbox with a push service', () => {
     const ev2 = await t.db.events.findOne({ type: 'ping.created', 'payload.ping.id': ping2.json().ping.id });
     expect(ev2!.push.state).toBe('sent');
     expect(push.calls.find((c) => c.data.type === 'ping.created')!.opts.priority).toBe('high');
+  });
+});
+
+/** FakePushService whose next send, once armed, waits for `release` and then throws. */
+class GatedPushService extends FakePushService {
+  private gate: { started: () => void; wait: Promise<void> } | null = null;
+
+  arm(): { started: Promise<void>; release: () => void } {
+    let started!: () => void;
+    let release!: () => void;
+    const startedP = new Promise<void>((r) => {
+      started = r;
+    });
+    const wait = new Promise<void>((r) => {
+      release = r;
+    });
+    this.gate = { started, wait };
+    return { started: startedP, release };
+  }
+
+  override async send(...args: Parameters<FakePushService['send']>) {
+    const gate = this.gate;
+    this.gate = null;
+    if (gate) {
+      gate.started();
+      await gate.wait;
+      throw new Error('socket hang up');
+    }
+    return super.send(...args);
+  }
+}
+
+describe('outbox lease ownership (push.leaseId)', () => {
+  let t: TestApp;
+  let push: GatedPushService;
+  let a: Session;
+  let b: Session;
+
+  beforeAll(async () => {
+    push = new GatedPushService();
+    // maxAttempts 1: the slow worker's failed send would mark the event failed for good
+    t = await createTestApp({
+      push,
+      outbox: { maxAttempts: 1 },
+      envOverrides: { PING_COOLDOWN_SECONDS: '0' },
+    });
+    a = await register(t.app, 'La');
+    b = await register(t.app, 'Lb');
+    await pair(t.app, a, b);
+    await t.app.inject({
+      method: 'PUT',
+      url: `${API}/devices`,
+      headers: bearer(b),
+      payload: {
+        deviceId: 'lb-phone',
+        platform: 'android',
+        token: `fcm-${randomUUID()}`,
+        appVersion: '1.0.0',
+      },
+    });
+    await t.outbox.runOnce(); // drain the pairing events
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  it('a worker whose send outlived its lease cannot overwrite the newer result', async () => {
+    const ping = await sendPing(t.app, a);
+    const filter = { type: 'ping.created' as const, 'payload.ping.id': ping.json().ping.id };
+    const gate = push.arm();
+    // worker 1 leases the event and hangs in the send
+    const slow = t.outbox.runOnce(1);
+    await gate.started;
+    const leased = await t.db.events.findOne(filter);
+    expect(leased!.push.leaseId).toMatch(/^[A-Za-z0-9_-]{12}$/);
+
+    // its lease runs out; worker 2 leases the same event again and delivers it
+    t.clock.advance(31_000);
+    const other = new OutboxWorker(t.db, push, t.clock.now, pino({ level: 'silent' }), {
+      pollMs: 50,
+      leaseMs: 30_000,
+      maxAttempts: 1,
+      backoffBaseMs: 0,
+    });
+    expect(await other.runOnce(1)).toBe(1);
+    const sent = await t.db.events.findOne(filter);
+    expect(sent!.push).toMatchObject({ state: 'sent', attempts: 1, lastError: null });
+    expect(sent!.push.leaseId).not.toBe(leased!.push.leaseId);
+
+    // worker 1's send now fails: its "failed" must not replace "sent"
+    gate.release();
+    await slow;
+    const after = await t.db.events.findOne(filter);
+    expect(after!.push).toMatchObject({ state: 'sent', attempts: 1, lastError: null });
+    expect(after!.push.sentAt).toBeInstanceOf(Date);
+  });
+
+  it('records normally when nothing else leased the event', async () => {
+    const ping = await sendPing(t.app, a);
+    await t.outbox.runOnce();
+    const ev = await t.db.events.findOne({ type: 'ping.created', 'payload.ping.id': ping.json().ping.id });
+    expect(ev!.push).toMatchObject({ state: 'sent', attempts: 1, leaseUntil: null });
   });
 });
 
