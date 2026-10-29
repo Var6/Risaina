@@ -46,10 +46,10 @@ class WakeAlarmSyncTest {
         json, store, controller, notifier, repository, coupleDao, session, prefs, FixedTimeProvider(Clock.fixed(now, ZoneId.of("Asia/Kolkata"))),
     )
 
-    private fun dto(id: String = "a1", version: Int = 1, createdBy: String = "bea", myRing: Boolean = true, enabled: Boolean = true) = AlarmDto(
+    private fun dto(id: String = "a1", version: Int = 1, createdBy: String = "bea", myRing: Boolean = true, enabled: Boolean = true, myReady: Boolean? = null) = AlarmDto(
         id = id, coupleId = "c", createdBy = createdBy, time = "06:30", timeZone = "Asia/Kolkata", days = listOf(1, 2, 3, 4, 5), enabled = enabled,
         version = version, createdAt = "2026-10-28T16:00:00.000Z", updatedAt = "2026-10-28T16:00:00.000Z",
-        members = listOf(AlarmMemberDto("me", ring = myRing), AlarmMemberDto("bea")),
+        members = listOf(AlarmMemberDto("me", ring = myRing, ready = myReady), AlarmMemberDto("bea")),
     )
 
     private fun event(seq: Long, type: String, payload: Map<String, JsonElement>, actor: String = "bea") =
@@ -128,14 +128,29 @@ class WakeAlarmSyncTest {
     }
 
     @Test fun `the first refresh after sign-in only primes, later ones announce what is new`() = runTest {
-        coEvery { repository.list() } returns AppResult.Success(listOfNotNull(dto("old").toDomain()))
+        coEvery { repository.list() } returns AppResult.Success(listOfNotNull(dto("old", myReady = true).toDomain()))
         sync.refresh()
         assertTrue(store.current().primed)
         verify(exactly = 0) { notifier.postSet(any(), any(), any(), any()) }
-        coEvery { repository.list() } returns AppResult.Success(listOfNotNull(dto("old").toDomain(), dto().toDomain()))
+        coEvery { repository.list() } returns AppResult.Success(listOfNotNull(dto("old", myReady = true).toDomain(), dto().toDomain()))
         sync.refresh()
         verify(exactly = 1) { notifier.postSet("a1", any(), any(), any()) }
         verify(atLeast = 2) { controller.rearm(any()) }
+    }
+
+    @Test fun `after an update from a build without alarms, the partner's alarms are announced on the first refresh`() = runTest {
+        // None of my phones ever reported on "a1" (ready null): no build of mine has shown it yet.
+        // "seen" was reported by my other phone, and "mine" is my own.
+        coEvery { repository.list() } returns AppResult.Success(
+            listOfNotNull(dto().toDomain(), dto("seen", myReady = false).toDomain(), dto("mine", createdBy = "me").toDomain()),
+        )
+        sync.refresh()
+        noticeStarting("Raina set Wake together for ")
+        verify(exactly = 1) { notifier.postSet(any(), any(), any(), any()) }
+        assertEquals(setOf("a1", "seen", "mine"), store.current().announced)
+        // Not again on the next refresh.
+        sync.refresh()
+        verify(exactly = 1) { notifier.postSet(any(), any(), any(), any()) }
     }
 
     @Test fun `nothing here can fail the event, so the cursor always moves on`() = runTest {

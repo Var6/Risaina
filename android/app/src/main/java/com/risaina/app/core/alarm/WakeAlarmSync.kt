@@ -109,7 +109,13 @@ class WakeAlarmSync @Inject constructor(
                 val added = store.replaceAll(r.value.map { it.toDto() }, requestedAt)
                 val s = store.current()
                 if (!s.primed) {
-                    store.update { it.copy(primed = true, announced = it.announced + it.alarms.map { a -> a.id }) }
+                    // Already there at sign-in: seen on this person's other phone, unless none of
+                    // their phones ever reported on it (ready still null). Then this is the first
+                    // build that understands alarms (an update from one without), and the partner's
+                    // alarm would otherwise ring here at 5 am unannounced.
+                    val unseen = s.domain().filter { it.createdBy != me && it.member(me)?.ready == null }.map { it.id }.toSet()
+                    store.update { it.copy(primed = true, announced = it.announced + (it.alarms.map { a -> a.id } - unseen)) }
+                    for (id in unseen) store.current().alarm(id)?.let { announce(it, me, "created", notify = false) }
                 } else {
                     for (id in added) s.alarm(id)?.let { announce(it, me, "created", notify = false) }
                 }
