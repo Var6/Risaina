@@ -44,14 +44,21 @@ class CalendarDoneWorker @AssistedInject constructor(
 
     companion object {
         private const val KEY_ENTRY = "entryId"
+        private const val TAG = "calendar-done"
 
         fun enqueue(context: Context, entryId: String) {
             val req = OneTimeWorkRequestBuilder<CalendarDoneWorker>()
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, Duration.ofSeconds(30))
                 .setInputData(workDataOf(KEY_ENTRY to entryId))
+                .addTag(TAG)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork("calendar-done-$entryId", ExistingWorkPolicy.KEEP, req)
+        }
+
+        /** Sign-out or unlink: a tick still waiting for a network belongs to the calendar that is gone. */
+        fun cancelAll(context: Context) {
+            runCatching { WorkManager.getInstance(context).cancelAllWorkByTag(TAG) }
         }
     }
 }

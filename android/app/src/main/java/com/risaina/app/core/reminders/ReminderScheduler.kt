@@ -99,6 +99,7 @@ class ReminderScheduler @Inject constructor(
                     // and its notifications from the shade (RisainaNotifier.clearAllPartnerNotifications).
                     if (before != null && before.first && before.second != null && (!now.first || now.second != before.second)) {
                         cancelAlarm()
+                        CalendarDoneWorker.cancelAll(context)
                         runCatching { settingsStore.forgetStart() }
                     }
                 }
