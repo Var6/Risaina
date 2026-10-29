@@ -72,6 +72,7 @@ import com.risaina.app.core.model.WakeAlarm
 import com.risaina.app.core.safety.CheckStatus
 import com.risaina.app.core.safety.ReadinessCheck
 import com.risaina.app.feature.common.BackIcon
+import kotlinx.coroutines.delay
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalTime
@@ -100,6 +101,14 @@ fun WakeScreen(onBack: () -> Unit, vm: WakeViewModel = hiltViewModel()) {
         onPauseOrDispose { }
     }
     var deleting by remember { mutableStateOf<WakeAlarm?>(null) }
+    // Right after a change the partner's phone has not set it yet; look again now and then.
+    val waiting = s.rows.any { it.alarm.enabled && it.partner == MemberStatus.NOT_SET_YET }
+    LaunchedEffect(waiting) {
+        while (waiting) {
+            delay(45_000)
+            vm.refresh()
+        }
+    }
 
     Scaffold(
         topBar = {

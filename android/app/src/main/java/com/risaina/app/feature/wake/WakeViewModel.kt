@@ -158,6 +158,14 @@ class WakeViewModel @Inject constructor(
     fun onResume() {
         device.value = probe.read()
         controller.report()
+        refresh()
+    }
+
+    /**
+     * GET /alarms again. The partner's phone reports the ring it set without an event (the server
+     * stores it silently), so "Not set on their phone yet" only clears with a fresh copy.
+     */
+    fun refresh() {
         viewModelScope.launch { runCatching { sync.refresh() } }
     }
 
