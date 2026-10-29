@@ -41,6 +41,8 @@ class AuthRepository @Inject constructor(
     private val widgetBoardRepository: WidgetBoardRepository,
     private val lockScreenCard: com.risaina.app.core.notifications.LockScreenCard,
     private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
+    /** Unsent list edits are dropped and their retries cancelled before the database is cleared. */
+    private val listSync: dagger.Lazy<com.risaina.app.core.data.lists.ListSyncEngine>,
 ) {
     val isSignedIn: Flow<Boolean> = sessionStore.session.map { it != null }
 
@@ -124,6 +126,7 @@ class AuthRepository @Inject constructor(
     private suspend fun clearLocal() {
         googleSignOut.clear()
         sessionStore.clear()
+        listSync.get().reset()
         db.clearAllContent()
         widgetSnapshotStore.clear()
         widgetBoardRepository.clear()

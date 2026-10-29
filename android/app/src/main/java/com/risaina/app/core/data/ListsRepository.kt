@@ -20,14 +20,16 @@ import com.risaina.app.core.network.RisainaApi
 import com.risaina.app.core.network.SharedListDto
 import com.risaina.app.core.network.apiCall
 import com.risaina.app.core.network.list
-import com.risaina.app.core.network.toAppError
-import io.ktor.client.plugins.ClientRequestException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,9 +54,10 @@ fun ListEntity.toDomain(json: Json): SharedList {
 }
 
 /**
- * Shared notes and checklists. Both partners edit; the server's version number detects clashes.
- * Every copy from the server goes into Room through ListDao.upsertIfNewer, so an older copy (a slow
- * reply, a replayed event) never replaces a newer one.
+ * Shared notes and checklists on the server. Both partners edit; the server's version number detects
+ * clashes. Every copy from the server goes into Room through ListDao.upsertIfNewer, so an older copy
+ * (a slow reply, a replayed event) never replaces a newer one. Edits made in the editor are sent by
+ * ListSyncEngine (drafts, merging, retries); this class does the whole-list operations.
  */
 @Singleton
 class ListsRepository @Inject constructor(
@@ -68,9 +71,40 @@ class ListsRepository @Inject constructor(
 
     private fun SharedListDto.entity() = toEntity(json, syncedAt = time.now().toEpochMilli())
 
+    /** When each list was deleted on this phone or by a list.deleted event (this phone's clock), for [refresh]. */
+    private val deletedAt = ConcurrentHashMap<String, Long>()
+    @Volatile private var lastRefreshAt = 0L
+
+    /**
+     * Makes Room the server's set of lists. The one place lists are fetched in full: opening the
+     * overview, and [refreshIfStale] after the live connection catches up. A list deleted while the
+     * GET was on its way stays deleted (the answer predates the delete).
+     */
     suspend fun refresh(): AppResult<Unit> {
         val requestedAt = time.now().toEpochMilli()
-        return apiCall { api.lists() }.onSuccess { r -> dao.syncFromServer(r.items.map { it.entity() }, requestedAt) }.map { }
+        return apiCall { api.lists() }.onSuccess { r ->
+            dao.syncFromServer(r.items.map { it.entity() }, requestedAt, deletedSince(requestedAt))
+            lastRefreshAt = time.now().toEpochMilli()
+        }.map { }
+    }
+
+    /**
+     * [refresh] at most once a minute: after the WebSocket catches up (also on coming to the
+     * foreground), for list events that were never stored or pushed.
+     */
+    suspend fun refreshIfStale(minIntervalMs: Long = REFRESH_INTERVAL_MS): AppResult<Unit> =
+        if (time.now().toEpochMilli() - lastRefreshAt < minIntervalMs) AppResult.Success(Unit) else refresh()
+
+    /** The list is gone (deleted here, by the partner, or found missing by a save): out of Room, and kept out. */
+    suspend fun forget(id: String) {
+        deletedAt[id] = time.now().toEpochMilli()
+        dao.delete(id)
+    }
+
+    private fun deletedSince(requestedAt: Long): Set<String> {
+        val now = time.now().toEpochMilli()
+        deletedAt.entries.removeIf { now - it.value > TOMBSTONE_MS }
+        return deletedAt.filterValues { it >= requestedAt }.keys
     }
 
     /**
@@ -92,30 +126,13 @@ class ListsRepository @Inject constructor(
             .onSuccess { dao.upsertIfNewer(it.list.entity()) }
             .map { it.list.entity().toDomain(json) }
 
-    /**
-     * Saves the whole list. On a version clash the server's copy wins locally and the caller is told,
-     * so the user re-applies their change on top of their partner's instead of silently overwriting it.
-     */
-    suspend fun save(list: SharedList, title: String = list.title, body: String = list.body, items: List<ListItem> = list.items, pinned: Boolean = list.pinned): AppResult<SharedList> {
-        val req = PatchListRequest(
-            title = title.trim(), body = body, pinned = pinned, expectedVersion = list.version,
-            items = items.map { ListItemDto(id = it.id, text = it.text.trim(), done = it.done) },
-        )
-        return try {
-            val r = api.patchList(list.id, req)
-            dao.upsertIfNewer(r.list.entity())
-            AppResult.Success(r.list.entity().toDomain(json))
-        } catch (e: ClientRequestException) {
-            if (e.response.status.value == 409) { refresh(); AppResult.Failure(AppError.Conflict("version_conflict", "Your partner just changed this. Showing their latest version.")) }
-            else AppResult.Failure(e.toAppError())
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            AppResult.Failure(e.toAppError())
-        }
+    /** A list already gone on the server counts as deleted. */
+    suspend fun delete(id: String): AppResult<Unit> {
+        val r = apiCall { api.deleteList(id) }
+        if (r is AppResult.Failure && r.error !is AppError.NotFound) return r
+        forget(id)
+        return AppResult.Success(Unit)
     }
-
-    suspend fun delete(id: String): AppResult<Unit> = apiCall { api.deleteList(id) }.onSuccess { dao.delete(id) }
 
     /**
      * One list from the server (opening it from a link, or checking it after a conflict). Returns the
@@ -168,17 +185,34 @@ class ListsRepository @Inject constructor(
         return AppResult.Failure(AppError.VersionConflict("Your partner is busy with this list. Try again in a moment."))
     }
 
+    private val todoLock = Mutex()
+
     /**
      * The pinned shared "To-dos" checklist that undated to-dos from the chat go into: the one this
      * phone or the server already has, or a new one. Looking on the server first keeps both phones on
-     * the same list.
+     * the same list. One call at a time, so two quick "Add to to-dos" make one list: the second
+     * finds the first one's list in Room. A create whose reply is lost is retried with the same
+     * clientKey, which returns the list the first try made instead of a second one.
      */
-    suspend fun ensureTodoList(): AppResult<SharedList> {
-        findTodoList()?.let { return AppResult.Success(it) }
-        refresh().errorOrNull()?.let { return AppResult.Failure(it) }
-        findTodoList()?.let { return AppResult.Success(it) }
-        return create(ListLimits.TODO_LIST_TITLE, ListKind.CHECKLIST, pinned = true, marker = ListMarker.NONE, checkboxes = true)
+    suspend fun ensureTodoList(): AppResult<SharedList> = todoLock.withLock {
+        findTodoList()?.let { return@withLock AppResult.Success(it) }
+        refresh().errorOrNull()?.let { return@withLock AppResult.Failure(it) }
+        findTodoList()?.let { return@withLock AppResult.Success(it) }
+        val key = "todos-" + TodoAppend.newId()
+        var r = createTodoList(key)
+        var tries = 0
+        while (r is AppResult.Failure && r.error.isRetryable && r.error !is AppError.RateLimited && tries < TODO_CREATE_RETRIES) {
+            tries++
+            delay(TODO_RETRY_DELAY_MS * tries)
+            r = createTodoList(key)
+        }
+        // A 404 on a retry: the first try made the list and it was deleted since. Nothing to retry.
+        if (r is AppResult.Failure && r.error is AppError.NotFound) AppResult.Failure(AppError.NotFound("The To-dos list was just deleted. Try again."))
+        else r
     }
+
+    private suspend fun createTodoList(clientKey: String) =
+        create(ListLimits.TODO_LIST_TITLE, ListKind.CHECKLIST, pinned = true, marker = ListMarker.NONE, checkboxes = true, clientKey = clientKey)
 
     /** A checklist titled "To-dos" (any case); a pinned one first, then the oldest. */
     private suspend fun findTodoList(): SharedList? = dao.all().first()
@@ -191,5 +225,11 @@ class ListsRepository @Inject constructor(
     companion object {
         /** Retries of an append after a 409; each one re-reads the partner's newer copy. */
         const val APPEND_RETRIES = 3
+        /** Retries of the To-dos create after a timeout or lost connection, with the same clientKey. */
+        const val TODO_CREATE_RETRIES = 2
+        private const val TODO_RETRY_DELAY_MS = 1_500L
+        private const val REFRESH_INTERVAL_MS = 60_000L
+        /** How long a delete is remembered for [refresh]: far longer than any GET takes. */
+        private const val TOMBSTONE_MS = 10 * 60_000L
     }
 }

@@ -74,6 +74,8 @@ class EventReducer @Inject constructor(
     private val calendarDao: CalendarDao,
     /** Only for the chat notification after a read or a delete: local, no network (see refreshConversation). */
     private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
+    /** list.deleted: Room only (the list, its tombstone, an orphaned draft); no network. */
+    private val listSync: com.risaina.app.core.data.lists.ListSyncEngine,
 ) {
     /** [replay]: the event is old history being re-applied (ReplayGuard); its receipts are not re-sent. */
     suspend fun apply(event: EventDto, replay: Boolean = false): List<Incoming> {
@@ -145,7 +147,8 @@ class EventReducer @Inject constructor(
             "list.created", "list.updated" -> p.obj("list")?.let {
                 listDao.upsertIfNewer(json.decodeFromJsonElement(com.risaina.app.core.network.SharedListDto.serializer(), it).toEntity(json))
             }
-            "list.deleted" -> p.str("listId")?.let { listDao.delete(it) }
+            // Remembered so a slow GET /lists cannot bring it back; unsent edits to it become orphaned.
+            "list.deleted" -> p.str("listId")?.let { listSync.onDeleted(it) }
             // An entry that does not decode is skipped, not thrown: the next GET /calendar has it.
             "calendar.created", "calendar.updated" -> p.obj("entry")?.let {
                 runCatching { json.decodeFromJsonElement(CalendarEntryDto.serializer(), it) }.getOrNull()

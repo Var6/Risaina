@@ -52,6 +52,7 @@ class CoupleRepository @Inject constructor(
     private val widgetRefresher: com.risaina.app.core.sync.WidgetRefresher,
     private val lockScreenCard: com.risaina.app.core.notifications.LockScreenCard,
     private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
+    private val listSync: dagger.Lazy<com.risaina.app.core.data.lists.ListSyncEngine>,
 ) {
     private val invitation = MutableStateFlow<InvitationSummary?>(null)
     private val loaded = MutableStateFlow(false)
@@ -206,6 +207,8 @@ class CoupleRepository @Inject constructor(
 
     /** Everything that belonged to the couple goes: chat, pings, memories, games, widget content. */
     private suspend fun clearLocalCoupleData() {
+        // Unsent list edits belong to this couple: dropped, and their retries cancelled, before the wipe.
+        listSync.get().reset()
         db.clearAllContent()
         widgetSnapshotStore.clear()
         widgetBoardRepository.get().clear()
