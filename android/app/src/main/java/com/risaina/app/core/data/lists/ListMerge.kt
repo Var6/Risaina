@@ -79,14 +79,14 @@ object ListMerge {
     private fun intoTheirNote(base: ListDoc, mine: ListDoc, theirs: ListDoc): Result {
         val b = base.items.associateBy { it.id }
         val marker = ListMarker.fromWire(mine.marker)
-        val changed = mine.items.filter { it.text.isNotBlank() }.withIndex().filter { (_, r) -> b[r.id]?.let { it.text.trim() != r.text.trim() } ?: true }
+        val changed = mine.items.filter { !it.text.isBlankJs() }.withIndex().filter { (_, r) -> b[r.id]?.let { it.text.trimJs() != r.text.trimJs() } ?: true }
         // My other changes (title, pin) merge as usual, my rows aside.
         val rest = plain(base, mine.copy(items = base.items), theirs).doc
         if (changed.isEmpty()) return Result(rest, false)
         var body = rest.body.trimEnd()
         val left = ArrayList<DocItem>()
         for ((i, r) in changed) {
-            val line = ListLines.prefix(i, r.done, marker, mine.checkboxes) + r.text.trim()
+            val line = ListLines.prefix(i, r.done, marker, mine.checkboxes) + r.text.trimJs()
             val next = if (body.isEmpty()) line else "$body\n$line"
             if (left.isEmpty() && next.length <= ListLimits.MAX_BODY) body = next else left += r
         }
@@ -101,8 +101,8 @@ object ListMerge {
      * copy stays as typed, so the text under the cursor never jumps.
      */
     internal fun pickText(b: String, m: String, t: String): String = when {
-        m.trim() != b.trim() -> m
-        t.trim() != b.trim() -> t
+        m.trimJs() != b.trimJs() -> m
+        t.trimJs() != b.trimJs() -> t
         m == b -> t
         else -> m
     }
@@ -119,7 +119,7 @@ object ListMerge {
             val r = when {
                 mi != null && ti != null -> if (bi != null) both(bi, mi, ti) else bothAdded(mi, ti)
                 mi != null && bi == null -> mi // added on this phone
-                mi != null -> mi.takeIf { it.text.trim() != bi!!.text.trim() } // they deleted it; kept if I reworded it
+                mi != null -> mi.takeIf { it.text.trimJs() != bi!!.text.trimJs() } // they deleted it; kept if I reworded it
                 ti != null && bi == null -> ti // the partner's new row
                 else -> null // I deleted it
             }

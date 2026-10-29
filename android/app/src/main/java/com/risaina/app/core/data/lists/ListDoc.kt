@@ -80,8 +80,8 @@ private fun ListItemDto.toDocItem() = DocItem(
 
 /**
  * What a doc looks like on the wire, and the requests made from it. Rows with no text are kept on
- * the phone but never sent (the server refuses an empty item); texts are trimmed and cut to the
- * server's limits, so a save never fails as a whole over one long line.
+ * the phone but never sent (the server refuses an empty item); texts are trimmed (as the server
+ * trims, trimJs) and cut to the server's limits, so a save never fails as a whole over one long line.
  */
 object ListWire {
     /** The title a list gets when none is typed. The editor shows it as the placeholder, not as text. */
@@ -90,13 +90,13 @@ object ListWire {
     private val SENDABLE_MARKERS = setOf(ListMarker.NONE.wire, ListMarker.NUMBER.wire, ListMarker.BULLET.wire)
 
     /** A server title as the editor shows it: "Untitled" is the empty title. */
-    fun displayTitle(title: String): String = if (title.trim() == UNTITLED) "" else title
+    fun displayTitle(title: String): String = if (title.trimJs() == UNTITLED) "" else title
 
-    fun title(d: ListDoc): String = TodoAppend.cut(d.title.trim(), ListLimits.MAX_TITLE).trim().ifEmpty { UNTITLED }
+    fun title(d: ListDoc): String = TodoAppend.cut(d.title.trimJs(), ListLimits.MAX_TITLE).trimJs().ifEmpty { UNTITLED }
     fun body(d: ListDoc): String = TodoAppend.cut(d.body, ListLimits.MAX_BODY)
-    fun sentRows(d: ListDoc): List<DocItem> = d.items.filter { it.text.isNotBlank() }
+    fun sentRows(d: ListDoc): List<DocItem> = d.items.filter { !it.text.isBlankJs() }
     fun items(d: ListDoc): List<ListItemDto> = sentRows(d).map { ListItemDto(id = it.id, text = itemText(it.text), done = it.done) }
-    fun itemText(t: String) = TodoAppend.cut(t.trim()).trim()
+    fun itemText(t: String) = TodoAppend.cut(t.trimJs()).trimJs()
 
     /** [d] as the server stores it once created (texts trimmed and cut, empty rows left out), with this phone's row ids. */
     fun asCreated(d: ListDoc): ListDoc = d.copy(
@@ -112,7 +112,7 @@ object ListWire {
     fun same(a: ListDoc, b: ListDoc): Boolean = shape(a) == shape(b)
 
     /** Anything worth creating a list for (a new list left empty is dropped, not saved as "Untitled"). */
-    fun hasContent(d: ListDoc): Boolean = d.title.isNotBlank() || d.body.isNotBlank() || d.items.any { it.text.isNotBlank() }
+    fun hasContent(d: ListDoc): Boolean = !d.title.isBlankJs() || !d.body.isBlankJs() || d.items.any { !it.text.isBlankJs() }
 
     fun tooManyItems(d: ListDoc): Boolean = sentRows(d).size > ListLimits.MAX_ITEMS
 

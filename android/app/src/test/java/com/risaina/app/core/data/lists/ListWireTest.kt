@@ -24,6 +24,18 @@ class ListWireTest {
         assertFalse(ListWire.same(base.copy(marker = "number"), base))
     }
 
+    @Test fun `texts are trimmed as the server trims them, byte-order mark included`() {
+        val bom = '\uFEFF'
+        val base = doc(DocItem("a", "Milk"))
+        assertTrue("a pasted \"${bom}Milk\" is stored as Milk: nothing left to send", ListWire.same(doc(DocItem("a", "${bom}Milk$bom ")), base))
+        assertEquals("Milk", ListWire.items(doc(DocItem("a", "$bom Milk"))).single().text)
+        assertTrue("a row of only a mark is empty, never sent", ListWire.items(doc(DocItem("a", "$bom"))).isEmpty())
+        assertEquals("Untitled", ListWire.title(doc(title = "$bom")))
+        assertFalse(ListWire.hasContent(doc(DocItem("a", "$bom"), title = "$bom ")))
+        assertEquals("", ListWire.displayTitle("${bom}Untitled"))
+        assertTrue("the server keeps U+001C, so it is not trimmed here either", "\u001CMilk" == ListWire.itemText("\u001CMilk"))
+    }
+
     @Test fun `a blank title is sent as Untitled, and Untitled shows as the empty title`() {
         assertEquals("Untitled", ListWire.title(doc(title = "  ")))
         assertEquals("", ListWire.displayTitle("Untitled"))

@@ -79,7 +79,8 @@ class ListSyncEngineTest {
                 throw AppError.VersionConflict("changed", JsonObject(mapOf("list" to json.encodeToJsonElement(SharedListDto.serializer(), cur))))
             }
             val prev = cur.items.associateBy { it.id }
-            val items = p.items?.map { i ->
+            // Zod's trim is JavaScript's: it takes off a byte-order mark too.
+            val items = p.items?.map { it.copy(text = it.text.trim { c -> c == '\uFEFF' || c.isWhitespace() }) }?.map { i ->
                 val old = prev[i.id]
                 when {
                     old == null -> i.copy(id = i.id ?: "s${n++}", doneBy = if (i.done) "me" else null, doneAt = if (i.done) t0 else null, addedBy = "me", addedAt = t0)
@@ -256,6 +257,19 @@ class ListSyncEngineTest {
         assertEquals("Buy ", snap().doc.items[1].text)
         assertEquals(1, server.calls.size)
         assertEquals(SyncStatus.Saved, snap().status)
+    }
+
+    @Test fun `a pasted row that starts with a byte-order mark is saved once, not again and again`() = runTest {
+        seed("l", 1, item("a", "Milk"))
+        val e = engine()
+        val snap = open(e, "l")
+        e.edit("l", addRow("x", "\uFEFFEggs"))
+        advanceUntilIdle()
+        assertEquals("Eggs", server.lists.getValue("l").items[1].text)
+        assertEquals(SyncStatus.Saved, snap().status)
+        assertNull(draftDao.rows.value["l"])
+        assertTrue(e.sendAll())
+        assertEquals(listOf("PATCH l@1"), server.calls)
     }
 
     @Test fun `a 409 is merged with the partner's copy and sent again on top of it`() = runTest {
