@@ -20,6 +20,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * Which of Risaina's own partner notifications are in the shade while the lock card is drawn, read
+ * once from activeNotifications. Only [ping] changes what the card says; [widget] and [message] are
+ * read so the tests can pin down that they never do.
+ */
+data class ShowingAlerts(val ping: Boolean = false, val widget: Boolean = false, val message: Boolean = false)
+
+/**
  * What the lock-screen card says. Pure, so it is unit-tested (LockCardContentTest).
  *
  * [eventAtMillis] is the time shown on the card (only for an unseen gift or ping). [whenMillis] is
@@ -32,28 +39,31 @@ data class LockCardContent(val title: String, val line: String, val eventAtMilli
 
     companion object {
         /**
-         * Only something the person has NOT seen yet is announced: an unseen gift, then an unseen
-         * ping. Otherwise it is a calm status line (their mood, note or emoji) with no time on it.
+         * The card never repeats something that has a notification of its own: with the card on, one
+         * ping or message used to show twice on the partner's phone ("Touch from Raina" next to
+         * "Raina reached out", "Raina: hello" next to a card saying "hello").
+         *
+         * - An unseen gift, then an unseen ping, is announced only while the ping notification is not
+         *   [showing]: notifications off, the Touch Pings channel blocked, or the notification swiped
+         *   away. That is what the card is for.
+         * - Otherwise it is a calm line from "their widget" only (note, else mood, and its emoji) with
+         *   no time on it; never a chat message or a ping, so a new message or ping leaves the card as
+         *   it is and it is not posted again. A gift can no longer leak into it either.
+         *
          * It used to say "A gift from …" for three days after any gift, rebuilt with a fresh "now"
          * time on every sync, so an old, already-opened gift kept looking new.
          */
-        fun from(s: WidgetSnapshot): LockCardContent {
+        fun from(s: WidgetSnapshot, showing: ShowingAlerts = ShowingAlerts()): LockCardContent {
             val name = s.partnerName ?: "Your partner"
             return when {
-                s.giftUnseen -> LockCardContent("${s.latestGiftEmoji ?: "🎁"}  A gift from $name", s.latestGiftLine ?: "Open Risaina to see it", s.latestGiftAtMillis)
-                s.pingUnseen -> LockCardContent("${s.latestPingEmoji ?: "💗"}  $name reached out", "${s.latestPingLine ?: "Thinking of you"} · tap to send one back", s.latestPingAtMillis)
-                else -> {
-                    // When the partner's newest ping is a gift, the snapshot's emoji and its label are
-                    // that gift ("🌹" / "A rose for you"). The calm card must not bring it back.
-                    val emoji = s.latestEmoji.takeUnless { s.latestEmojiFromGift }
-                    val label = s.latestEmojiLabel.takeUnless { s.latestEmojiFromGift }
-                    LockCardContent(
-                        listOfNotNull(name, emoji).joinToString("  "),
-                        s.latestNoteText ?: label ?: "Always a little closer",
-                        eventAtMillis = null,
-                        whenMillis = s.latestAtMillis,
-                    )
-                }
+                s.giftUnseen && !showing.ping -> LockCardContent("${s.latestGiftEmoji ?: "🎁"}  A gift from $name", s.latestGiftLine ?: "Open Risaina to see it", s.latestGiftAtMillis)
+                s.pingUnseen && !showing.ping -> LockCardContent("${s.latestPingEmoji ?: "💗"}  $name reached out", "${s.latestPingLine ?: "Thinking of you"} · tap to send one back", s.latestPingAtMillis)
+                else -> LockCardContent(
+                    listOfNotNull(name, s.boardEmoji).joinToString("  "),
+                    s.boardLine ?: "Always a little closer",
+                    eventAtMillis = null,
+                    whenMillis = s.boardAtMillis,
+                )
             }
         }
 
@@ -73,10 +83,10 @@ data class LockCardContent(val title: String, val line: String, val eventAtMilli
 }
 
 /**
- * Opt-in "lock-screen card": a quiet, persistent notification with what your partner last sent
- * while it is new, then their mood or note. It works on every Android phone, unlike lock-screen
- * widgets, which only some Android versions and launchers allow. No sound, no buzz. It is shown in
- * full on the lock screen only because the user turned it on explicitly.
+ * Opt-in "lock-screen card": a quiet, persistent notification with an unseen ping or gift whose own
+ * notification is gone, otherwise the mood or note on "their widget". It works on every Android
+ * phone, unlike lock-screen widgets, which only some Android versions and launchers allow. No sound,
+ * no buzz. It is shown in full on the lock screen only because the user turned it on explicitly.
  */
 @Singleton
 class LockScreenCard @Inject constructor(
@@ -97,6 +107,7 @@ class LockScreenCard @Inject constructor(
         private const val K_FIRST_POSTED_AT = "first_posted_at"
         const val ACTION_DISMISSED = "com.risaina.app.LOCK_CARD_DISMISSED"
         const val EXTRA_KEY = "key"
+        private val MESSAGE_CHANNELS = setOf(NotificationChannels.MESSAGES, NotificationChannels.MESSAGES_QUIET)
     }
 
     private val prefs get() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -133,8 +144,17 @@ class LockScreenCard @Inject constructor(
         ensureChannel()
         // The person blocked this channel in system settings: posting would do nothing.
         if (nm.getNotificationChannel(CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE) return
-        val content = LockCardContent.from(s)
-        if (!LockCardContent.shouldPost(content.key, prefs.getString(K_POSTED, null), prefs.getString(K_DISMISSED, null), showing())) return
+        // Read once. Syncs post each notification as its event is applied, before this recompute, and
+        // the push handler's quick alert comes earlier still, so a new ping's notification is already
+        // here. When Android will not say, nothing counts as showing: the card announces, as before.
+        val active = runCatching { nm.activeNotifications.toList() }.getOrDefault(emptyList())
+        val alerts = ShowingAlerts(
+            ping = active.any { it.id == RisainaNotifier.PING_NOTIFICATION_ID },
+            widget = active.any { it.id == RisainaNotifier.WIDGET_NOTIFICATION_ID },
+            message = active.any { it.id != RisainaNotifier.GAME_NOTIFICATION_ID && it.notification.channelId in MESSAGE_CHANNELS },
+        )
+        val content = LockCardContent.from(s, alerts)
+        if (!LockCardContent.shouldPost(content.key, prefs.getString(K_POSTED, null), prefs.getString(K_DISMISSED, null), active.any { it.id == ID })) return
 
         val sortAt = content.whenMillis
             ?: prefs.getLong(K_FIRST_POSTED_AT, 0L).takeIf { it > 0 }
