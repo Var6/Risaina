@@ -23,6 +23,7 @@ class CalendarNoticeTest {
         val dinner = calendarEntry(date = LocalDate.of(2026, 11, 14), time = LocalTime.of(20, 0), timeZone = "Asia/Kolkata")
         assertEquals("Sat 14 Nov, 8:00 pm (2:30 pm for them)", CalendarNotice.line(dinner, kolkata, london, Locale.UK))
         assertEquals("Sat 14 Nov, 8:00 pm", CalendarNotice.line(dinner, kolkata, null, Locale.UK))
+        assertEquals("Sat 14 Nov, 8:00 pm", CalendarNotice.line(dinner, kolkata, ZoneId.of("Asia/Calcutta"), Locale.UK))
         // An all-day entry floats: the same date on both phones, no clock.
         assertEquals("Sat 14 Nov", CalendarNotice.line(calendarEntry(date = LocalDate.of(2026, 11, 14)), kolkata, london, Locale.UK))
     }

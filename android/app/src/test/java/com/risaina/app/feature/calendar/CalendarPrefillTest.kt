@@ -67,6 +67,7 @@ class CalendarPrefillTest {
         assertEquals("Asia/Kolkata", CalendarPrefills.zoneFor(eight, sat, kolkata, null))
         // Same clock that day: mine, so the zone row stays hidden.
         assertEquals("Asia/Kolkata", CalendarPrefills.zoneFor(eight, sat, kolkata, ZoneId.of("Asia/Calcutta")))
+        assertEquals("Europe/London", CalendarPrefills.zoneFor(eight, sat, london, ZoneId.of("Europe/Lisbon")))
         assertEquals("Asia/Kolkata", CalendarPrefills.zoneFor(eight, null, kolkata, london))
         assertNull(CalendarPrefills.zoneFor(null, sat, kolkata, london))
     }

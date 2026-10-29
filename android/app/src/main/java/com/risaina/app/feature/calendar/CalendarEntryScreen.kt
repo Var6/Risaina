@@ -251,7 +251,7 @@ fun CalendarEntryScreen(
 /**
  * Whose clock a timed entry follows, only when the partner shares a zone that tells another time:
  * mine, theirs, or each our own. With the live conversion, and a warning when either of you would be
- * asleep.
+ * asleep. On one clock there is nothing to ask (EntryRules.asksWhoseTime).
  */
 @Composable
 private fun ZoneRow(s: EntryUiState, partnerName: String, onPick: (String?) -> Unit) {
@@ -259,7 +259,7 @@ private fun ZoneRow(s: EntryUiState, partnerName: String, onPick: (String?) -> U
     val partnerZone = s.partnerZone ?: return
     val date = f.date ?: return
     val time = f.time ?: return
-    if (!EntryRules.zonesDiffer(s.myZone, partnerZone, date)) return
+    if (!EntryRules.asksWhoseTime(f, s.myZone, partnerZone)) return
     Text("Whose time", style = MaterialTheme.typography.labelMedium, color = Risaina.colors.textMuted, modifier = Modifier.padding(top = 10.dp))
     val options = listOf(s.myZone.id to "My time", partnerZone.id to "$partnerName's time", null to "Each our own clock")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

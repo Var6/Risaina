@@ -81,6 +81,18 @@ class CalendarRulesTest {
         assertNull(CalendarRules.partnerStart(e, e.date, kolkata, kolkata))
         assertNull(CalendarRules.partnerStart(e, e.date, kolkata, null))
         assertNull(CalendarRules.partnerStart(calendarEntry(), d(2026, 11, 14), kolkata, london))
+        // One clock under two names, or two zones that tell the same time: no second line.
+        assertNull(CalendarRules.partnerStart(e, e.date, kolkata, ZoneId.of("Asia/Calcutta")))
+        assertNull(CalendarRules.partnerStart(calendarEntry(time = LocalTime.of(20, 0), timeZone = "Europe/London"), e.date, london, ZoneId.of("Europe/Lisbon")))
+    }
+
+    @Test fun `zones that agree part of the year show the partner's clock only where they differ`() {
+        val phoenix = ZoneId.of("America/Phoenix")
+        val la = ZoneId.of("America/Los_Angeles")
+        val weekly = calendarEntry(date = d(2026, 10, 24), time = LocalTime.of(19, 0), timeZone = "America/Phoenix", repeat = CalendarRepeat.WEEKLY)
+        // Los Angeles keeps summer time until 1 Nov: one clock with Phoenix until then, an hour behind after.
+        assertNull(CalendarRules.partnerStart(weekly, d(2026, 10, 31), phoenix, la))
+        assertEquals(LocalDateTime.of(2026, 11, 7, 18, 0), CalendarRules.partnerStart(weekly, d(2026, 11, 7), phoenix, la))
     }
 
     @Test fun `the agenda places an anchored entry on this phone's day`() {

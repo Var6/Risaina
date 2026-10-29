@@ -1,5 +1,7 @@
 package com.risaina.app.feature.calendar
 
+import com.risaina.app.core.model.CalendarKind
+import com.risaina.app.core.model.CalendarRepeat
 import com.risaina.app.testutil.calendarEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,6 +34,33 @@ class EntryRulesTest {
         assertTrue(EntryRules.zonesDiffer(kolkata, london, fri))
         assertFalse(EntryRules.zonesDiffer(kolkata, ZoneId.of("Asia/Calcutta"), fri))
         assertFalse(EntryRules.zonesDiffer(kolkata, null, fri))
+        assertFalse(EntryRules.zonesDiffer(london, ZoneId.of("Europe/Lisbon"), fri, fri.plusYears(1)))
+    }
+
+    @Test fun `whose time is asked only when the two of you are on two clocks`() {
+        val eight = EntryForm(date = fri, allDay = false, time = LocalTime.of(20, 0), timeZone = "Asia/Kolkata")
+        assertTrue(EntryRules.asksWhoseTime(eight, kolkata, london))
+        // One clock: nothing to ask, under any name, or with their zone not shared.
+        assertFalse(EntryRules.asksWhoseTime(eight, kolkata, kolkata))
+        assertFalse(EntryRules.asksWhoseTime(eight, kolkata, ZoneId.of("Asia/Calcutta")))
+        assertFalse(EntryRules.asksWhoseTime(eight, kolkata, null))
+        assertFalse(EntryRules.asksWhoseTime(eight.copy(timeZone = "Europe/London"), london, ZoneId.of("Europe/Lisbon")))
+        // All day, or no date or time yet: no clock to choose.
+        assertFalse(EntryRules.asksWhoseTime(eight.copy(allDay = true, time = null), kolkata, london))
+        assertFalse(EntryRules.asksWhoseTime(eight.copy(date = null), kolkata, london))
+    }
+
+    @Test fun `a repeat asks when the clocks part ways on any of its days`() {
+        val phoenix = ZoneId.of("America/Phoenix")
+        val la = ZoneId.of("America/Los_Angeles")
+        // One clock in July; Los Angeles leaves summer time on 1 Nov and is an hour behind until March.
+        val july = EntryForm(date = LocalDate.of(2026, 7, 4), allDay = false, time = LocalTime.of(19, 0), timeZone = "America/Phoenix")
+        assertFalse(EntryRules.asksWhoseTime(july, phoenix, la))
+        assertTrue(EntryRules.asksWhoseTime(july.copy(repeat = CalendarRepeat.WEEKLY), phoenix, la))
+        assertFalse(EntryRules.asksWhoseTime(july.copy(repeat = CalendarRepeat.WEEKLY, repeatUntil = LocalDate.of(2026, 10, 31)), phoenix, la))
+        assertTrue(EntryRules.asksWhoseTime(july.copy(repeat = CalendarRepeat.MONTHLY, repeatUntil = LocalDate.of(2026, 11, 4)), phoenix, la))
+        // A to-do never repeats, whatever the form still holds.
+        assertFalse(EntryRules.asksWhoseTime(july.copy(kind = CalendarKind.TODO, repeat = CalendarRepeat.WEEKLY), phoenix, la))
     }
 
     @Test fun `emoji keep at most two characters`() {

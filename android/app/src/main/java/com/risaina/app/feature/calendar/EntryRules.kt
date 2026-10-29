@@ -6,6 +6,7 @@ import com.risaina.app.core.domain.DateDetector
 import com.risaina.app.core.domain.DateHit
 import com.risaina.app.core.domain.DateOrder
 import com.risaina.app.core.domain.Occurrence
+import com.risaina.app.core.domain.TimeZones
 import com.risaina.app.core.model.CalendarEntry
 import com.risaina.app.core.model.CalendarEntryDraft
 import com.risaina.app.core.model.CalendarKind
@@ -175,10 +176,22 @@ object EntryRules {
         )
     }
 
-    /** Whether the two zones tell a different time around [date] (the row is shown only then). */
-    fun zonesDiffer(mine: ZoneId, partner: ZoneId?, date: LocalDate): Boolean {
-        partner ?: return false
-        val noon = date.atTime(12, 0)
-        return mine.rules.getOffset(noon) != partner.rules.getOffset(noon)
+    /** Whether the two zones tell a different time on any of this phone's days [from] to [to]. Not when theirs is unknown. */
+    fun zonesDiffer(mine: ZoneId, partner: ZoneId?, from: LocalDate, to: LocalDate = from): Boolean = !TimeZones.sameClock(mine, partner, from, to)
+
+    /**
+     * Whether the editor asks whose clock a timed entry follows ("Whose time"): only when the partner's
+     * clock tells another time on a day it happens, its date or, for a repeat, any day of the year
+     * after it (or up to its end). On one clock nothing is asked and the zone stays as it is: the
+     * creator's for a new entry, which on one clock is the same time for both.
+     */
+    fun asksWhoseTime(f: EntryForm, mine: ZoneId, partner: ZoneId?): Boolean {
+        val date = f.date ?: return false
+        if (f.allDay || f.time == null) return false
+        val repeats = f.kind != CalendarKind.TODO && f.repeat in REPEATS
+        val last = if (repeats) minOf(f.repeatUntil ?: date.plusYears(1), date.plusYears(1)) else date
+        return zonesDiffer(mine, partner, date, maxOf(date, last))
     }
+
+    private val REPEATS = setOf(CalendarRepeat.WEEKLY, CalendarRepeat.MONTHLY, CalendarRepeat.YEARLY)
 }

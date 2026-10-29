@@ -69,9 +69,9 @@ object CalendarRules {
         val instant = start(e, occurrence, deviceZone) ?: return null
         // A floating time is "each our own clock": the partner sees the same time, so no second line.
         if (e.zone == null) return null
-        val mine = instant.atZone(deviceZone).toLocalDateTime()
-        val theirs = instant.atZone(partnerZone).toLocalDateTime()
-        return theirs.takeIf { it != mine }
+        // On one clock there is only one time.
+        if (TimeZones.sameClock(deviceZone, partnerZone, instant)) return null
+        return instant.atZone(partnerZone).toLocalDateTime()
     }
 
     /**
