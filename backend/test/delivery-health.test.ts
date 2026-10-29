@@ -245,3 +245,57 @@ describe('refresh grace window', () => {
     expect(family.every((x) => x.revokedReason === 'refresh_reuse')).toBe(true);
   });
 });
+
+describe('Android version on device rows (sdkInt)', () => {
+  let t: TestApp;
+  let a: Session;
+  let b: Session;
+  beforeAll(async () => {
+    t = await createTestApp();
+    a = await register(t.app, 'Sa');
+    b = await register(t.app, 'Sb');
+    await pair(t.app, a, b);
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  const put = (s: Session, payload: Record<string, unknown>) =>
+    t.app.inject({
+      method: 'PUT',
+      url: `${API}/devices`,
+      headers: bearer(s),
+      payload: { platform: 'android', token: `fcm-${randomUUID()}`, appVersion: '1.0.0', ...payload },
+    });
+  const health = async (s: Session) =>
+    (await t.app.inject({ method: 'GET', url: `${API}/devices/health`, headers: bearer(s) })).json();
+
+  it('is stored when sent, returned by GET /devices/health (mine and the partner’s), null otherwise', async () => {
+    expect((await put(a, { deviceId: 'a-new', sdkInt: 30 })).statusCode).toBe(204);
+    expect((await put(a, { deviceId: 'a-old' })).statusCode).toBe(204); // v75 sends no sdkInt
+    const mine = (await health(a)).mine as { deviceId: string; sdkInt: number | null }[];
+    expect(mine.find((d) => d.deviceId === 'a-new')!.sdkInt).toBe(30);
+    expect(mine.find((d) => d.deviceId === 'a-old')!.sdkInt).toBeNull();
+    expect((await health(b)).partner.map((d: { sdkInt: number | null }) => d.sdkInt).sort()).toEqual([
+      30,
+      null,
+    ]);
+  });
+
+  it('is kept when a later PUT omits it, and replaced when one sends a new value', async () => {
+    expect((await put(b, { deviceId: 'b-phone', sdkInt: 35 })).statusCode).toBe(204);
+    expect((await put(b, { deviceId: 'b-phone' })).statusCode).toBe(204);
+    expect((await health(b)).mine[0].sdkInt).toBe(35);
+    expect((await put(b, { deviceId: 'b-phone', sdkInt: 36 })).statusCode).toBe(204);
+    expect((await health(b)).mine[0].sdkInt).toBe(36);
+  });
+
+  it('accepts 21–99 integers only; the body stays strict', async () => {
+    for (const bad of [20, 100, 30.5, '30']) {
+      expect((await put(a, { deviceId: 'a-bad', sdkInt: bad })).statusCode, String(bad)).toBe(400);
+    }
+    expect((await put(a, { deviceId: 'a-bad', sdkInt: 21 })).statusCode).toBe(204);
+    expect((await put(a, { deviceId: 'a-bad', sdkInt: 99 })).statusCode).toBe(204);
+    expect((await put(a, { deviceId: 'a-bad', release: '14' })).statusCode).toBe(400);
+  });
+});

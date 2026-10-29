@@ -77,9 +77,20 @@ data class Ping(
 )
 
 enum class MessageType(val wire: String) {
-    TEXT("text"), EMOJI("emoji"), PHOTO("photo"), VOICE("voice");
-    companion object { fun fromWire(v: String) = entries.first { it.wire == v } }
+    TEXT("text"), EMOJI("emoji"), PHOTO("photo"), VOICE("voice"),
+    /**
+     * A type this build does not know. `first {}` used to throw here, and one such message from a
+     * newer app stopped the chat, Home and the sync from loading. It is shown as its text instead.
+     */
+    UNKNOWN("");
+    companion object { fun fromWire(v: String) = entries.firstOrNull { it != UNKNOWN && it.wire == v } ?: UNKNOWN }
 }
+
+/** Shown for a message of a type this build does not know and that has no text to fall back on. */
+const val UNKNOWN_MESSAGE_TEXT = "Update Risaina to see this"
+
+/** What a message of an [MessageType.UNKNOWN] type shows: its text, or a hint to update. */
+fun Message.unknownTypeText(): String = text?.takeIf { it.isNotBlank() } ?: UNKNOWN_MESSAGE_TEXT
 
 enum class MessageSendState { PENDING, SENT, FAILED }
 

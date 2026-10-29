@@ -254,6 +254,7 @@ export interface DeviceTokenDoc {
   lastPushPriority?: 'high' | 'normal' | null; // priority that push arrived with on the phone
   lastPushDowngraded?: boolean; // sent high, arrived normal: FCM deprioritised this phone
   healthFlags?: string[]; // short codes the app reports, e.g. 'battery_optimized', 'standby_rare'
+  sdkInt?: number | null; // Android API level, sent by newer apps on PUT /devices (absent: unknown)
 }
 
 export interface MemoryDoc {
@@ -316,11 +317,26 @@ export const EVENT_TYPES = [
   'sos.resolved',
   'location.started',
   'location.stopped',
+  // shared calendar (events and dated to-dos)
+  'calendar.created',
+  'calendar.updated',
+  'calendar.deleted',
+  // wake together (shared alarms)
+  'alarm.created',
+  'alarm.updated',
+  'alarm.deleted',
+  'alarm.woke',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 export const LIST_KINDS = ['note', 'checklist'] as const;
 export type ListKind = (typeof LIST_KINDS)[number];
+/**
+ * How a list's rows are drawn: a format on top of `kind`, not a new kind (the live `lists`
+ * validator's kind enum cannot be widened, and v75 reads an unknown kind as a note).
+ */
+export const LIST_MARKERS = ['none', 'number', 'bullet'] as const;
+export type ListMarker = (typeof LIST_MARKERS)[number];
 
 export interface ListItem {
   id: string; // 12-char random, server-assigned when the client omits it
@@ -328,6 +344,9 @@ export interface ListItem {
   done: boolean;
   doneBy: ObjectId | null;
   doneAt: Date | null;
+  // Who added the item and when (server-owned, added later). Absent on older items: read as null.
+  addedBy?: ObjectId | null;
+  addedAt?: Date | null;
 }
 
 export interface ListDoc {
@@ -344,6 +363,114 @@ export interface ListDoc {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  // Format and idempotent create (added later; optional in the validator, absent on older lists):
+  // read missing marker as 'none' and checkboxes as true.
+  marker?: ListMarker;
+  checkboxes?: boolean;
+  clientKey?: string; // the creating phone's retry key (unique per couple while present)
+}
+
+// --- Calendar ------------------------------------------------------------------------------
+
+export const CALENDAR_KINDS = ['event', 'todo'] as const;
+export type CalendarKind = (typeof CALENDAR_KINDS)[number];
+export const CALENDAR_REPEATS = ['none', 'weekly', 'monthly', 'yearly'] as const;
+export type CalendarRepeat = (typeof CALENDAR_REPEATS)[number];
+export const CALENDAR_SOURCE_KINDS = ['message', 'list', 'list_item'] as const;
+export type CalendarSourceKind = (typeof CALENDAR_SOURCE_KINDS)[number];
+
+/** Where an entry was made from. Ids only, never copied text, so a deleted message leaves nothing. */
+export interface CalendarSource {
+  kind: CalendarSourceKind; // plain string in the validator
+  messageId?: ObjectId; // kind 'message'
+  listId?: ObjectId; // kinds 'list' and 'list_item'
+  itemId?: string; // kind 'list_item'
+}
+
+/**
+ * One shared calendar entry: an event or a dated to-do. Milestones, the anniversary, birthdays and
+ * the next visit are NOT copied here; the app derives them. The server stores wall-clock fields and
+ * never computes occurrences or reminder times: each phone schedules its own reminders.
+ */
+export interface CalendarEntryDoc {
+  _id: ObjectId;
+  coupleId: ObjectId;
+  createdBy: ObjectId;
+  updatedBy: ObjectId;
+  kind: CalendarKind; // plain string in the validator (Zod is the allow-list)
+  title: string; // 1–120
+  notes: string | null; // ≤ 2000
+  emoji: string | null; // 1–2 graphemes
+  date: string; // YYYY-MM-DD: the first (or only) occurrence; a to-do's due date
+  endDate: string | null; // YYYY-MM-DD, all-day only, date..date+366
+  time: string | null; // HH:mm; null = all day
+  durationMinutes: number | null; // 1–10080, timed only
+  timeZone: string | null; // IANA anchor zone, timed only; null = each phone's own clock
+  repeat: CalendarRepeat; // plain string in the validator
+  repeatUntil: string | null; // YYYY-MM-DD, inclusive
+  reminders: number[]; // minutes before, 0..40320, ≤ 4, unique, ascending
+  remindUserIds: ObjectId[]; // members whose phones remind (also a to-do's assignees)
+  pinned: boolean;
+  doneAt: Date | null; // to-dos only
+  doneBy: ObjectId | null;
+  source: CalendarSource | null;
+  clientKey: string | null; // the creating phone's retry key (unique per couple while a string)
+  version: number; // starts at 1, +1 per change (optimistic concurrency via expectedVersion)
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// --- Wake together (shared alarms) ---------------------------------------------------------
+
+/** 'together': both phones ring at the same instant (the time in the alarm's anchor zone). */
+export const ALARM_MODES = ['together'] as const;
+export type AlarmMode = (typeof ALARM_MODES)[number];
+export const WAKE_OUTCOMES = ['up', 'missed'] as const;
+export type WakeOutcome = (typeof WAKE_OUTCOMES)[number];
+/** What an alarm.updated changed: the shared rule, only `enabled`, or one member's own entry. */
+export type AlarmChange = 'edited' | 'enabled' | 'member';
+
+export interface AlarmWake {
+  occurrence: Date; // the ring this is about
+  outcome: WakeOutcome; // plain string in the validator
+  at: Date; // when the person got up (or the alarm gave up)
+  snoozes: number; // 0..20
+}
+
+/** One person's side of a shared alarm. Only that person changes it (PUT /alarms/:id/me, reports). */
+export interface AlarmMember {
+  userId: ObjectId;
+  ring: boolean; // false: "not on my phone"
+  skips: Date[]; // occurrences this person skips (recent and future only, at most 7)
+  ready: boolean | null; // null: this phone never reported for this alarm (e.g. an older app)
+  reason: string | null; // why not ready, a short code such as 'exact_alarms_off'
+  armedFor: Date | null; // the next ring this phone has set
+  reportedAt: Date | null;
+  lastWake: AlarmWake | null;
+}
+
+/**
+ * A "Wake together" alarm. The server only stores the rule; each phone rings its own copy. Every
+ * occurrence is `time` on one of `days` (ISO weekdays) in the anchor `timeZone`, or the single
+ * instant `onceAt` when `days` is empty, so both phones ring at the same moment.
+ */
+export interface AlarmDoc {
+  _id: ObjectId;
+  coupleId: ObjectId;
+  createdBy: ObjectId;
+  updatedBy: ObjectId;
+  mode: AlarmMode; // plain string in the validator
+  label: string | null; // ≤ 40
+  time: string; // HH:mm in timeZone
+  timeZone: string; // IANA anchor zone (the creator's)
+  days: number[]; // ISO weekdays 1–7, ascending, unique; [] = once
+  onceAt: Date | null; // set exactly when days is empty
+  enabled: boolean;
+  snoozeMinutes: number; // 1–30
+  version: number; // +1 per alarm.created/updated; wake and silent readiness reports keep it
+  createdAt: Date;
+  updatedAt: Date;
+  members: AlarmMember[]; // both couple members
 }
 
 /** What one partner shows on the OTHER partner's home-screen widgets (one per author per couple). */
@@ -444,6 +571,9 @@ export interface EventPush {
   lastError: string | null;
   skipReason: string | null;
   sentAt: Date | null;
+  // The current lease (added later; absent on older events): only the worker holding it records the
+  // result, so a send that outlived its lease cannot overwrite a newer one.
+  leaseId?: string | null;
 }
 
 export interface EventDoc {

@@ -117,6 +117,10 @@ Write-only from the client's perspective: no endpoint ever returns `token`.
 
 Indexes: `{userId:1}` (outbox fan-out); `{token:1}` unique; `{userId:1, deviceId:1}` unique (upsert key).
 
+Optional `sdkInt` (Android API level, stored only when the app sends it). The cleanup worker deletes a row
+of an old install (created > 3 days ago, pushed to without an ack since, silent > 3 days) only while another
+row of the same user acked within 24 h, so a user's only row is never deleted.
+
 ### `memories`
 `coupleId, createdBy, mediaId (ready photo in the same couple), caption|null (≤500), takenAt|null, pinned, createdAt, updatedAt, deletedAt`.
 
@@ -131,6 +135,12 @@ Indexes: `{coupleId:1, date:1}`.
 `coupleId, createdBy, updatedBy, title (1–120), kind (note|checklist), body (≤10000, may be ''), items[≤200] { id (12-char random, or a client id ≤32 chars), text (1–300), done, doneBy: ObjectId|null, doneAt: date|null }, pinned, version (≥1, +1 per PATCH; compare-and-set filter), createdAt, updatedAt, deletedAt|null`. Soft-deleted; ≤ 200 non-deleted per couple.
 
 Indexes: `{coupleId:1, deletedAt:1, pinned:-1, updatedAt:-1}` (`GET /lists`, export).
+
+Later optional fields (never `required`; the live validator accepts them as extra fields):
+`marker` ('none'|'number'|'bullet', plain string; missing ⇒ 'none'), `checkboxes` (missing ⇒ true),
+`clientKey` (create retry key; index `{coupleId:1, clientKey:1}` unique partial `{clientKey: {$type:
+'string'}}`), and on items `addedBy` / `addedAt` (missing ⇒ null). Items keep any other stored field
+through a PATCH.
 
 ### `widgetBoards`
 `coupleId, authorId, note (≤140)|null, emoji (1–2 graphemes)|null, mood (≤40)|null, photoMediaId|null, createdAt, updatedAt`.
@@ -225,6 +235,7 @@ partial `{viewOnce: true}` (unopened purge), `media {openedAt:1}` partial `{view
 | `push.state` | `pending` \| `sent` \| `skipped` \| `failed` |
 | `push.attempts` | incremented per send attempt (max 5) |
 | `push.leaseUntil` | worker lease; also used as "not before" for exponential backoff (2 s · 2ⁿ) |
+| `push.leaseId` | optional (later): random id of the current lease; the result is recorded only while it still matches, so a send that outlived its lease cannot overwrite a newer result |
 | `push.lastError`, `push.skipReason`, `push.sentAt` | `skipReason` ∈ `push_disabled`, `no_recipient`, `recipient_missing`, `not_pushed` (the type's push policy is "none"), `no_tokens`, `tokens_unregistered`, `couple_missing`; older events may also carry `notifications_disabled` or `quiet_hours`, which are no longer written (a silent normal push is sent instead) |
 
 Indexes: `{coupleId:1, seq:1}` unique (WS replay, `GET /events?since`); `{'push.state':1, 'push.leaseUntil':1}` (outbox lease query); `{createdAt:1}` partial `{type: 'couple.unlinked'}` (`unlinked_createdAt`: 7-day retention of an unlinked couple's final event).
@@ -238,7 +249,8 @@ When an active couple ends (`POST /couple/unlink`, or `DELETE /me` of a member) 
    partner) and revokes the couple's sockets;
 3. **database phase** (awaited, `couples/purge.ts` `purgeData`): marks all the couple's media `deleted`;
    clears a member's `avatarMediaId` when it references this couple's media; `deleteMany({coupleId})` on
-   `messages, pings, memories, milestones, lists, games, widgetBoards, sos, invitations`; deletes the
+   `messages, pings, memories, milestones, lists, games, widgetBoards, sos, liveLocations, calendarEntries,
+   alarms, invitations`; deletes the
    couple's `events` except `type: 'couple.unlinked'`; resets `relationshipStartDate, nextMeetingDate,
    nextMeetingLabel` to null, `sharedPreferences` to `{}` and unsets `chatWallpaper`;
 4. **storage phase** (background, `purgeMedia`): deletes each storage object then its media document; a
@@ -299,3 +311,34 @@ unlink purge); `{purgeAt:1}` TTL.
 Extra `sos` indexes: `{createdAt:-1}` (re-push scan); `{senderId:1, idempotencyKey:1}` unique partial
 `{idempotencyKey: {$type: 'string'}}`. `{deliveredAt: null}` and `{resolvedAt: null}` filters also match
 documents written before the fields existed.
+
+## Calendar and wake together (2026-10-29)
+
+Both are new collections, created with their validators at boot. The validators use patterns and plain
+strings, never enums, and set no `additionalProperties`: the production DB user can never change them, so
+a later kind, mode or field must already pass. Zod in the API is the allow-list. Both are hard-deleted,
+purged with the couple and exported.
+
+### `calendarEntries`
+`coupleId, createdBy, updatedBy, kind ('event'|'todo'), title (1–120), notes (≤2000)|null, emoji|null,
+date (YYYY-MM-DD), endDate|null (all-day only), time (HH:mm)|null, durationMinutes|null, timeZone (IANA
+anchor)|null, repeat ('none'|'weekly'|'monthly'|'yearly'), repeatUntil|null, reminders [minutes before,
+≤4, ascending], remindUserIds [member ids], pinned, doneAt|null, doneBy|null (to-dos), source { kind
+('message'|'list'|'list_item'), messageId?, listId?, itemId? }|null, clientKey|null, version (≥1, +1 per
+change; compare-and-set filter), createdAt, updatedAt`. ≤ 1000 per couple. Wall-clock fields only: the
+server never computes occurrences or reminder times.
+
+Indexes: `{coupleId:1, date:1}` (`GET /calendar`, count, export, purge); `{coupleId:1, clientKey:1}` unique
+partial `{clientKey: {$type: 'string'}}` (create retries); `{coupleId:1, 'source.messageId':1}` partial
+`{'source.messageId': {$type: 'objectId'}}`.
+
+### `alarms`
+`coupleId, createdBy, updatedBy, mode ('together'), label (≤40)|null, time (HH:mm), timeZone (IANA anchor),
+days [ISO weekdays 1–7, ascending; [] = once], onceAt|null (set exactly when days is []), enabled,
+snoozeMinutes (1–30), version (+1 per alarm.created/updated; wake reports and silent readiness reports keep
+it), createdAt, updatedAt, members [2] { userId, ring, skips [dates, ≤7], ready (bool|null: null = never
+reported), reason|null, armedFor|null, reportedAt|null, lastWake { occurrence, outcome ('up'|'missed'),
+at, snoozes }|null }`. ≤ 10 per couple. Member fields are written one by one (`members.$[me].<field>`) so
+a silent readiness report never overwrites a concurrent change with a stale copy.
+
+Indexes: `{coupleId:1, createdAt:1}` (`GET /alarms`, count, export, purge).

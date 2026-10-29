@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.risaina.app.core.common.onFailure
 import com.risaina.app.core.data.CoupleRepository
 import com.risaina.app.core.data.MilestoneRepository
+import com.risaina.app.core.domain.CalendarOccasions
 import com.risaina.app.core.domain.Countdown
 import com.risaina.app.core.domain.CountdownCalculator
+import com.risaina.app.core.domain.Occasion
+import com.risaina.app.core.domain.OccasionKind
 import com.risaina.app.core.model.Couple
 import com.risaina.app.core.model.Milestone
 import com.risaina.app.core.model.MilestoneKind
@@ -42,22 +45,11 @@ class TimelineViewModel @Inject constructor(
 
     val state: StateFlow<TimelineUiState> = combine(coupleRepository.couple, milestoneRepository.all, coupleRepository.partner, sessionStore.profile) { couple, milestones, partner, me ->
         val today = LocalDate.now()
-        val upcoming = buildList {
-            couple?.nextMeetingDate?.takeIf { !it.isBefore(today) }?.let { add(Upcoming(couple.nextMeetingLabel ?: "Next time together", it, CountdownCalculator.until(it, today), MilestoneKind.MEETING, null)) }
-            couple?.relationshipStartDate?.let { val n = CountdownCalculator.nextAnniversary(it, today); add(Upcoming("Anniversary", n, CountdownCalculator.until(n, today), MilestoneKind.ANNIVERSARY, null)) }
-            com.risaina.app.core.domain.Birthday.parse(partner?.birthday)?.let { b ->
-                val n = com.risaina.app.core.domain.Occasions.nextBirthday(b, today)
-                add(Upcoming("${partner?.displayName}'s birthday" + (n.turning?.let { " · turning $it" } ?: ""), n.date, CountdownCalculator.until(n.date, today), MilestoneKind.CUSTOM, null))
-            }
-            com.risaina.app.core.domain.Birthday.parse(me?.birthday)?.let { b ->
-                val n = com.risaina.app.core.domain.Occasions.nextBirthday(b, today)
-                add(Upcoming("Your birthday", n.date, CountdownCalculator.until(n.date, today), MilestoneKind.CUSTOM, null))
-            }
-            milestones.forEach { m ->
-                val d = if (m.kind == MilestoneKind.ANNIVERSARY) CountdownCalculator.nextAnniversary(m.date, today) else m.date
-                if (!d.isBefore(today)) add(Upcoming(m.title, d, CountdownCalculator.until(d, today), m.kind, m))
-            }
-        }.sortedBy { it.date }
+        // The same occasions the calendar and the reminders use (CalendarOccasions), next time each comes round.
+        val upcoming = CalendarOccasions.derive(couple, me?.userId, me?.birthday, partner, milestones)
+            .mapNotNull { CalendarOccasions.next(it, today) }
+            .map { d -> Upcoming(d.title, d.date, CountdownCalculator.until(d.date, today), d.occasion.timelineKind(), d.occasion.milestone) }
+            .sortedBy { it.date }
         TimelineUiState(
             couple = couple,
             together = couple?.relationshipStartDate?.let { CountdownCalculator.formatTogether(CountdownCalculator.together(it, today)) },
@@ -66,6 +58,14 @@ class TimelineViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TimelineUiState())
 
     init { viewModelScope.launch { milestoneRepository.refresh() } }
+
+    /** The timeline's three chips: a visit, a yearly date, or a one-off. */
+    private fun Occasion.timelineKind(): MilestoneKind = when (kind) {
+        OccasionKind.NEXT_VISIT -> MilestoneKind.MEETING
+        OccasionKind.ANNIVERSARY -> MilestoneKind.ANNIVERSARY
+        OccasionKind.MILESTONE -> milestone?.kind ?: MilestoneKind.CUSTOM
+        OccasionKind.PARTNER_BIRTHDAY, OccasionKind.MY_BIRTHDAY -> MilestoneKind.CUSTOM
+    }
 
     fun setStartDate(d: LocalDate?) { viewModelScope.launch { coupleRepository.updateCouple(d, state.value.couple?.nextMeetingDate, state.value.couple?.nextMeetingLabel).onFailure { effects.trySend(it.message ?: "Couldn't save") } } }
     fun setNextMeeting(d: LocalDate?, label: String?) { viewModelScope.launch { coupleRepository.updateCouple(state.value.couple?.relationshipStartDate, d, label).onFailure { effects.trySend(it.message ?: "Couldn't save") } } }

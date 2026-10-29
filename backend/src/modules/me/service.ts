@@ -9,6 +9,8 @@ import { AuthService } from '../auth/service.js';
 import { CoupleService } from '../couples/service.js';
 import { isAlive } from '../location/service.js';
 import {
+  toAlarmDto,
+  toCalendarEntryDto,
   toCoupleDto,
   toGameDto,
   toListDto,
@@ -156,18 +158,24 @@ export class MeService {
     const user = await this.mustUser(userId);
     const couple = user.activeCoupleId ? await this.repo.findCouple(user.activeCoupleId) : null;
     const coupleId = couple?._id;
-    const [pings, messages, memories, milestones, lists, boards, sos, games] = coupleId
+    // Each counted section is read with one row more than the file keeps, so `truncated` means a row
+    // was really left out. The calendar's cap is also 1000: a couple at the cap gets every entry.
+    const read = EXPORT_LIMIT + 1;
+    const keep = <T>(rows: T[]): T[] => rows.slice(0, EXPORT_LIMIT);
+    const [pings, messages, memories, milestones, lists, boards, sos, games, calendar, alarms] = coupleId
       ? await Promise.all([
-          this.repo.pings(coupleId, EXPORT_LIMIT),
-          this.repo.messages(coupleId, EXPORT_LIMIT),
-          this.repo.memories(coupleId, EXPORT_LIMIT),
-          this.repo.milestones(coupleId, EXPORT_LIMIT),
-          this.repo.lists(coupleId, EXPORT_LIMIT),
+          this.repo.pings(coupleId, read),
+          this.repo.messages(coupleId, read),
+          this.repo.memories(coupleId, read),
+          this.repo.milestones(coupleId, read),
+          this.repo.lists(coupleId, read),
           this.repo.widgetBoards(coupleId),
-          this.repo.sos(coupleId, EXPORT_LIMIT),
-          this.repo.games(coupleId, EXPORT_LIMIT),
+          this.repo.sos(coupleId, read),
+          this.repo.games(coupleId, read),
+          this.repo.calendar(coupleId, read),
+          this.repo.alarms(coupleId, EXPORT_LIMIT),
         ])
-      : [[], [], [], [], [], [], [], []];
+      : [[], [], [], [], [], [], [], [], [], []];
     // safety: only my own current session (the server keeps no location history at all)
     const myLive = coupleId
       ? await this.ctx.db.liveLocations.findOne({ coupleId, userId: user._id, live: true })
@@ -176,18 +184,22 @@ export class MeService {
       exportedAt: this.ctx.now().toISOString(),
       user: toUserDto(user),
       couple: couple ? toCoupleDto(couple) : null,
-      pings: pings.map(toPingDto),
+      pings: keep(pings).map(toPingDto),
       // view-once photos keep their row but never expose a media reference in an export
-      messages: messages.map((m) => (m.viewOnce ? { ...toMessageDto(m), mediaId: null } : toMessageDto(m))),
-      memories: memories.map(toMemoryDto),
-      milestones: milestones.map(toMilestoneDto),
-      lists: lists.map(toListDto),
-      sos: sos.map(toSosDto),
-      games: games.map((g) => toGameDto(g, userId)),
+      messages: keep(messages).map((m) =>
+        m.viewOnce ? { ...toMessageDto(m), mediaId: null } : toMessageDto(m),
+      ),
+      memories: keep(memories).map(toMemoryDto),
+      milestones: keep(milestones).map(toMilestoneDto),
+      lists: keep(lists).map(toListDto),
+      sos: keep(sos).map(toSosDto),
+      games: keep(games).map((g) => toGameDto(g, userId)),
       widgetBoards: boards.map(toWidgetBoardDto),
       liveLocation: myLive && isAlive(myLive, this.ctx.now()) ? toLiveLocationDto(myLive) : null,
-      truncated: [pings, messages, memories, milestones, lists, sos, games].some(
-        (l) => l.length >= EXPORT_LIMIT,
+      calendar: keep(calendar).map(toCalendarEntryDto),
+      alarms: alarms.map(toAlarmDto),
+      truncated: [pings, messages, memories, milestones, lists, sos, games, calendar].some(
+        (l) => l.length > EXPORT_LIMIT,
       ),
     };
   }

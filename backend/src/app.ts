@@ -25,9 +25,11 @@ import { AttemptLimiter } from './lib/attempt-limiter.js';
 import { BackgroundTasks } from './lib/background.js';
 import { createLogger } from './lib/logger.js';
 import { type Clock, systemClock } from './lib/time.js';
+import { alarmRoutes } from './modules/alarms/routes.js';
 import { createGoogleVerifier, type GoogleTokenVerifier } from './modules/auth/google.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { TokenService } from './modules/auth/tokens.js';
+import { calendarRoutes } from './modules/calendar/routes.js';
 import { coupleRoutes } from './modules/couples/routes.js';
 import { deviceRoutes } from './modules/devices/routes.js';
 import { eventRoutes } from './modules/events/routes.js';
@@ -206,6 +208,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
         { name: 'Media' },
         { name: 'Memories' },
         { name: 'Milestones' },
+        { name: 'Calendar' },
+        { name: 'Alarms' },
         { name: 'Lists' },
         { name: 'Widget' },
         { name: 'SOS' },
@@ -248,6 +252,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
       await api.register(mediaRoutes, ctx);
       await api.register(memoryRoutes, ctx);
       await api.register(milestoneRoutes, ctx);
+      await api.register(calendarRoutes, ctx);
+      await api.register(alarmRoutes, ctx);
       await api.register(listRoutes, ctx);
       await api.register(widgetBoardRoutes, ctx);
       await api.register(sosRoutes, ctx);

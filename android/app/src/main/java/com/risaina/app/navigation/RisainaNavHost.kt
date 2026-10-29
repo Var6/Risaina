@@ -2,6 +2,7 @@ package com.risaina.app.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -103,14 +104,20 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     timeline = { navController.navigate(Timeline) },
                     widgets = { navController.navigate(WidgetGallery) },
                     pingHistory = { navController.navigate(PingHistory) },
+                    calendar = { navController.navigate(Calendar()) },
+                    calendarEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
                     notificationPermission = { navController.navigate(NotificationPermission) },
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     lists = { navController.navigate(Lists) },
                     theirWidget = { navController.navigate(TheirWidget) },
                     safety = { navController.navigate(Safety) },
                     partnerLocation = { navController.navigate(PartnerLocation) },
+                    wake = { navController.navigate(WakeTogether) },
                 ),
             )
+        }
+        composable<WakeTogether>(deepLinks = listOf(navDeepLink<WakeTogether>(basePath = "risaina://app/wake"))) {
+            com.risaina.app.feature.wake.WakeScreen(onBack = back)
         }
         composable<Sos>(deepLinks = listOf(navDeepLink<Sos>(basePath = "risaina://app/sos"))) { entry ->
             com.risaina.app.feature.sos.SosScreen(id = entry.toRoute<Sos>().id, onBack = back, onOpenChat = { navController.navigate(Messages()) })
@@ -127,18 +134,47 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
         }
         composable<TheirWidget> { com.risaina.app.feature.theirwidget.TheirWidgetScreen(onBack = back) }
         composable<Lists> { com.risaina.app.feature.lists.ListsScreen(onBack = back, onOpen = { navController.navigate(ListDetail(it)) }) }
-        composable<ListDetail> { entry -> com.risaina.app.feature.lists.ListDetailScreen(id = entry.toRoute<ListDetail>().id, onBack = back) }
+        // The editor reads its list id from the route (ListEditorViewModel); "Add to calendar" on a row or a note's line,
+        // offered only while the calendar editor is in this graph (navigating to a missing route would crash).
+        composable<ListDetail> {
+            val calendar = remember(navController.graph) { navController.graph.findNode<CalendarEntryEdit>() != null }
+            com.risaina.app.feature.lists.ListEditorScreen(onBack = back, onAddToCalendar = { route: CalendarEntryEdit -> navController.navigate(route) }.takeIf { calendar })
+        }
         composable<PingHistory> { PingHistoryScreen(onBack = back) }
         composable<PingDetail>(deepLinks = listOf(navDeepLink<PingDetail>(basePath = "risaina://app/ping"))) { entry ->
             PingDetailScreen(pingId = entry.toRoute<PingDetail>().id, onBack = back, onReplied = toast)
         }
         composable<Messages>(deepLinks = listOf(navDeepLink<Messages>(basePath = "risaina://app/messages"))) { entry ->
-            MessagesScreen(onBack = back, openRecorder = entry.toRoute<Messages>().openRecorder)
+            MessagesScreen(
+                onBack = back, openRecorder = entry.toRoute<Messages>().openRecorder,
+                onCalendarEntry = { prefill -> navController.navigate(prefill.toRoute()) },
+                onOpenCalendarEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
+                onOpenList = { id -> navController.navigate(ListDetail(id)) },
+            )
         }
         composable<Memories> { MemoriesScreen(onBack = back, onOpen = { navController.navigate(MemoryDetail(it)) }, onAdd = { navController.navigate(AddMemory) }) }
         composable<MemoryDetail> { entry -> MemoryDetailScreen(id = entry.toRoute<MemoryDetail>().id, onBack = back) }
         composable<AddMemory> { AddMemoryScreen(onBack = back, onDone = back) }
         composable<Timeline> { TimelineScreen(onBack = back) }
+        composable<Calendar>(deepLinks = listOf(navDeepLink<Calendar>(basePath = "risaina://app/calendar"))) { entry ->
+            com.risaina.app.feature.calendar.CalendarScreen(
+                onBack = back,
+                onOpenEntry = { id -> navController.navigate(CalendarEntryEdit(id = id)) },
+                onAdd = { date -> navController.navigate(CalendarEntryEdit(date = date?.toString())) },
+                onOurStory = { navController.navigate(Timeline) },
+                onOpenProfile = { navController.navigate(Profile) },
+                openReminders = entry.toRoute<Calendar>().openReminders,
+            )
+        }
+        // A reminder or "Bea added … to your calendar" opens its entry: risaina://app/calendar/{id}.
+        composable<CalendarEntryEdit>(deepLinks = listOf(navDeepLink { uriPattern = "risaina://app/calendar/{id}" })) {
+            com.risaina.app.feature.calendar.CalendarEntryScreen(
+                onBack = back,
+                onDone = { message -> back(); toast(message) },
+                onOpenChat = { navController.navigate(Messages()) },
+                onOpenList = { id -> navController.navigate(ListDetail(id)) },
+            )
+        }
         composable<WidgetGallery> { WidgetGalleryScreen(onBack = back) }
 
         composable<Settings> {
@@ -150,10 +186,12 @@ fun RisainaNavHost(navController: NavHostController, startGate: Gate, modifier: 
                     privacy = { navController.navigate(PrivacySettings) },
                     widgets = { navController.navigate(WidgetGallery) },
                     timeline = { navController.navigate(Timeline) },
+                    calendarReminders = { navController.navigate(Calendar(openReminders = true)) },
                     about = { navController.navigate(About) },
                     pairing = { navController.navigate(Pairing) },
                     verifyEmail = { navController.navigate(VerifyEmail) },
                     safety = { navController.navigate(Safety) },
+                    wake = { navController.navigate(WakeTogether) },
                 ),
             )
         }

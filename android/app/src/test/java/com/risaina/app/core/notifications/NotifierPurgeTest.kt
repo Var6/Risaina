@@ -7,8 +7,13 @@ import org.junit.Test
 /** Sign-out, session expiry, account deletion and unlink take every partner notification away, never an SOS. */
 class NotifierPurgeTest {
     @Test fun unreadChatMessagesGoWithTheChat() {
-        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.messageNotificationId("m1"), NotificationChannels.MESSAGES))
-        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.messageNotificationId("m2"), NotificationChannels.MESSAGES_QUIET))
+        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.MESSAGES_ID, NotificationChannels.MESSAGES))
+        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.MESSAGES_ID, NotificationChannels.MESSAGES_QUIET))
+        // Known id: it goes even if the channel could not be read.
+        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.MESSAGES_ID, null))
+        // One per message, from an older version (the message id's hash).
+        assertTrue(RisainaNotifier.clearedOnPurge("m1".hashCode(), NotificationChannels.MESSAGES))
+        assertTrue(RisainaNotifier.clearedOnPurge("m2".hashCode(), NotificationChannels.MESSAGES_QUIET))
     }
 
     @Test fun pingsGiftsGamesAndWidgetLinesGo() {
@@ -35,6 +40,14 @@ class NotifierPurgeTest {
         assertFalse(RisainaNotifier.clearedOnPurge(SosAlert.NOT_SENT_ID, NotificationChannels.SOS_UPDATES))
         // So does their own "You're sharing your location" service notification.
         assertFalse(RisainaNotifier.clearedOnPurge(com.risaina.app.core.location.LiveLocationService.NOTIFICATION_ID, NotificationChannels.LOCATION_SHARING))
+    }
+
+    @Test fun calendarRemindersAndNoticesGoWithTheCouple() {
+        assertTrue(RisainaNotifier.clearedOnPurge("e1|2026-11-14|60".hashCode(), NotificationChannels.REMINDERS))
+        assertTrue(RisainaNotifier.clearedOnPurge("occ:anniversary|2026-11-14|0".hashCode(), NotificationChannels.REMINDERS_QUIET))
+        assertTrue(RisainaNotifier.clearedOnPurge("e1".hashCode(), NotificationChannels.CALENDAR_UPDATES))
+        // Still never the SOS, whatever channel.
+        assertFalse(RisainaNotifier.clearedOnPurge(SosAlert.ID, NotificationChannels.REMINDERS))
     }
 
     @Test fun aRingingSosStays() {

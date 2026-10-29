@@ -54,8 +54,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -70,6 +68,7 @@ import com.risaina.app.core.designsystem.theme.RisainaTextStyles
 import com.risaina.app.core.model.Message
 import com.risaina.app.core.model.MessageSendState
 import com.risaina.app.core.model.MessageType
+import com.risaina.app.core.model.unknownTypeText
 import com.risaina.app.core.network.SocketState
 import com.risaina.app.feature.common.BackIcon
 import com.risaina.app.feature.common.Format
@@ -89,10 +88,29 @@ import kotlinx.coroutines.launch
 import java.time.ZoneId
 
 @Composable
-fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: MessagesViewModel = hiltViewModel()) {
+fun MessagesScreen(
+    onBack: () -> Unit,
+    openRecorder: Boolean = false,
+    /** The calendar entry editor, prefilled from a message or the draft. */
+    onCalendarEntry: (com.risaina.app.feature.calendar.CalendarPrefill) -> Unit = {},
+    onOpenCalendarEntry: (String) -> Unit = {},
+    onOpenList: (String) -> Unit = {},
+    vm: MessagesViewModel = hiltViewModel(),
+) {
     val s by vm.state.collectAsStateWithLifecycle()
+    val calendarAvailable by vm.calendarAvailable.collectAsStateWithLifecycle()
+    val calendarLinks by vm.calendarLinks.collectAsStateWithLifecycle()
+    var actionsFor by remember { mutableStateOf<Message?>(null) }
+    var showAdd by remember { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboard.current
     val snackbar = LocalSnackbar.current
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
+    // On every resume, not just the first open: back from the background, the chat notification
+    // must not keep lines read on the other phone or deleted meanwhile.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        vm.onChatVisible()
+        onPauseOrDispose { }
+    }
     LaunchedEffect(openRecorder) { if (openRecorder) vm.openRecorder() }
     LaunchedEffect(s.playback.id, s.playback.playing) { while (s.playback.playing) { vm.tickPlayback(); delay(250) } }
 
@@ -161,7 +179,8 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
             Composer(
                 text = vm.composer, onText = vm::onComposer, onSend = vm::send,
                 onPhoto = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji, onGame = vm::openGamePicker,
+                onMic = vm::openRecorder, uploading = s.sendingMedia, onQuickEmoji = vm::sendEmoji, onAdd = { showAdd = true },
+                dateHit = remember(vm.composer, calendarAvailable) { vm.draftHit(vm.composer) }, onDateChip = { onCalendarEntry(vm.prefillForDraft()) },
             )
         },
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -230,8 +249,17 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
                                 }
                             },
                             onPlay = { vm.togglePlay(m) },
-                            onLongPress = { if (mine && m.sendState == MessageSendState.SENT) toDelete = m },
+                            // A sent text (either of ours) opens its actions; photos, voice notes and
+                            // emoji keep the delete-your-own long-press they always had.
+                            onLongPress = {
+                                when {
+                                    m.type == MessageType.TEXT && m.sendState == MessageSendState.SENT -> actionsFor = m
+                                    mine && m.sendState == MessageSendState.SENT -> toDelete = m
+                                }
+                            },
                             onRetry = { vm.retry(m) }, onDiscard = { vm.discard(m) },
+                            inCalendar = calendarLinks[m.id]?.date?.takeIf { calendarAvailable },
+                            onOpenCalendar = { calendarLinks[m.id]?.let { onOpenCalendarEntry(it.id) } },
                         )
                     }
                 }
@@ -285,6 +313,28 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
             onCancel = vm::cancelRecording, onPreviewToggle = vm::togglePreview, onReRecord = vm::reRecord, onSend = vm::sendRecording, onTick = vm::tickRecording,
         )
     }
+    actionsFor?.let { m ->
+        MessageActionsSheet(
+            text = m.text.orEmpty(), calendar = calendarAvailable, canDelete = m.senderId == s.myId && m.sendState == MessageSendState.SENT,
+            onAddToCalendar = { onCalendarEntry(vm.prefillFor(m)) },
+            onMakeTodo = { vm.makeTodo(m, onDated = onCalendarEntry) },
+            onCopy = {
+                scope.launch { clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("Message", m.text.orEmpty()))) }
+                vm.say("Copied")
+            },
+            onDelete = { toDelete = m },
+            onDismiss = { actionsFor = null },
+        )
+    }
+    if (showAdd) {
+        ComposerAddSheet(
+            hasDraft = vm.composer.isNotBlank(), calendar = calendarAvailable,
+            onGame = vm::openGamePicker,
+            onAddToCalendar = { onCalendarEntry(vm.prefillForDraft()) },
+            onAddTodo = { vm.addTodoFromComposer(onDated = onCalendarEntry, onOpenList = onOpenList) },
+            onDismiss = { showAdd = false },
+        )
+    }
     toDelete?.let { m ->
         AlertDialog(
             onDismissRequest = { toDelete = null },
@@ -308,6 +358,9 @@ private fun Bubble(
     m: Message, mine: Boolean, playing: Boolean, progress: Float,
     resolve: suspend () -> Any?, onPlay: () -> Unit, onLongPress: () -> Unit, onRetry: () -> Unit, onDiscard: () -> Unit,
     onOpenViewOnce: () -> Unit = {},
+    /** The day of the calendar entry made from this message, if any: a chip under the bubble opens it. */
+    inCalendar: java.time.LocalDate? = null,
+    onOpenCalendar: () -> Unit = {},
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = if (mine) 20.dp else 6.dp, bottomEnd = if (mine) 6.dp else 20.dp)
     val container = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
@@ -320,6 +373,7 @@ private fun Bubble(
         ) {
             when (m.type) {
                 MessageType.TEXT -> Text(m.text ?: "", style = MaterialTheme.typography.bodyLarge, color = onContainer)
+                MessageType.UNKNOWN -> Text(m.unknownTypeText(), style = MaterialTheme.typography.bodyLarge, color = onContainer)
                 MessageType.EMOJI -> Text(m.text ?: "", style = RisainaTextStyles.emojiLarge)
                 MessageType.PHOTO -> if (m.viewOnce) {
                     val state = when {
@@ -358,6 +412,7 @@ private fun Bubble(
                 }
             }
         }
+        if (inCalendar != null) InCalendarChip(inCalendar, onClick = onOpenCalendar, modifier = Modifier.padding(top = 2.dp))
         Row(Modifier.padding(horizontal = 6.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(Format.time(m.createdAt), style = RisainaTextStyles.timestamp, color = Risaina.colors.textMuted)
             if (mine) {
@@ -377,9 +432,15 @@ private fun Bubble(
 }
 
 @Composable
-private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit, onPhoto: () -> Unit, onMic: () -> Unit, uploading: Float?, onQuickEmoji: (String) -> Unit = {}, onGame: () -> Unit = {}) {
+private fun Composer(
+    text: String, onText: (String) -> Unit, onSend: () -> Unit, onPhoto: () -> Unit, onMic: () -> Unit, uploading: Float?,
+    onQuickEmoji: (String) -> Unit = {}, onAdd: () -> Unit = {},
+    /** A date the draft names: offered as "Add to calendar" above the input. */
+    dateHit: com.risaina.app.core.domain.DateHit? = null, onDateChip: () -> Unit = {},
+) {
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).navigationBarsPadding().imePadding()) {
         if (uploading != null) LinearProgressIndicator(progress = { uploading }, modifier = Modifier.fillMaxWidth().height(2.dp))
+        if (dateHit != null) DraftDateChip(dateHit, onClick = onDateChip, modifier = Modifier.padding(start = 12.dp))
         // One-tap reactions: tapping adds the emoji to the draft; on an empty draft it sends straight away.
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf("❤️", "🥰", "😘", "🫂", "🥺", "😂", "🌙", "☀️", "✨", "💐", "☕", "🔥", "👏", "🙈").forEach { e ->
@@ -388,7 +449,8 @@ private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit,
         }
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
             IconButton(onClick = onPhoto, enabled = uploading == null) { Icon(ImageIcon, contentDescription = "Send a photo") }
-            IconButton(onClick = onGame) { Text("🎲", fontSize = 20.sp, modifier = Modifier.semantics { contentDescription = "Play a game" }) }
+            // Games moved in here with the calendar and to-dos: the field keeps its width.
+            IconButton(onClick = onAdd) { Icon(com.risaina.app.feature.common.AddIcon, contentDescription = "Add a game, a plan or a to-do") }
             TextField(
                 value = text, onValueChange = onText, modifier = Modifier.weight(1f),
                 placeholder = { Text("Write something small", fontFamily = FrauncesText) },

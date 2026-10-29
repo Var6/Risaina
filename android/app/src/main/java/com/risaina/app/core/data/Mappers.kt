@@ -1,5 +1,6 @@
 package com.risaina.app.core.data
 
+import com.risaina.app.core.database.CalendarEntryEntity
 import com.risaina.app.core.database.CoupleEntity
 import com.risaina.app.core.database.MediaEntity
 import com.risaina.app.core.database.MemoryEntity
@@ -7,6 +8,13 @@ import com.risaina.app.core.database.MessageEntity
 import com.risaina.app.core.database.MilestoneEntity
 import com.risaina.app.core.database.PartnerEntity
 import com.risaina.app.core.database.PingEntity
+import com.risaina.app.core.model.AlarmMember
+import com.risaina.app.core.model.AlarmWake
+import com.risaina.app.core.model.CalendarEntry
+import com.risaina.app.core.model.CalendarKind
+import com.risaina.app.core.model.CalendarRepeat
+import com.risaina.app.core.model.CalendarSource
+import com.risaina.app.core.model.CalendarSourceKind
 import com.risaina.app.core.model.Couple
 import com.risaina.app.core.model.CoupleStatus
 import com.risaina.app.core.model.Media
@@ -25,7 +33,15 @@ import com.risaina.app.core.model.PingType
 import com.risaina.app.core.model.Preferences
 import com.risaina.app.core.model.QuietHours
 import com.risaina.app.core.model.User
+import com.risaina.app.core.model.WakeAlarm
+import com.risaina.app.core.model.WakeMode
+import com.risaina.app.core.model.WakeOutcome
 import com.risaina.app.core.model.WidgetPrivacy
+import com.risaina.app.core.network.AlarmDto
+import com.risaina.app.core.network.AlarmMemberDto
+import com.risaina.app.core.network.AlarmWakeDto
+import com.risaina.app.core.network.CalendarEntryDto
+import com.risaina.app.core.network.CalendarSourceDto
 import com.risaina.app.core.network.CoupleDto
 import com.risaina.app.core.network.MediaDto
 import com.risaina.app.core.network.MemoryDto
@@ -41,11 +57,17 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 fun String.toInstant(): Instant = Instant.parse(this)
 fun String?.toInstantOrNull(): Instant? = this?.let { runCatching { Instant.parse(it) }.getOrNull() }
 fun String?.toLocalDateOrNull(): LocalDate? = this?.let { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() }
+/** The wire's time of day ("HH:mm"; seconds, if ever sent, are dropped), or null. */
+fun String?.toLocalTimeOrNull(): LocalTime? = this?.let { runCatching { LocalTime.parse(it).withSecond(0).withNano(0) }.getOrNull() }
 fun Long?.toInstantOrNull(): Instant? = this?.let(Instant::ofEpochMilli)
+
+/** Times of day on the wire: always two-digit hours and minutes, never seconds. */
+val HH_MM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 // ---- users / couple ----
 fun UserDto.toDomain() = User(id, displayName, avatarMediaId, createdAt.toInstant())
@@ -152,3 +174,93 @@ fun MemoryEntity.toDomain() = Memory(id, coupleId, createdBy, mediaId, caption, 
 
 fun MilestoneDto.toEntity() = MilestoneEntity(id, coupleId, createdBy, title, date.take(10), kind, createdAt.toInstant().toEpochMilli())
 fun MilestoneEntity.toDomain() = Milestone(id, coupleId, createdBy, title, LocalDate.parse(date), MilestoneKind.fromWire(kind), Instant.ofEpochMilli(createdAt))
+
+// ---- calendar ----
+// Kind, repeat and source kind stay wire strings until the domain mapping, where an unknown value
+// becomes UNKNOWN: an entry from a newer app is listed, never dropped and never a crash.
+fun CalendarSourceDto.toDomain() = CalendarSource(CalendarSourceKind.fromWire(kind), messageId, listId, itemId)
+fun CalendarSource.toDto() = CalendarSourceDto(kind.wire, messageId, listId, itemId)
+
+/** [syncedAt]: this phone's clock now; CalendarDao.syncFromServer compares it with when its GET started. */
+fun CalendarEntryDto.toEntity(syncedAt: Long = System.currentTimeMillis()) = CalendarEntryEntity(
+    id = id, coupleId = coupleId, createdBy = createdBy, updatedBy = updatedBy, kind = kind, title = title,
+    notes = notes, emoji = emoji, date = date, endDate = endDate, time = time, durationMinutes = durationMinutes,
+    timeZone = timeZone, repeat = repeat, repeatUntil = repeatUntil,
+    reminders = reminders.joinToString(","), remindUserIds = remindUserIds.joinToString(","), pinned = pinned,
+    done = done, doneAt = doneAt.toInstantOrNull()?.toEpochMilli(), doneBy = doneBy,
+    sourceKind = source?.kind, sourceMessageId = source?.messageId, sourceListId = source?.listId, sourceItemId = source?.itemId,
+    clientKey = clientKey, version = version,
+    createdAt = createdAt.toInstantOrNull()?.toEpochMilli() ?: 0L, updatedAt = updatedAt.toInstantOrNull()?.toEpochMilli() ?: 0L,
+    syncedAt = syncedAt,
+)
+
+/** Null only for an entry with no readable date, which cannot be placed anywhere: it is skipped. */
+fun CalendarEntryEntity.toDomain(): CalendarEntry? {
+    val day = date.toLocalDateOrNull() ?: return null
+    return CalendarEntry(
+        id = id, coupleId = coupleId, createdBy = createdBy, updatedBy = updatedBy,
+        kind = CalendarKind.fromWire(kind), title = title, notes = notes, emoji = emoji,
+        date = day, endDate = endDate.toLocalDateOrNull(), time = time.toLocalTimeOrNull(), durationMinutes = durationMinutes,
+        timeZone = timeZone, repeat = CalendarRepeat.fromWire(repeat), repeatUntil = repeatUntil.toLocalDateOrNull(),
+        reminders = reminders.split(',').mapNotNull { it.trim().toIntOrNull() }.distinct().sorted(),
+        remindUserIds = remindUserIds.split(',').map { it.trim() }.filter { it.isNotEmpty() },
+        pinned = pinned, done = done, doneAt = doneAt.toInstantOrNull(), doneBy = doneBy,
+        source = sourceKind?.let { CalendarSource(CalendarSourceKind.fromWire(it), sourceMessageId, sourceListId, sourceItemId) },
+        clientKey = clientKey, version = version, createdAt = Instant.ofEpochMilli(createdAt), updatedAt = Instant.ofEpochMilli(updatedAt),
+    )
+}
+
+fun CalendarEntryDto.toDomain(): CalendarEntry? = toEntity().toDomain()
+
+/**
+ * Back to a row, e.g. for an optimistic tick before the server confirms it. An UNKNOWN kind or
+ * repeat is written as "" and reads back as UNKNOWN again; such an entry is never sent to the server.
+ */
+fun CalendarEntry.toEntity(syncedAt: Long = System.currentTimeMillis()) = CalendarEntryEntity(
+    id = id, coupleId = coupleId, createdBy = createdBy, updatedBy = updatedBy, kind = kind.wire, title = title,
+    notes = notes, emoji = emoji, date = date.toString(), endDate = endDate?.toString(), time = time?.format(HH_MM),
+    durationMinutes = durationMinutes, timeZone = timeZone, repeat = repeat.wire, repeatUntil = repeatUntil?.toString(),
+    reminders = reminders.joinToString(","), remindUserIds = remindUserIds.joinToString(","), pinned = pinned,
+    done = done, doneAt = doneAt?.toEpochMilli(), doneBy = doneBy,
+    sourceKind = source?.kind?.wire, sourceMessageId = source?.messageId, sourceListId = source?.listId, sourceItemId = source?.itemId,
+    clientKey = clientKey, version = version, createdAt = createdAt.toEpochMilli(), updatedAt = updatedAt.toEpochMilli(),
+    syncedAt = syncedAt,
+)
+
+// ---- wake together ----
+fun AlarmWakeDto.toDomain(): AlarmWake? {
+    val occ = occurrence.toInstantOrNull() ?: return null
+    val woke = at.toInstantOrNull() ?: return null
+    return AlarmWake(occ, WakeOutcome.fromWire(outcome), woke, snoozes)
+}
+
+fun AlarmMemberDto.toDomain() = AlarmMember(
+    userId = userId, ring = ring, skips = skips.mapNotNull { it.toInstantOrNull() }, ready = ready, reason = reason,
+    armedFor = armedFor.toInstantOrNull(), reportedAt = reportedAt.toInstantOrNull(), lastWake = lastWake?.toDomain(),
+)
+
+/** Null only when the ring time is unreadable: such an alarm could never ring right, so it is left out. */
+fun AlarmDto.toDomain(): WakeAlarm? {
+    val at = time.toLocalTimeOrNull() ?: return null
+    return WakeAlarm(
+        id = id, coupleId = coupleId, createdBy = createdBy, updatedBy = updatedBy, mode = WakeMode.fromWire(mode),
+        label = label, time = at, timeZone = timeZone, days = days.filter { it in 1..7 }.distinct().sorted(),
+        onceAt = onceAt.toInstantOrNull(), enabled = enabled, snoozeMinutes = snoozeMinutes, version = version,
+        createdAt = createdAt.toInstantOrNull() ?: Instant.EPOCH, updatedAt = updatedAt.toInstantOrNull() ?: Instant.EPOCH,
+        members = members.map { it.toDomain() },
+    )
+}
+
+/** For keeping alarms as JSON on the phone (WakeAlarmStore). An UNKNOWN mode is written as "" and reads back as UNKNOWN. */
+fun WakeAlarm.toDto() = AlarmDto(
+    id = id, coupleId = coupleId, createdBy = createdBy, updatedBy = updatedBy, mode = mode.wire, label = label,
+    time = time.format(HH_MM), timeZone = timeZone, days = days, onceAt = onceAt?.toString(), enabled = enabled,
+    snoozeMinutes = snoozeMinutes, version = version, createdAt = createdAt.toString(), updatedAt = updatedAt.toString(),
+    members = members.map { m ->
+        AlarmMemberDto(
+            userId = m.userId, ring = m.ring, skips = m.skips.map { it.toString() }, ready = m.ready, reason = m.reason,
+            armedFor = m.armedFor?.toString(), reportedAt = m.reportedAt?.toString(),
+            lastWake = m.lastWake?.let { AlarmWakeDto(it.occurrence.toString(), it.outcome.wire, it.at.toString(), it.snoozes) },
+        )
+    },
+)

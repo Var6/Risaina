@@ -31,6 +31,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -89,6 +93,10 @@ class MessagesViewModel @Inject constructor(
     private val preferencesStore: com.risaina.app.core.datastore.PreferencesStore,
     gameRepo: com.risaina.app.core.data.GameRepository,
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
+    private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
+    private val calendarRepository: com.risaina.app.core.data.CalendarRepository,
+    private val listsRepository: com.risaina.app.core.data.ListsRepository,
+    private val time: com.risaina.app.core.common.TimeProvider,
 ) : ViewModel() {
     private val wallpaperBusy = MutableStateFlow(false)
     private val gameRepository = gameRepo
@@ -120,6 +128,95 @@ class MessagesViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MessagesUiState())
 
     init { viewModelScope.launch { messageRepository.refresh() }; viewModelScope.launch { gameRepository.refresh() } }
+
+    // ---- calendar and to-dos (message-actions.md §5a) ----
+
+    /** False on a server that predates the calendar: its actions and chips hide. */
+    val calendarAvailable: StateFlow<Boolean> = calendarRepository.available
+        .map { it != false }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    /**
+     * The entries made from messages on screen, by message id (the soonest one each), for the "In
+     * your calendar" chip under a bubble. Text messages only, at most 300: under SQLite's 999.
+     */
+    val calendarLinks: StateFlow<Map<String, com.risaina.app.core.model.CalendarEntry>> = messageRepository.recent(300)
+        .map { l -> l.filter { it.type == MessageType.TEXT && it.sendState == com.risaina.app.core.model.MessageSendState.SENT }.map { it.id } }
+        .distinctUntilChanged()
+        .flatMapLatest { ids -> if (ids.isEmpty()) flowOf(emptyList()) else calendarRepository.forMessages(ids) }
+        .map { entries -> entries.groupBy { it.source?.messageId }.mapNotNull { (id, e) -> id?.let { it to e.minBy { x -> x.date } } }.toMap() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    private val order get() = com.risaina.app.core.domain.DateOrder.forLocale(java.util.Locale.getDefault())
+    private fun partnerFallbackTitle() = "Plan with ${partnerFirst().replaceFirstChar { it.uppercase() }}"
+
+    /** A message's words are read in its author's day: "tomorrow" in yesterday's message means today. */
+    private fun referenceFor(m: Message): java.time.ZonedDateTime {
+        val zone = if (m.senderId != state.value.myId) state.value.partner?.timeZone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } else null
+        return m.createdAt.atZone(zone ?: time.zone())
+    }
+
+    private fun now() = time.now().atZone(time.zone())
+
+    /** "Add to calendar" on a message: its title and first date, linked back to it. */
+    fun prefillFor(m: Message): com.risaina.app.feature.calendar.CalendarPrefill =
+        com.risaina.app.feature.calendar.CalendarPrefills.fromText(m.text.orEmpty(), referenceFor(m), order, partnerFallbackTitle(), messageId = m.id)
+
+    /** "Add to calendar" from the composer: the draft's title and date, or an empty editor. */
+    fun prefillForDraft(kind: com.risaina.app.core.model.CalendarKind = com.risaina.app.core.model.CalendarKind.EVENT): com.risaina.app.feature.calendar.CalendarPrefill =
+        if (composer.isBlank()) com.risaina.app.feature.calendar.CalendarPrefill(kind = kind)
+        else com.risaina.app.feature.calendar.CalendarPrefills.fromText(composer, now(), order, partnerFallbackTitle(), kind = kind)
+
+    /** The composer's chip: only a date the parser is sure of. */
+    fun draftHit(text: String): com.risaina.app.core.domain.DateHit? =
+        if (text.isBlank() || !calendarAvailable.value) null else com.risaina.app.feature.calendar.CalendarPrefills.confidentHit(text, now(), order)
+
+    private val todos = TodoQueue(listsRepository::ensureTodoList, listsRepository::appendItems)
+
+    /**
+     * "Make it a to-do" (D5): with a date the parser is sure of, a dated to-do in the calendar (the
+     * editor opens, via [onDated]); without one, a line in the shared "To-dos" checklist.
+     */
+    fun makeTodo(m: Message, onDated: (com.risaina.app.feature.calendar.CalendarPrefill) -> Unit) {
+        val text = m.text?.trim().orEmpty()
+        if (text.isEmpty()) return
+        val hit = com.risaina.app.feature.calendar.CalendarPrefills.confidentHit(text, referenceFor(m), order)
+        if (hit != null && calendarAvailable.value) {
+            onDated(prefillFor(m).copy(kind = com.risaina.app.core.model.CalendarKind.TODO))
+            return
+        }
+        appendTodo(text, clearDraft = false)
+    }
+
+    /**
+     * The composer's "Add a to-do": the draft as a to-do (dated or not, as above), or with nothing
+     * typed the To-dos list itself, through [onOpenList].
+     */
+    fun addTodoFromComposer(onDated: (com.risaina.app.feature.calendar.CalendarPrefill) -> Unit, onOpenList: (String) -> Unit) {
+        val text = composer.trim()
+        if (text.isEmpty()) {
+            viewModelScope.launch {
+                todos.list().onSuccess { onOpenList(it.id) }.onFailure { effects.trySend(it.message ?: "Couldn't open your To-dos") }
+            }
+            return
+        }
+        val hit = com.risaina.app.feature.calendar.CalendarPrefills.confidentHit(text, now(), order)
+        if (hit != null && calendarAvailable.value) {
+            onDated(prefillForDraft(com.risaina.app.core.model.CalendarKind.TODO))
+            return
+        }
+        appendTodo(text, clearDraft = true)
+    }
+
+    // One at a time (TodoQueue): a second to-do waits for the first, so there is only ever one "To-dos" list.
+    private fun appendTodo(text: String, clearDraft: Boolean) {
+        viewModelScope.launch {
+            val r = todos.add(text) ?: run { effects.trySend("Still adding that one…"); return@launch }
+            r.onSuccess { list -> if (clearDraft && composer.trim() == text) composer = ""; effects.trySend("Added to ${list.title}") }
+                .onFailure { effects.trySend(it.message ?: "Couldn't add the to-do") }
+        }
+    }
+
+    fun say(message: String) { effects.trySend(message) }
 
     /**
      * What the person is typing. Kept in Compose snapshot state and read by the text field directly.
@@ -353,9 +450,19 @@ class MessagesViewModel @Inject constructor(
         ))
     }
 
+    /** The repository also takes the message's line out of the chat notification once the read is stored. */
     fun markRead(message: Message) {
         if (message.senderId == state.value.myId || message.readAt != null) return
         viewModelScope.launch { messageRepository.markRead(message.id) }
+    }
+
+    /**
+     * The chat is on screen (opened, or back from the background): the chat notification is rebuilt
+     * from what is still unread, or removed, so it never lingers with messages read on another phone
+     * or deleted meanwhile. The messages that come into view are then marked read one by one.
+     */
+    fun onChatVisible() {
+        viewModelScope.launch { notifier.refreshConversation() }
     }
 
     fun retry(message: Message) { viewModelScope.launch { messageRepository.retry(message.localKey) } }

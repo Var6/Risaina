@@ -110,6 +110,36 @@ class SafetyEventsTest {
         // A high-priority push (backend push policy), and maybe the only sign of the emergency for now.
         events.apply(started(3, now, reason = "panic"), ME)
         coVerify(exactly = 1) { notifier.partnerSharingStarted(any(), any()) }
+        verify(exactly = 0) { notifier.cancelPartnerSharing() }
+    }
+
+    @Test
+    fun `once the panic share is linked to its SOS the earlier is-sharing notice is removed`() = runTest {
+        events.apply(started(3, now, reason = "panic"), ME)
+        events.apply(started(4, now, reason = "panic", sosId = "s1"), ME)
+        coVerify(exactly = 1) { notifier.partnerSharingStarted(any(), any()) }
+        verify(exactly = 1) { notifier.cancelPartnerSharing() }
+    }
+
+    @Test
+    fun `a manual share still announces and removes nothing`() = runTest {
+        events.apply(started(3, now, reason = "manual"), ME)
+        coVerify(exactly = 1) { notifier.partnerSharingStarted(any(), any()) }
+        verify(exactly = 0) { notifier.cancelPartnerSharing() }
+    }
+
+    @Test
+    fun `a panic SOS that rings removes the is-sharing notice`() = runTest {
+        events.apply(raised(5, now), ME)
+        verify(exactly = 1) { alarm.ring(any()) }
+        verify(exactly = 1) { notifier.cancelPartnerSharing() }
+    }
+
+    @Test
+    fun `an SOS that does not ring leaves the notice alone`() = runTest {
+        // History: it is not ringing now, so nothing replaces the notice.
+        events.apply(raised(5, old), ME)
+        verify(exactly = 0) { notifier.cancelPartnerSharing() }
     }
 
     @Test

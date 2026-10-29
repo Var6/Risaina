@@ -113,7 +113,7 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
     /** After a swipe: quiet, still there, still unacknowledged. */
     fun postRespond(state: RingState) {
         if (!canPost() || state.test) return
-        post(RESPOND_ID, SosCopy.title(state.partnerName, state.panic, false), "Tap to respond", silent = true)
+        post(RESPOND_ID, SosCopy.title(state.partnerName, state.panic, false), "Tap to respond", muted = true)
     }
 
     fun postMissed(partnerName: String, panic: Boolean) {
@@ -135,7 +135,12 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
         post(NOT_SENT_ID, "Your SOS couldn't be sent", "Please call $partnerName directly.", link = "risaina://app/panic")
     }
 
-    private fun post(id: Int, title: String, text: String, silent: Boolean = false, link: String = "risaina://app/sos/latest") {
+    /**
+     * The notices around an SOS share NotificationGroups.SAFETY with "is sharing", so Android 15+ never
+     * bundles them with Risaina's other notifications. A [muted] one makes no sound and does not pop
+     * up (NotificationGroups.alertBehavior); setSilent used to put it into AndroidX's "silent" group.
+     */
+    private fun post(id: Int, title: String, text: String, muted: Boolean = false, link: String = "risaina://app/sos/latest") {
         val n = NotificationCompat.Builder(context, NotificationChannels.SOS_UPDATES)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -144,7 +149,8 @@ class SosAlert @Inject constructor(@ApplicationContext private val context: Cont
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(deepLink(link, id))
             .setAutoCancel(true)
-            .setSilent(silent)
+            .setGroup(NotificationGroups.SAFETY)
+            .setGroupAlertBehavior(NotificationGroups.alertBehavior(muted))
             .setColor(ContextCompat.getColor(context, R.color.rosewood))
             .build()
         notify(id, n)

@@ -195,13 +195,116 @@ interface ListDao {
     @Query("SELECT * FROM lists WHERE id = :id")
     suspend fun byId(id: String): ListEntity?
 
+    /** Writes unconditionally: use [upsertIfNewer] for anything that came from the server. */
     @Upsert suspend fun upsert(e: ListEntity)
 
+    @Query("SELECT version FROM lists WHERE id = :id") suspend fun versionOf(id: String): Int?
+    @Query("SELECT id FROM lists WHERE syncedAt < :before") suspend fun idsSyncedBefore(before: Long): List<String>
+
+    /**
+     * Writes [e] unless Room already holds a newer version. Replayed events (this phone's own older
+     * saves come back after its newer HTTP reply) and a GET answered after a save carry older copies,
+     * and writing them made a just-added item vanish. Returns whether it was written.
+     */
     @Transaction
-    suspend fun replaceAll(items: List<ListEntity>) { clear(); items.forEach { upsert(it) } }
+    suspend fun upsertIfNewer(e: ListEntity): Boolean {
+        val current = versionOf(e.id)
+        if (current != null && e.version < current) return false
+        upsert(e)
+        return true
+    }
+
+    suspend fun syncFromServer(items: List<ListEntity>, requestedAtMillis: Long) = syncFromServer(items, requestedAtMillis, emptySet())
+
+    /**
+     * Applies a GET /lists answer started at [requestedAtMillis] (this phone's clock). Each list is
+     * written only if newer; a list missing from the answer is deleted only when it was written before
+     * the GET started, because one created or saved while the GET was on its way is missing too.
+     * [deletedMeanwhile]: lists deleted while the GET was on its way (here, or by a list.deleted
+     * event). The answer still has them, and with no row left upsertIfNewer would bring them back.
+     */
+    @Transaction
+    suspend fun syncFromServer(items: List<ListEntity>, requestedAtMillis: Long, deletedMeanwhile: Set<String>) {
+        items.forEach { if (it.id !in deletedMeanwhile) upsertIfNewer(it) }
+        val returned = items.mapTo(HashSet()) { it.id }
+        idsSyncedBefore(requestedAtMillis).filterNot { it in returned }.forEach { delete(it) }
+    }
 
     @Query("DELETE FROM lists WHERE id = :id") suspend fun delete(id: String)
     @Query("DELETE FROM lists") suspend fun clear()
+}
+
+@Dao
+interface ListDraftDao {
+    @Query("SELECT * FROM list_drafts WHERE listId = :listId") suspend fun get(listId: String): ListDraftEntity?
+    @Query("SELECT * FROM list_drafts WHERE listId = :listId") fun observe(listId: String): Flow<ListDraftEntity?>
+    @Query("SELECT * FROM list_drafts ORDER BY editedAt ASC") suspend fun all(): List<ListDraftEntity>
+    @Query("SELECT * FROM list_drafts ORDER BY editedAt ASC") fun observeAll(): Flow<List<ListDraftEntity>>
+    @Upsert suspend fun upsert(e: ListDraftEntity)
+    @Query("DELETE FROM list_drafts WHERE listId = :listId") suspend fun delete(listId: String)
+    @Query("DELETE FROM list_drafts") suspend fun clear()
+}
+
+@Dao
+interface CalendarDao {
+    /** All-day entries (time NULL) sort before timed ones on the same date. */
+    @Query("SELECT * FROM calendar_entries ORDER BY date ASC, time ASC")
+    fun all(): Flow<List<CalendarEntryEntity>>
+
+    @Query("SELECT * FROM calendar_entries WHERE id = :id") suspend fun byId(id: String): CalendarEntryEntity?
+    @Query("SELECT * FROM calendar_entries WHERE id = :id") fun observe(id: String): Flow<CalendarEntryEntity?>
+
+    /** Entries made from these messages (the chat's "In your calendar" chips). Keep [messageIds] under 900. */
+    @Query("SELECT * FROM calendar_entries WHERE sourceMessageId IN (:messageIds) ORDER BY date ASC, time ASC")
+    fun forMessages(messageIds: List<String>): Flow<List<CalendarEntryEntity>>
+
+    /** Entries made from a note or checklist, or from one of its items. */
+    @Query("SELECT * FROM calendar_entries WHERE sourceListId = :listId ORDER BY date ASC, time ASC")
+    fun forList(listId: String): Flow<List<CalendarEntryEntity>>
+
+    @Query("SELECT version FROM calendar_entries WHERE id = :id") suspend fun versionOf(id: String): Int?
+    @Query("SELECT id FROM calendar_entries WHERE syncedAt < :before") suspend fun idsSyncedBefore(before: Long): List<String>
+
+    /** Writes unconditionally: use [upsertIfNewer] for anything that came from the server. */
+    @Upsert suspend fun upsert(e: CalendarEntryEntity)
+
+    /** Writes [e] unless Room already holds a newer version (a replayed event, a slow GET). */
+    @Transaction
+    suspend fun upsertIfNewer(e: CalendarEntryEntity): Boolean {
+        val current = versionOf(e.id)
+        if (current != null && e.version < current) return false
+        upsert(e)
+        return true
+    }
+
+    /**
+     * Applies a GET /calendar answer (every entry) started at [requestedAtMillis] (this phone's clock),
+     * as ListDao.syncFromServer does: each entry is written only if newer, and an entry missing from the
+     * answer is deleted only when it was written before the GET started, because one saved here or
+     * received from the partner while the GET was on its way is missing too. Deleted one by one: up to
+     * 1000 ids would not fit the 999 parameters older SQLite allows in NOT IN.
+     */
+    @Transaction
+    suspend fun syncFromServer(items: List<CalendarEntryEntity>, requestedAtMillis: Long) {
+        items.forEach { upsertIfNewer(it) }
+        val returned = items.mapTo(HashSet()) { it.id }
+        idsSyncedBefore(requestedAtMillis).filterNot { it in returned }.forEach { delete(it) }
+    }
+
+    /** An optimistic tick from a reminder's "Done" button; the server's reply (a newer version) replaces it. */
+    @Query("UPDATE calendar_entries SET done = :done, doneAt = :doneAt, doneBy = :doneBy WHERE id = :id")
+    suspend fun markDone(id: String, done: Boolean, doneAt: Long?, doneBy: String?)
+
+    @Query("DELETE FROM calendar_entries WHERE id = :id") suspend fun delete(id: String)
+    @Query("DELETE FROM calendar_entries") suspend fun clear()
+}
+
+@Dao
+interface ReminderLogDao {
+    /** Claims a reminder key: the new row id, or -1 when it was already claimed (so already posted). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertOrIgnore(e: ReminderLogEntity): Long
+    @Query("DELETE FROM reminder_log WHERE firedAt < :olderThan") suspend fun prune(olderThan: Long)
+    @Query("DELETE FROM reminder_log") suspend fun clear()
 }
 
 @Dao

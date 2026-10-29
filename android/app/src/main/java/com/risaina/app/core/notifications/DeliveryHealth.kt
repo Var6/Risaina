@@ -281,4 +281,10 @@ class DeliveryHealthReporter @Inject constructor(
     }
 
     suspend fun health(): AppResult<DeviceHealthResponse> = apiCall { api.deviceHealth() }
+
+    /** This phone's id in the server's device list (GET /devices/health `mine`), if it registered. */
+    suspend fun deviceId(): String? = sessionStore.current()?.deviceId?.takeIf { it.isNotBlank() }
+
+    /** Stops pushes to one of this account's phones (DELETE /devices/:deviceId); it registers again when Risaina opens on it. */
+    suspend fun removeDevice(deviceId: String): AppResult<Unit> = apiCall { api.removeDevice(deviceId) }
 }

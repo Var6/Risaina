@@ -14,6 +14,11 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -108,6 +113,29 @@ class RisainaApi @Inject constructor(
     suspend fun createList(req: CreateListRequest): ListResponse = client.post("lists") { json(req) }.body()
     suspend fun patchList(id: String, req: PatchListRequest): ListResponse = client.patch("lists/$id") { json(req) }.body()
     suspend fun deleteList(id: String) { client.delete("lists/$id") }
+    /** 404 when the list is gone, and also from a server older than this route. */
+    suspend fun list(id: String): ListResponse = client.get("lists/$id").body()
+    suspend fun convertList(id: String, req: ConvertListRequest): ListResponse = client.post("lists/$id/convert") { json(req) }.body()
+
+    // ---- calendar (a 404 on GET means a server older than the calendar) ----
+    suspend fun calendar(): CalendarListResponse = client.get("calendar").body()
+    suspend fun createCalendar(req: CreateCalendarRequest): CalendarEntryResponse = client.post("calendar") { json(req) }.body()
+    suspend fun patchCalendar(id: String, req: PatchCalendarRequest): CalendarEntryResponse =
+        client.patch("calendar/$id") { jsonObject(withNulls(NetworkModule.json.encodeToJsonElement(PatchCalendarRequest.serializer(), req), req.clear)) }.body()
+    suspend fun deleteCalendar(id: String) { client.delete("calendar/$id") }
+
+    // ---- wake together ----
+    suspend fun alarms(): AlarmListResponse = client.get("alarms").body()
+    suspend fun createAlarm(req: CreateAlarmRequest): AlarmResponse = client.post("alarms") { json(req) }.body()
+    suspend fun patchAlarm(id: String, req: PatchAlarmRequest): AlarmResponse =
+        client.patch("alarms/$id") { jsonObject(withNulls(NetworkModule.json.encodeToJsonElement(PatchAlarmRequest.serializer(), req), req.clear)) }.body()
+    suspend fun deleteAlarm(id: String) { client.delete("alarms/$id") }
+    suspend fun putMyAlarm(id: String, req: PutMyAlarmRequest): AlarmResponse = client.put("alarms/$id/me") { json(req) }.body()
+    /** `reason` and `armedFor` are "string or null" in the contract, so their nulls are sent, not left out. */
+    suspend fun reportAlarms(req: AlarmReportRequest) {
+        client.post("alarms/report") { jsonObject(explicitNulls.encodeToJsonElement(AlarmReportRequest.serializer(), req).jsonObject) }
+    }
+    suspend fun wakeAlarm(id: String, req: AlarmWakeRequest): AlarmResponse = client.post("alarms/$id/wake") { json(req) }.body()
 
     // ---- widget board: what each partner shows on the other's widgets ----
     suspend fun widgetBoard(): WidgetBoardsResponse = client.get("widget-board").body()
@@ -179,4 +207,13 @@ class RisainaApi @Inject constructor(
 
     @kotlinx.serialization.Serializable
     private object EmptyBody
+
+    private companion object {
+        /** The app's Json, but writing nulls: for bodies whose contract has "value or null" fields. */
+        val explicitNulls = Json(NetworkModule.json) { explicitNulls = true }
+    }
 }
+
+/** A PATCH body with [clear]ed fields set to an explicit null (a null field is otherwise left out). */
+internal fun withNulls(body: JsonElement, clear: Set<String>): JsonObject =
+    JsonObject(body.jsonObject + clear.associateWith { JsonNull })

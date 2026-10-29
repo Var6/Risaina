@@ -74,4 +74,27 @@ class GameNotificationTextTest {
         assertFalse(GameNotificationText.alertOnce("created"))
         assertFalse(GameNotificationText.alertOnce("finished"))
     }
+
+    // --- the same game twice in a few seconds ---------------------------------------------------
+
+    private val now = 1_000_000L
+
+    @Test fun `a second action on the same game within 30 s while showing alerts once`() {
+        // "chosen" then "done" 10 s apart: one buzz, the text updates in place.
+        assertTrue(GameNotificationText.alertOnce("done", "g1", lastGameId = "g1", lastPostedAt = now - 10_000, showing = true, now = now))
+        assertTrue(GameNotificationText.alertOnce("finished", "g1", "g1", now - 29_999, showing = true, now = now))
+    }
+
+    @Test fun `another game, a later action or a dismissed notification alerts`() {
+        assertFalse(GameNotificationText.alertOnce("created", "g2", lastGameId = "g1", lastPostedAt = now - 5_000, showing = true, now = now))
+        assertFalse(GameNotificationText.alertOnce("done", "g1", "g1", now - GameNotificationText.SAME_GAME_WINDOW_MS, showing = true, now = now))
+        assertFalse(GameNotificationText.alertOnce("done", "g1", "g1", now - 5_000, showing = false, now = now))
+        assertFalse(GameNotificationText.alertOnce("done", "g1", lastGameId = null, lastPostedAt = 0, showing = true, now = now))
+        // A clock that jumped back never mutes one.
+        assertFalse(GameNotificationText.alertOnce("done", "g1", "g1", now + 60_000, showing = true, now = now))
+    }
+
+    @Test fun `tic-tac-toe moves stay quiet whatever came before`() {
+        assertTrue(GameNotificationText.alertOnce("moved", "g2", lastGameId = "g1", lastPostedAt = 0, showing = false, now = now))
+    }
 }

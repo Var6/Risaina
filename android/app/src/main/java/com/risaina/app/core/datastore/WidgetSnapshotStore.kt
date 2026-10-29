@@ -56,6 +56,15 @@ data class WidgetSnapshot(
      * lock-screen card's calm state skips them, so a gift is never announced again once seen.
      */
     val latestEmojiFromGift: Boolean = false,
+    /**
+     * What the partner put on "their widget" alone (note, else mood; the emoji), and when. The lock
+     * card's calm state reads only these: pings, gifts and chat messages have notifications of their
+     * own, and the card repeating them looked like a second notification. The home-screen widgets
+     * keep using the latest* fields, which mix in chat and pings.
+     */
+    val boardLine: String? = null,
+    val boardEmoji: String? = null,
+    val boardAtMillis: Long? = null,
 )
 
 @Singleton
@@ -88,6 +97,9 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
         val latestAt = longPreferencesKey("latest_at")
         val latestUnseen = stringPreferencesKey("latest_unseen")
         val emojiFromGift = stringPreferencesKey("emoji_from_gift")
+        val boardLine = stringPreferencesKey("board_line")
+        val boardEmoji = stringPreferencesKey("board_emoji")
+        val boardAt = longPreferencesKey("board_at")
         /** Everything the partner sent before this instant counts as seen on this phone. */
         val seenUntil = longPreferencesKey("seen_until")
     }
@@ -121,6 +133,9 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
             latestAtMillis = p[K.latestAt],
             latestUnseen = p[K.latestUnseen] == "1",
             latestEmojiFromGift = p[K.emojiFromGift] == "1",
+            boardLine = p[K.boardLine],
+            boardEmoji = p[K.boardEmoji],
+            boardAtMillis = p[K.boardAt],
         )
     }
 
@@ -143,6 +158,7 @@ class WidgetSnapshotStore @Inject constructor(@ApplicationContext private val co
             put(K.pingUnseen, if (s.pingUnseen) "1" else "0"); put(K.giftUnseen, if (s.giftUnseen) "1" else "0")
             put(K.latestKind, s.latestKind); putL(K.latestAt, s.latestAtMillis); put(K.latestUnseen, if (s.latestUnseen) "1" else "0")
             put(K.emojiFromGift, if (s.latestEmojiFromGift) "1" else "0")
+            put(K.boardLine, s.boardLine); put(K.boardEmoji, s.boardEmoji); putL(K.boardAt, s.boardAtMillis)
         }
     }
 

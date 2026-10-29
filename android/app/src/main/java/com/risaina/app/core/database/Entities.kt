@@ -1,5 +1,6 @@
 package com.risaina.app.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -110,6 +111,84 @@ data class ListEntity(
     val updatedBy: String?,
     val createdAt: Long,
     val updatedAt: Long,
+    // Added in version 6. The SQL defaults let the 5 → 6 migration add them to existing rows.
+    @ColumnInfo(defaultValue = "none") val marker: String = "none",
+    @ColumnInfo(defaultValue = "1") val checkboxes: Boolean = true,
+    /**
+     * This phone's clock when the row was last written from the server. ListDao.syncFromServer only
+     * deletes rows written before its GET started, so a list created meanwhile survives.
+     */
+    @ColumnInfo(defaultValue = "0") val syncedAt: Long = 0,
+)
+
+/**
+ * An edit to a shared list that the server has not confirmed yet, kept so nothing typed is lost to a
+ * failed save, a conflict or the app closing. [baseJson] is the server copy the edit started from (the
+ * base of a three-way merge), [mineJson] what the editor shows now.
+ */
+@Entity(tableName = "list_drafts")
+data class ListDraftEntity(
+    @PrimaryKey val listId: String,
+    val baseVersion: Int,
+    val baseJson: String,
+    val mineJson: String,
+    val editedAt: Long,
+    /** pending | sending | failed | orphaned (the list was deleted while this was unsent) | dropped (a new list deleted before it was saved, until the overview says so). */
+    val state: String,
+    val lastError: String?,
+    val attempts: Int,
+)
+
+/**
+ * A shared calendar entry, flat. [reminders] (minutes) and [remindUserIds] are comma separated;
+ * dates are YYYY-MM-DD and times HH:mm as on the wire; kind and repeat are the wire strings.
+ */
+@Entity(tableName = "calendar_entries", indices = [Index("date"), Index("sourceMessageId"), Index("sourceListId")])
+data class CalendarEntryEntity(
+    @PrimaryKey val id: String,
+    val coupleId: String,
+    val createdBy: String,
+    val updatedBy: String?,
+    val kind: String,
+    val title: String,
+    val notes: String?,
+    val emoji: String?,
+    val date: String,
+    val endDate: String?,
+    val time: String?,
+    val durationMinutes: Int?,
+    val timeZone: String?,
+    val repeat: String,
+    val repeatUntil: String?,
+    val reminders: String,
+    val remindUserIds: String,
+    val pinned: Boolean,
+    val done: Boolean,
+    val doneAt: Long?,
+    val doneBy: String?,
+    val sourceKind: String?,
+    val sourceMessageId: String?,
+    val sourceListId: String?,
+    val sourceItemId: String?,
+    val clientKey: String?,
+    val version: Int,
+    val createdAt: Long,
+    val updatedAt: Long,
+    /**
+     * This phone's clock when the row was last written from the server, as on lists: CalendarDao.syncFromServer
+     * only deletes rows written before its GET started, so an entry saved or received meanwhile survives.
+     */
+    @ColumnInfo(defaultValue = "0") val syncedAt: Long = 0,
+)
+
+/**
+ * Reminders this phone has posted, keyed "{entry or occasion}|{occurrence date}|{offset}". Inserting
+ * a key claims it, so the alarm, the worker and app start never post the same reminder twice.
+ */
+@Entity(tableName = "reminder_log")
+data class ReminderLogEntity(
+    @PrimaryKey val key: String,
+    val firedAt: Long,
 )
 
 @Entity(tableName = "couple")

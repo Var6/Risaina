@@ -3,6 +3,7 @@ package com.risaina.app.core.sync
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.BackoffPolicy
@@ -12,6 +13,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -45,6 +47,8 @@ class SyncWorker @AssistedInject constructor(
     private val diagnostics: DeliveryDiagnostics,
     private val deferred: DeferredEffects,
     private val safetyNotifier: com.risaina.app.core.safety.SafetyNotifier,
+    private val calendarRepository: com.risaina.app.core.data.CalendarRepository,
+    private val reminders: com.risaina.app.core.reminders.ReminderScheduler,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -60,6 +64,10 @@ class SyncWorker @AssistedInject constructor(
         runCatching { syncManager.runDeferred() }
         messageRepository.drainOutbox()
         preferencesRepository.pushIfDirty()
+        // The calendar's own small GET (at most every half hour), then the reminders: any that came
+        // due while the process was frozen are posted, and the alarm is set again.
+        runCatching { calendarRepository.refreshIfStale() }
+        runCatching { reminders.run() }
         return when (result) {
             is AppResult.Success -> Result.success()
             is AppResult.Failure -> if (result.error.isRetryable && runAttemptCount < 4) Result.retry() else Result.failure()
@@ -69,7 +77,8 @@ class SyncWorker @AssistedInject constructor(
     /**
      * Expedited work runs as a foreground service on Android 11 and below, and WorkManager then
      * needs this notification (without it the worker fails there). Silent and minimal; Android 12+
-     * runs expedited work as a job and never shows it.
+     * runs expedited work as a job and never shows it. Push syncs are no longer expedited there
+     * ([pushRequestFor]); this stays for one an older version queued before an update.
      */
     override suspend fun getForegroundInfo(): ForegroundInfo {
         val nm = applicationContext.getSystemService(NotificationManager::class.java)
@@ -97,9 +106,10 @@ class SyncWorker @AssistedInject constructor(
         private const val FOREGROUND_ID = 7272
 
         /**
-         * Called from the FCM service, first thing: must finish quickly, so it is expedited, and it is
-         * queued inside FCM's brief exemption for expedited work. See [pushEnqueue] for when a push
-         * adds nothing, appends, or replaces a sync that is waiting out a retry.
+         * Called from the FCM service, first thing: must finish quickly, so it is expedited (Android
+         * 12+, see [pushRequestFor]), and it is queued inside FCM's brief exemption for expedited
+         * work. See [pushEnqueue] for when a push adds nothing, appends, or replaces a sync that is
+         * waiting out a retry.
          */
         fun enqueueFromPush(context: Context) {
             val wm = WorkManager.getInstance(context)
@@ -111,14 +121,21 @@ class SyncWorker @AssistedInject constructor(
                 PushEnqueue.APPEND -> ExistingWorkPolicy.APPEND_OR_REPLACE
                 PushEnqueue.REPLACE -> ExistingWorkPolicy.REPLACE
             }
-            val req = OneTimeWorkRequestBuilder<SyncWorker>()
-                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, Duration.ofSeconds(20))
-                .setInputData(workDataOf(KEY_NOTIFY to true))
-                .build()
-            wm.enqueueUniqueWork(UNIQUE_PUSH, policy, req)
+            wm.enqueueUniqueWork(UNIQUE_PUSH, policy, pushRequestFor(Build.VERSION.SDK_INT))
         }
+
+        /**
+         * The push's safety-net sync. Expedited only on Android 12 and up, where it runs as a job.
+         * Android 11 and below run expedited work as a foreground service and show its "Catching up"
+         * notification ([getForegroundInfo]) next to the real one on every push; there the push
+         * handler already syncs inline, so a plain request is enough. Pure (SyncWorkerEnqueueTest).
+         */
+        fun pushRequestFor(sdkInt: Int): OneTimeWorkRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+            .apply { if (sdkInt >= Build.VERSION_CODES.S) setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST) }
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, Duration.ofSeconds(20))
+            .setInputData(workDataOf(KEY_NOTIFY to true))
+            .build()
 
         /**
          * App start / resume: catch up. With notifications on: they are suppressed while Risaina is

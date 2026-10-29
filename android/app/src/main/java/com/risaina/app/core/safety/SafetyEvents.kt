@@ -88,6 +88,11 @@ class SafetyEvents @Inject constructor(
                     if (fresh && SafetyNotifier.announces(session)) {
                         notifier.partnerSharingStarted(partnerName(), session)
                         deferred.checkPartnerLocation()
+                    } else if (!SafetyNotifier.announces(session)) {
+                        // A panic share now linked to its SOS: the SOS alarm covers the emergency. The
+                        // "may be in trouble" notice posted for the same share before its SOS went
+                        // through would otherwise sit next to the alarm.
+                        notifier.cancelPartnerSharing()
                     }
                 }
             }
@@ -109,7 +114,7 @@ class SafetyEvents @Inject constructor(
         if (sos.recipientId != me) return false
         val req = RingRequest(sosId = sos.id, seq = seq, partnerName = partnerName(), message = sos.message, panic = sos.panic, source = RingSource.EVENT)
         // Already ringing for it (the push came first): give it the message and the name.
-        if (alarm.isRinging(sos.id, seq)) { alarm.ring(req); return true }
+        if (alarm.isRinging(sos.id, seq)) { alarm.ring(req); quietPanicShare(sos); return true }
         val decision = SosRingPolicy.forEvent(
             isRecipient = true,
             ackedOrResolvedOnServer = sos.acknowledgedAt != null || sos.resolvedAt != null,
@@ -130,7 +135,17 @@ class SafetyEvents @Inject constructor(
             SosRingPolicy.EventDecision.RING -> Unit
         }
         alarm.ring(req)
+        quietPanicShare(sos)
         return true
+    }
+
+    /**
+     * The alarm rings for a panic SOS: "is sharing their live location, they may be in trouble" (the
+     * panic share starts with the SOS and can be announced before it) is the same emergency, shown
+     * twice, and the alarm screen has the location.
+     */
+    private fun quietPanicShare(sos: SosDto) {
+        if (sos.panic) notifier.cancelPartnerSharing()
     }
 
     private suspend fun partnerName(): String = runCatching { coupleDao.partner()?.displayName }.getOrNull() ?: "your partner"

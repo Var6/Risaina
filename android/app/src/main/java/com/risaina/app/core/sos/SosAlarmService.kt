@@ -55,6 +55,7 @@ class SosAlarmService : Service() {
     @Inject lateinit var sosAlert: SosAlert
     @Inject lateinit var coupleDao: CoupleDao
     @Inject lateinit var preferencesStore: PreferencesStore
+    @Inject lateinit var wakeAlarm: com.risaina.app.core.alarm.WakeAlarmController
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var ringing: RingState? = null
@@ -154,6 +155,8 @@ class SosAlarmService : Service() {
         var state = initial
         ringing = state
         controller.publish(state)
+        // A Wake together alarm sounding now steps aside (snoozed): the SOS always wins.
+        runCatching { wakeAlarm.pauseForSos() }
         if (!req.test) localState.markRang(req.sosId, req.seq)
         // Recorded before the volume is raised: the user's real setting is what explains a quiet SOS.
         val diagnostics = SosDiagnostics.capture(

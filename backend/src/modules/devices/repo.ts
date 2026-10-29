@@ -8,7 +8,14 @@ export class DeviceRepo {
 
   async upsert(
     userId: ObjectId,
-    input: { deviceId: string; platform: 'android'; token: string; appVersion: string; model: string | null },
+    input: {
+      deviceId: string;
+      platform: 'android';
+      token: string;
+      appVersion: string;
+      model: string | null;
+      sdkInt?: number;
+    },
     now: Date,
   ): Promise<void> {
     // A token belongs to one (user, device). If it was previously registered elsewhere (device
@@ -26,6 +33,8 @@ export class DeviceRepo {
           appVersion: input.appVersion,
           model: input.model,
           updatedAt: now,
+          // only when sent: an app that does not send it (v75) keeps the value a newer build stored
+          ...(input.sdkInt !== undefined ? { sdkInt: input.sdkInt } : {}),
         },
         $setOnInsert: { _id: newId(), userId, deviceId: input.deviceId, createdAt: now },
       },

@@ -976,6 +976,32 @@
                 "type": "null"
               }
             ]
+          },
+          "addedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who added the item; null on items from before"
+          },
+          "addedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was added; null on items from before"
           }
         },
         "required": [
@@ -983,7 +1009,9 @@
           "text",
           "done",
           "doneBy",
-          "doneAt"
+          "doneAt",
+          "addedBy",
+          "addedAt"
         ]
       },
       "ListInput": {
@@ -1045,6 +1073,14 @@
             "type": "string",
             "description": "ISO-8601 UTC timestamp",
             "example": "2026-10-25T12:00:00.000Z"
+          },
+          "marker": {
+            "type": "string",
+            "description": "Row marker: 'none' (default), 'number' or 'bullet'. Clients must tolerate unknown values."
+          },
+          "checkboxes": {
+            "type": "boolean",
+            "description": "Rows show checkboxes (default true)"
           }
         },
         "required": [
@@ -1059,7 +1095,462 @@
           "pinned",
           "version",
           "createdAt",
+          "updatedAt",
+          "marker",
+          "checkboxes"
+        ]
+      },
+      "CalendarSourceInput": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "'message', 'list' or 'list_item'. Clients must tolerate unknown values."
+          },
+          "messageId": {
+            "description": "kind 'message'",
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "listId": {
+            "description": "kinds 'list' and 'list_item'",
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "itemId": {
+            "description": "kind 'list_item'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "description": "Where the entry was made from (ids only, never copied text)"
+      },
+      "CalendarEntryInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "updatedBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "kind": {
+            "type": "string",
+            "description": "'event' or 'todo'. Clients must tolerate unknown values."
+          },
+          "title": {
+            "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emoji": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DD: the first (or only) occurrence; a to-do's due date"
+          },
+          "endDate": {
+            "description": "YYYY-MM-DD, all-day entries only",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time": {
+            "description": "HH:mm; null = all day",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "durationMinutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeZone": {
+            "description": "IANA zone the time is anchored to; null = each phone's own clock",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repeat": {
+            "type": "string",
+            "description": "'none', 'weekly', 'monthly' or 'yearly'. Tolerate unknown values."
+          },
+          "repeatUntil": {
+            "description": "YYYY-MM-DD, inclusive",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reminders": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "description": "Minutes before, ascending"
+          },
+          "remindUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "description": "Members whose phones remind (a to-do's assignees)"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "done": {
+            "type": "boolean",
+            "description": "To-dos: ticked (doneAt is set)"
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalendarSourceInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clientKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "createdBy",
+          "updatedBy",
+          "kind",
+          "title",
+          "notes",
+          "emoji",
+          "date",
+          "endDate",
+          "time",
+          "durationMinutes",
+          "timeZone",
+          "repeat",
+          "repeatUntil",
+          "reminders",
+          "remindUserIds",
+          "pinned",
+          "done",
+          "doneAt",
+          "doneBy",
+          "source",
+          "clientKey",
+          "version",
+          "createdAt",
           "updatedAt"
+        ]
+      },
+      "AlarmWakeInput": {
+        "type": "object",
+        "properties": {
+          "occurrence": {
+            "type": "string",
+            "description": "The ring this is about",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "outcome": {
+            "type": "string",
+            "description": "'up' or 'missed'. Clients must tolerate unknown values."
+          },
+          "at": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "snoozes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "occurrence",
+          "outcome",
+          "at",
+          "snoozes"
+        ]
+      },
+      "AlarmMemberInput": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "ring": {
+            "type": "boolean",
+            "description": "false: this person turned it off on their phone"
+          },
+          "skips": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "ISO-8601 UTC timestamp",
+              "example": "2026-10-25T12:00:00.000Z"
+            },
+            "description": "Occurrences this person skips"
+          },
+          "ready": {
+            "description": "null: this person's phone never reported for this alarm (an older app)",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "Why not ready, e.g. 'exact_alarms_off'",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "armedFor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next ring this phone has set"
+          },
+          "reportedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastWake": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlarmWakeInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "userId",
+          "ring",
+          "skips",
+          "ready",
+          "reason",
+          "armedFor",
+          "reportedAt",
+          "lastWake"
+        ]
+      },
+      "AlarmInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "updatedBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "mode": {
+            "type": "string",
+            "description": "'together'. Do not schedule an alarm whose mode you do not know."
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "description": "HH:mm in timeZone"
+          },
+          "timeZone": {
+            "type": "string",
+            "description": "IANA zone the time is anchored to (both phones ring together)"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "description": "ISO weekdays, 1 = Monday … 7 = Sunday; [] = once"
+          },
+          "onceAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The single ring of a one-off alarm (days empty)"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "snoozeMinutes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlarmMemberInput"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "createdBy",
+          "updatedBy",
+          "mode",
+          "label",
+          "time",
+          "timeZone",
+          "days",
+          "onceAt",
+          "enabled",
+          "snoozeMinutes",
+          "version",
+          "createdAt",
+          "updatedAt",
+          "members"
         ]
       },
       "WidgetBoardInput": {
@@ -2554,36 +3045,7 @@
           },
           "type": {
             "type": "string",
-            "enum": [
-              "ping.created",
-              "ping.delivered",
-              "ping.seen",
-              "message.created",
-              "message.read",
-              "message.deleted",
-              "message.opened",
-              "media.ready",
-              "memory.created",
-              "memory.updated",
-              "memory.deleted",
-              "milestone.created",
-              "milestone.updated",
-              "milestone.deleted",
-              "couple.updated",
-              "couple.unlinked",
-              "partner.updated",
-              "list.created",
-              "list.updated",
-              "list.deleted",
-              "widget.updated",
-              "sos.raised",
-              "sos.acknowledged",
-              "game.updated",
-              "sos.delivered",
-              "sos.resolved",
-              "location.started",
-              "location.stopped"
-            ]
+            "description": "Event type, e.g. ping.created, ping.delivered, ping.seen. Clients must ignore types they do not know."
           },
           "actorId": {
             "type": "string",
@@ -2628,6 +3090,19 @@
               "string",
               "null"
             ]
+          },
+          "sdkInt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Android API level; null until the app sends it"
           },
           "appVersion": {
             "type": "string"
@@ -2688,6 +3163,7 @@
         "required": [
           "deviceId",
           "model",
+          "sdkInt",
           "appVersion",
           "updatedAt",
           "lastPushSentAt",
@@ -3806,6 +4282,32 @@
                 "type": "null"
               }
             ]
+          },
+          "addedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who added the item; null on items from before"
+          },
+          "addedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was added; null on items from before"
           }
         },
         "required": [
@@ -3813,7 +4315,9 @@
           "text",
           "done",
           "doneBy",
-          "doneAt"
+          "doneAt",
+          "addedBy",
+          "addedAt"
         ],
         "additionalProperties": false
       },
@@ -3876,6 +4380,14 @@
             "type": "string",
             "description": "ISO-8601 UTC timestamp",
             "example": "2026-10-25T12:00:00.000Z"
+          },
+          "marker": {
+            "type": "string",
+            "description": "Row marker: 'none' (default), 'number' or 'bullet'. Clients must tolerate unknown values."
+          },
+          "checkboxes": {
+            "type": "boolean",
+            "description": "Rows show checkboxes (default true)"
           }
         },
         "required": [
@@ -3890,7 +4402,467 @@
           "pinned",
           "version",
           "createdAt",
+          "updatedAt",
+          "marker",
+          "checkboxes"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarSource": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "'message', 'list' or 'list_item'. Clients must tolerate unknown values."
+          },
+          "messageId": {
+            "description": "kind 'message'",
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "listId": {
+            "description": "kinds 'list' and 'list_item'",
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "itemId": {
+            "description": "kind 'list_item'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false,
+        "description": "Where the entry was made from (ids only, never copied text)"
+      },
+      "CalendarEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "updatedBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "kind": {
+            "type": "string",
+            "description": "'event' or 'todo'. Clients must tolerate unknown values."
+          },
+          "title": {
+            "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emoji": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DD: the first (or only) occurrence; a to-do's due date"
+          },
+          "endDate": {
+            "description": "YYYY-MM-DD, all-day entries only",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time": {
+            "description": "HH:mm; null = all day",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "durationMinutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeZone": {
+            "description": "IANA zone the time is anchored to; null = each phone's own clock",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repeat": {
+            "type": "string",
+            "description": "'none', 'weekly', 'monthly' or 'yearly'. Tolerate unknown values."
+          },
+          "repeatUntil": {
+            "description": "YYYY-MM-DD, inclusive",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reminders": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "description": "Minutes before, ascending"
+          },
+          "remindUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "description": "Members whose phones remind (a to-do's assignees)"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "done": {
+            "type": "boolean",
+            "description": "To-dos: ticked (doneAt is set)"
+          },
+          "doneAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "doneBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "example": "665f1c2e9b1d4a3f8c2e7a10"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalendarSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clientKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "createdBy",
+          "updatedBy",
+          "kind",
+          "title",
+          "notes",
+          "emoji",
+          "date",
+          "endDate",
+          "time",
+          "durationMinutes",
+          "timeZone",
+          "repeat",
+          "repeatUntil",
+          "reminders",
+          "remindUserIds",
+          "pinned",
+          "done",
+          "doneAt",
+          "doneBy",
+          "source",
+          "clientKey",
+          "version",
+          "createdAt",
           "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "AlarmWake": {
+        "type": "object",
+        "properties": {
+          "occurrence": {
+            "type": "string",
+            "description": "The ring this is about",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "outcome": {
+            "type": "string",
+            "description": "'up' or 'missed'. Clients must tolerate unknown values."
+          },
+          "at": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "snoozes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "occurrence",
+          "outcome",
+          "at",
+          "snoozes"
+        ],
+        "additionalProperties": false
+      },
+      "AlarmMember": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "ring": {
+            "type": "boolean",
+            "description": "false: this person turned it off on their phone"
+          },
+          "skips": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "ISO-8601 UTC timestamp",
+              "example": "2026-10-25T12:00:00.000Z"
+            },
+            "description": "Occurrences this person skips"
+          },
+          "ready": {
+            "description": "null: this person's phone never reported for this alarm (an older app)",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "Why not ready, e.g. 'exact_alarms_off'",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "armedFor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next ring this phone has set"
+          },
+          "reportedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastWake": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlarmWake"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "userId",
+          "ring",
+          "skips",
+          "ready",
+          "reason",
+          "armedFor",
+          "reportedAt",
+          "lastWake"
+        ],
+        "additionalProperties": false
+      },
+      "Alarm": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "coupleId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "createdBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "updatedBy": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "example": "665f1c2e9b1d4a3f8c2e7a10"
+          },
+          "mode": {
+            "type": "string",
+            "description": "'together'. Do not schedule an alarm whose mode you do not know."
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "description": "HH:mm in timeZone"
+          },
+          "timeZone": {
+            "type": "string",
+            "description": "IANA zone the time is anchored to (both phones ring together)"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "description": "ISO weekdays, 1 = Monday … 7 = Sunday; [] = once"
+          },
+          "onceAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "ISO-8601 UTC timestamp",
+                "example": "2026-10-25T12:00:00.000Z"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The single ring of a one-off alarm (days empty)"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "snoozeMinutes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC timestamp",
+            "example": "2026-10-25T12:00:00.000Z"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlarmMember"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "coupleId",
+          "createdBy",
+          "updatedBy",
+          "mode",
+          "label",
+          "time",
+          "timeZone",
+          "days",
+          "onceAt",
+          "enabled",
+          "snoozeMinutes",
+          "version",
+          "createdAt",
+          "updatedAt",
+          "members"
         ],
         "additionalProperties": false
       },
@@ -5405,36 +6377,7 @@
           },
           "type": {
             "type": "string",
-            "enum": [
-              "ping.created",
-              "ping.delivered",
-              "ping.seen",
-              "message.created",
-              "message.read",
-              "message.deleted",
-              "message.opened",
-              "media.ready",
-              "memory.created",
-              "memory.updated",
-              "memory.deleted",
-              "milestone.created",
-              "milestone.updated",
-              "milestone.deleted",
-              "couple.updated",
-              "couple.unlinked",
-              "partner.updated",
-              "list.created",
-              "list.updated",
-              "list.deleted",
-              "widget.updated",
-              "sos.raised",
-              "sos.acknowledged",
-              "game.updated",
-              "sos.delivered",
-              "sos.resolved",
-              "location.started",
-              "location.stopped"
-            ]
+            "description": "Event type, e.g. ping.created, ping.delivered, ping.seen. Clients must ignore types they do not know."
           },
           "actorId": {
             "type": "string",
@@ -5480,6 +6423,19 @@
               "string",
               "null"
             ]
+          },
+          "sdkInt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Android API level; null until the app sends it"
           },
           "appVersion": {
             "type": "string"
@@ -5540,6 +6496,7 @@
         "required": [
           "deviceId",
           "model",
+          "sdkInt",
           "appVersion",
           "updatedAt",
           "lastPushSentAt",
@@ -7113,6 +8070,20 @@
                       ],
                       "description": "My own live-location session while I share it (never my partner's); no history exists"
                     },
+                    "calendar": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CalendarEntry"
+                      },
+                      "description": "Shared calendar entries, by date"
+                    },
+                    "alarms": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Alarm"
+                      },
+                      "description": "Wake-together alarms, oldest first"
+                    },
                     "truncated": {
                       "type": "boolean"
                     }
@@ -7130,6 +8101,8 @@
                     "games",
                     "widgetBoards",
                     "liveLocation",
+                    "calendar",
+                    "alarms",
                     "truncated"
                   ],
                   "additionalProperties": false
@@ -7790,6 +8763,12 @@
                   "model": {
                     "type": "string",
                     "maxLength": 80
+                  },
+                  "sdkInt": {
+                    "description": "The phone's Android API level (Build.VERSION.SDK_INT); kept when omitted",
+                    "type": "integer",
+                    "minimum": 21,
+                    "maximum": 99
                   }
                 },
                 "required": [
@@ -10142,6 +11121,1692 @@
         }
       }
     },
+    "/api/v1/calendar": {
+      "get": {
+        "summary": "The couple's calendar entries, by date (all of them; at most 1000)",
+        "tags": [
+          "Calendar"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CalendarEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add an event or a dated to-do",
+        "tags": [
+          "Calendar"
+        ],
+        "description": "timeZone and durationMinutes need a time; endDate is for all-day entries; a to-do cannot repeat; repeatUntil ≥ date; remindUserIds must be members. A source must be a message (not view-once) or a non-deleted list of the couple (404 otherwise). With clientKey, a repeat answers 200 with the first entry and emits nothing. Emits calendar.created { entry, notify }.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "event",
+                      "todo"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "date": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "notes": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "≤ 2000; blank is stored as null"
+                  },
+                  "emoji": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "1–2 emoji"
+                  },
+                  "endDate": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "All-day only: the last day, on or after date and at most 366 days later"
+                  },
+                  "time": {
+                    "description": "HH:mm; null = all day",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "durationMinutes": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10080
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Timed entries only"
+                  },
+                  "timeZone": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "example": "Asia/Kolkata"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "IANA zone the time is anchored to (timed only); null = each phone's own clock"
+                  },
+                  "repeat": {
+                    "description": "Default 'none'; a to-do cannot repeat",
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "weekly",
+                      "monthly",
+                      "yearly"
+                    ]
+                  },
+                  "repeatUntil": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Inclusive, on or after date"
+                  },
+                  "reminders": {
+                    "description": "Default []",
+                    "maxItems": 4,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 40320
+                    }
+                  },
+                  "remindUserIds": {
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{24}$",
+                      "example": "665f1c2e9b1d4a3f8c2e7a10"
+                    },
+                    "description": "Members whose phones remind (a to-do's assignees). Default: both"
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "message"
+                                ]
+                              },
+                              "messageId": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{24}$",
+                                "example": "665f1c2e9b1d4a3f8c2e7a10"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "messageId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "list"
+                                ]
+                              },
+                              "listId": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{24}$",
+                                "example": "665f1c2e9b1d4a3f8c2e7a10"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "listId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "list_item"
+                                ]
+                              },
+                              "listId": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{24}$",
+                                "example": "665f1c2e9b1d4a3f8c2e7a10"
+                              },
+                              "itemId": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,32}$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "listId",
+                              "itemId"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "A text message or a non-deleted list of this couple (404 otherwise)"
+                  },
+                  "clientKey": {
+                    "description": "Retry key chosen by the phone: a repeat with the same key returns 200 with the first entry",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "notifyPartner": {
+                    "description": "Default false",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "title",
+                  "date"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "$ref": "#/components/schemas/CalendarEntry"
+                    }
+                  },
+                  "required": [
+                    "entry"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "$ref": "#/components/schemas/CalendarEntry"
+                    }
+                  },
+                  "required": [
+                    "entry"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/calendar/{id}": {
+      "patch": {
+        "summary": "Change an entry (partial), or tick a to-do with done",
+        "tags": [
+          "Calendar"
+        ],
+        "description": "The rules of POST apply to the entry as it will be stored. Increments version and emits calendar.updated { entry, notify }. When expectedVersion is given and differs from the current version: 409 { error: { code: \"version_conflict\", details: { entry } } } with the current entry.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "event",
+                      "todo"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "date": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "notes": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "≤ 2000; blank is stored as null"
+                  },
+                  "emoji": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "1–2 emoji"
+                  },
+                  "endDate": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "All-day only: the last day, on or after date and at most 366 days later"
+                  },
+                  "time": {
+                    "description": "HH:mm; null = all day",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "durationMinutes": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10080
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Timed entries only"
+                  },
+                  "timeZone": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "example": "Asia/Kolkata"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "IANA zone the time is anchored to (timed only); null = each phone's own clock"
+                  },
+                  "repeat": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "weekly",
+                      "monthly",
+                      "yearly"
+                    ]
+                  },
+                  "repeatUntil": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Inclusive, on or after date"
+                  },
+                  "reminders": {
+                    "maxItems": 4,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 40320
+                    },
+                    "description": "Minutes before (0–40320, at most 4). For all-day entries they count back from each phone's own all-day reminder time on the date."
+                  },
+                  "remindUserIds": {
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{24}$",
+                      "example": "665f1c2e9b1d4a3f8c2e7a10"
+                    },
+                    "description": "Members whose phones remind (a to-do's assignees). Default: both"
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "message"
+                                ]
+                              },
+                              "messageId": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{24}$",
+                                "example": "665f1c2e9b1d4a3f8c2e7a10"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "messageId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "list"
+                                ]
+                              },
+                              "listId": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{24}$",
+                                "example": "665f1c2e9b1d4a3f8c2e7a10"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "listId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "list_item"
+                                ]
+                              },
+                              "listId": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{24}$",
+                                "example": "665f1c2e9b1d4a3f8c2e7a10"
+                              },
+                              "itemId": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,32}$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "listId",
+                              "itemId"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "A text message or a non-deleted list of this couple (404 otherwise)"
+                  },
+                  "done": {
+                    "description": "To-dos only (400 for an event)",
+                    "type": "boolean"
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "When given and not the current version: 409 version_conflict"
+                  },
+                  "notifyPartner": {
+                    "description": "Default false",
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "$ref": "#/components/schemas/CalendarEntry"
+                    }
+                  },
+                  "required": [
+                    "entry"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an entry (emits calendar.deleted { entryId })",
+        "tags": [
+          "Calendar"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alarms": {
+      "get": {
+        "summary": "The couple's wake-together alarms, oldest first (at most 10)",
+        "tags": [
+          "Alarms"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Alarm"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Set a wake-together alarm (rings on both phones at the same moment)",
+        "tags": [
+          "Alarms"
+        ],
+        "description": "Each ring is `time` in `timeZone` on one of `days`; with days [] it rings once, at onceAt (required, within 366 days, at `time` in the zone). The partner starts with ring: true. Emits alarm.created { alarm, notify }. 10 per couple (409 conflict).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "≤ 40; blank is stored as null"
+                  },
+                  "time": {
+                    "type": "string"
+                  },
+                  "timeZone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "example": "Asia/Kolkata",
+                    "description": "The anchor zone: the creator's"
+                  },
+                  "days": {
+                    "maxItems": 7,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 7
+                    },
+                    "description": "ISO weekdays in timeZone, 1 = Monday … 7 = Sunday; [] = once, at onceAt"
+                  },
+                  "onceAt": {
+                    "anyOf": [
+                      {
+                        "example": "2026-11-02T01:00:00Z",
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Required exactly when days is empty: within the next 366 days, at `time` in timeZone"
+                  },
+                  "ringOnMyPhone": {
+                    "description": "Default true. The partner always starts on",
+                    "type": "boolean"
+                  },
+                  "snoozeMinutes": {
+                    "description": "Default 10",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 30
+                  },
+                  "mode": {
+                    "description": "Default 'together'",
+                    "type": "string",
+                    "enum": [
+                      "together"
+                    ]
+                  }
+                },
+                "required": [
+                  "time",
+                  "timeZone",
+                  "days"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "alarm": {
+                      "$ref": "#/components/schemas/Alarm"
+                    }
+                  },
+                  "required": [
+                    "alarm"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alarms/report": {
+      "post": {
+        "summary": "This phone's readiness for its alarms (after arming them)",
+        "tags": [
+          "Alarms"
+        ],
+        "description": "Stores ready / reason / armedFor on the caller's entry of each alarm. Only a change of ready or reason emits alarm.updated (change 'member'); armedFor alone is stored silently. Unknown or deleted alarm ids are skipped. At most 10 items.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "alarmId": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{24}$",
+                          "example": "665f1c2e9b1d4a3f8c2e7a10"
+                        },
+                        "ready": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "description": "Why not ready; null (default) when ready",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "armedFor": {
+                          "description": "The next ring this phone has set",
+                          "anyOf": [
+                            {
+                              "example": "2026-11-02T01:00:00Z",
+                              "type": "string",
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "alarmId",
+                        "ready"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alarms/{id}": {
+      "patch": {
+        "summary": "Change the shared alarm (expectedVersion required)",
+        "tags": [
+          "Alarms"
+        ],
+        "description": "A stale expectedVersion: 409 { error: { code: \"version_conflict\", details: { alarm } } }. Emits alarm.updated { alarm, change: 'enabled' (only enabled changed) | 'edited', notify }.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "Required: 409 version_conflict when stale"
+                  },
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "≤ 40; blank is stored as null"
+                  },
+                  "time": {
+                    "type": "string"
+                  },
+                  "timeZone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "example": "Asia/Kolkata"
+                  },
+                  "days": {
+                    "maxItems": 7,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 7
+                    },
+                    "description": "ISO weekdays in timeZone, 1 = Monday … 7 = Sunday; [] = once, at onceAt"
+                  },
+                  "onceAt": {
+                    "anyOf": [
+                      {
+                        "example": "2026-11-02T01:00:00Z",
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Required exactly when days is empty: within the next 366 days, at `time` in timeZone"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "snoozeMinutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 30
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "alarm": {
+                      "$ref": "#/components/schemas/Alarm"
+                    }
+                  },
+                  "required": [
+                    "alarm"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an alarm for both (emits alarm.deleted { alarmId })",
+        "tags": [
+          "Alarms"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alarms/{id}/me": {
+      "put": {
+        "summary": "My own side of an alarm: ring on my phone or not, skip one ring",
+        "tags": [
+          "Alarms"
+        ],
+        "description": "Changes only the caller's member entry. Emits alarm.updated { change: 'member', notify: false } when something changed; at most 7 skipped rings.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ring": {
+                    "description": "false: \"not on my phone\"",
+                    "type": "boolean"
+                  },
+                  "skip": {
+                    "type": "object",
+                    "properties": {
+                      "occurrence": {
+                        "example": "2026-11-02T01:00:00Z",
+                        "description": "The ring to skip (or un-skip), within the next 366 days",
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                      },
+                      "skip": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "occurrence",
+                      "skip"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "alarm": {
+                      "$ref": "#/components/schemas/Alarm"
+                    }
+                  },
+                  "required": [
+                    "alarm"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alarms/{id}/wake": {
+      "post": {
+        "summary": "\"I'm up\" (or missed) for one ring",
+        "tags": [
+          "Alarms"
+        ],
+        "description": "Idempotent per member and occurrence: a repeat (or an earlier occurrence than the stored one) changes nothing and emits nothing. Otherwise stores lastWake and emits alarm.woke { alarmId, userId, occurrence, outcome, at, snoozes }. The version does not change.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "occurrence": {
+                    "example": "2026-11-02T01:00:00Z",
+                    "description": "The ring this is about",
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "up",
+                      "missed"
+                    ]
+                  },
+                  "at": {
+                    "example": "2026-11-02T01:00:00Z",
+                    "description": "When the person got up (or the alarm gave up)",
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,9})?)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                  },
+                  "snoozes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20
+                  }
+                },
+                "required": [
+                  "occurrence",
+                  "outcome",
+                  "at",
+                  "snoozes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "alarm": {
+                      "$ref": "#/components/schemas/Alarm"
+                    }
+                  },
+                  "required": [
+                    "alarm"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/lists": {
       "get": {
         "summary": "Shared lists of the couple (pinned first, then most recently updated; max 200)",
@@ -10213,6 +12878,7 @@
         "tags": [
           "Lists"
         ],
+        "description": "With clientKey, a repeat with the same key answers 200 with the list the first request created (404 if it has been deleted since) and emits nothing.",
         "requestBody": {
           "required": true,
           "content": {
@@ -10254,11 +12920,30 @@
                       "required": [
                         "text"
                       ],
-                      "description": "doneBy / doneAt (and id on create) may be sent but are ignored: the server owns them"
+                      "description": "doneBy / doneAt / addedBy / addedAt (and id on create) may be sent but are ignored: the server owns them"
                     }
                   },
                   "pinned": {
                     "type": "boolean"
+                  },
+                  "marker": {
+                    "description": "Default 'none'",
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "number",
+                      "bullet"
+                    ]
+                  },
+                  "checkboxes": {
+                    "description": "Default true",
+                    "type": "boolean"
+                  },
+                  "clientKey": {
+                    "description": "Retry key chosen by the phone: a repeat with the same key returns 200 with the list it created and emits nothing",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
                   }
                 },
                 "required": [
@@ -10276,6 +12961,25 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "list": {
+                      "$ref": "#/components/schemas/List"
+                    }
+                  },
+                  "required": [
+                    "list"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "201": {
             "description": "Default Response",
             "content": {
@@ -10349,6 +13053,80 @@
       }
     },
     "/api/v1/lists/{id}": {
+      "get": {
+        "summary": "One shared list (404 when deleted or not in the couple)",
+        "tags": [
+          "Lists"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "list": {
+                      "$ref": "#/components/schemas/List"
+                    }
+                  },
+                  "required": [
+                    "list"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "summary": "Update a list (items replaces the whole array; optional expectedVersion)",
         "tags": [
@@ -10396,11 +13174,24 @@
                         "text",
                         "done"
                       ],
-                      "description": "doneBy / doneAt (and id on create) may be sent but are ignored: the server owns them"
+                      "description": "doneBy / doneAt / addedBy / addedAt (and id on create) may be sent but are ignored: the server owns them"
                     }
                   },
                   "pinned": {
                     "type": "boolean"
+                  },
+                  "marker": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "number",
+                      "bullet"
+                    ],
+                    "description": "Row marker: 'none', 'number' or 'bullet'"
+                  },
+                  "checkboxes": {
+                    "type": "boolean",
+                    "description": "Rows show checkboxes"
                   },
                   "expectedVersion": {
                     "description": "When given and not the current version: 409 version_conflict",
@@ -10528,6 +13319,146 @@
         "responses": {
           "204": {
             "description": "No content"
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lists/{id}/convert": {
+      "post": {
+        "summary": "Turn a note into a checklist or a checklist into a note",
+        "tags": [
+          "Lists"
+        ],
+        "description": "note → checklist: each non-blank body line becomes an item (bullets, numbers and [ ] / [x] are stripped; [x] ticks it; lines over 300 characters become several items). Once 200 items are reached, the remaining lines stay in the body. checklist → note: the items are written as lines below the body (numbers, bullets, ☐ / ☑ as the list was drawn); items that would take the body over 10,000 characters stay items. Converting to the current kind only applies marker/checkboxes. Increments version and emits list.updated; expectedVersion as for PATCH.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "enum": [
+                      "note",
+                      "checklist"
+                    ],
+                    "description": "The kind the list becomes"
+                  },
+                  "marker": {
+                    "description": "Format of the converted list (unchanged when omitted)",
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "number",
+                      "bullet"
+                    ]
+                  },
+                  "checkboxes": {
+                    "description": "Unchanged when omitted",
+                    "type": "boolean"
+                  },
+                  "expectedVersion": {
+                    "description": "When given and not the current version: 409 version_conflict",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$",
+              "example": "665f1c2e9b1d4a3f8c2e7a10"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "list": {
+                      "$ref": "#/components/schemas/List"
+                    }
+                  },
+                  "required": [
+                    "list"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           },
           "401": {
             "description": "Default Response",
@@ -13950,6 +16881,12 @@
     },
     {
       "name": "Milestones"
+    },
+    {
+      "name": "Calendar"
+    },
+    {
+      "name": "Alarms"
     },
     {
       "name": "Lists"

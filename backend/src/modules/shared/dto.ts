@@ -1,4 +1,6 @@
 import type {
+  AlarmDoc,
+  CalendarEntryDoc,
   CoupleDoc,
   EventDoc,
   GameDoc,
@@ -20,6 +22,8 @@ import { iso, isoOrNull } from '../../lib/time.js';
 import { OPENTDB_ATTRIBUTION } from '../games/catalog.js';
 import { bothFinished, requestedCategory } from '../games/rules/quiz.js';
 import type {
+  AlarmDto,
+  CalendarEntryDto,
   CoupleDto,
   EventDto,
   GameDto,
@@ -98,11 +102,92 @@ export function toListDto(l: ListDoc): ListDto {
       done: i.done,
       doneBy: i.doneBy ? i.doneBy.toHexString() : null,
       doneAt: isoOrNull(i.doneAt),
+      addedBy: i.addedBy ? i.addedBy.toHexString() : null,
+      addedAt: isoOrNull(i.addedAt),
     })),
     pinned: l.pinned,
     version: l.version,
     createdAt: iso(l.createdAt),
     updatedAt: iso(l.updatedAt),
+    // lists from before the format fields: a plain checklist / note
+    marker: l.marker ?? 'none',
+    checkboxes: l.checkboxes ?? true,
+  };
+}
+
+export function toCalendarEntryDto(e: CalendarEntryDoc): CalendarEntryDto {
+  const s = e.source;
+  return {
+    id: e._id.toHexString(),
+    coupleId: e.coupleId.toHexString(),
+    createdBy: e.createdBy.toHexString(),
+    updatedBy: e.updatedBy.toHexString(),
+    kind: e.kind,
+    title: e.title,
+    notes: e.notes ?? null,
+    emoji: e.emoji ?? null,
+    date: e.date,
+    endDate: e.endDate ?? null,
+    time: e.time ?? null,
+    durationMinutes: e.durationMinutes ?? null,
+    timeZone: e.timeZone ?? null,
+    repeat: e.repeat,
+    repeatUntil: e.repeatUntil ?? null,
+    reminders: [...e.reminders],
+    remindUserIds: e.remindUserIds.map((u) => u.toHexString()),
+    pinned: e.pinned ?? false,
+    done: e.doneAt instanceof Date,
+    doneAt: isoOrNull(e.doneAt),
+    doneBy: e.doneBy ? e.doneBy.toHexString() : null,
+    source: s
+      ? {
+          kind: s.kind,
+          ...(s.messageId ? { messageId: s.messageId.toHexString() } : {}),
+          ...(s.listId ? { listId: s.listId.toHexString() } : {}),
+          ...(s.itemId ? { itemId: s.itemId } : {}),
+        }
+      : null,
+    clientKey: e.clientKey ?? null,
+    version: e.version,
+    createdAt: iso(e.createdAt),
+    updatedAt: iso(e.updatedAt),
+  };
+}
+
+export function toAlarmDto(a: AlarmDoc): AlarmDto {
+  return {
+    id: a._id.toHexString(),
+    coupleId: a.coupleId.toHexString(),
+    createdBy: a.createdBy.toHexString(),
+    updatedBy: a.updatedBy.toHexString(),
+    mode: a.mode,
+    label: a.label ?? null,
+    time: a.time,
+    timeZone: a.timeZone,
+    days: [...a.days],
+    onceAt: isoOrNull(a.onceAt),
+    enabled: a.enabled,
+    snoozeMinutes: a.snoozeMinutes,
+    version: a.version,
+    createdAt: iso(a.createdAt),
+    updatedAt: iso(a.updatedAt),
+    members: a.members.map((m) => ({
+      userId: m.userId.toHexString(),
+      ring: m.ring,
+      skips: (m.skips ?? []).map(iso),
+      ready: m.ready ?? null,
+      reason: m.reason ?? null,
+      armedFor: isoOrNull(m.armedFor),
+      reportedAt: isoOrNull(m.reportedAt),
+      lastWake: m.lastWake
+        ? {
+            occurrence: iso(m.lastWake.occurrence),
+            outcome: m.lastWake.outcome,
+            at: iso(m.lastWake.at),
+            snoozes: m.lastWake.snoozes ?? 0,
+          }
+        : null,
+    })),
   };
 }
 

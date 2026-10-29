@@ -2,6 +2,7 @@ import type { ObjectId } from 'mongodb';
 import type { Logger } from 'pino';
 import type { Collections } from '../db/collections.js';
 import type { EventDoc, EventType, Preferences } from '../db/types.js';
+import { randomToken } from '../lib/crypto.js';
 import type { Clock } from '../lib/time.js';
 import { type PushPolicy, pushPolicyFor, quietPolicy } from '../services/push/policy.js';
 import type { PushService } from '../services/push/types.js';
@@ -97,6 +98,11 @@ export class OutboxWorker {
     return processed;
   }
 
+  /**
+   * Each lease gets its own id, and `record` writes only while the event still carries it: a
+   * worker whose send outlived the lease (another worker leased the event again meanwhile) cannot
+   * overwrite the newer result.
+   */
   private async lease(): Promise<EventDoc | null> {
     const now = this.now();
     return this.db.events.findOneAndUpdate(
@@ -104,7 +110,12 @@ export class OutboxWorker {
         'push.state': 'pending',
         $or: [{ 'push.leaseUntil': null }, { 'push.leaseUntil': { $lte: now } }],
       },
-      { $set: { 'push.leaseUntil': new Date(now.getTime() + this.opts.leaseMs) } },
+      {
+        $set: {
+          'push.leaseUntil': new Date(now.getTime() + this.opts.leaseMs),
+          'push.leaseId': randomToken(9),
+        },
+      },
       { sort: { createdAt: 1 }, returnDocument: 'after' },
     );
   }
@@ -193,49 +204,50 @@ export class OutboxWorker {
 
   private async record(event: EventDoc, outcome: OutboxOutcome): Promise<void> {
     const now = this.now();
+    // Only while this worker's lease is the event's current one (see lease()).
+    const leased = { _id: event._id, 'push.leaseId': event.push.leaseId ?? null };
+    let matched = 1;
     switch (outcome.state) {
       case 'sent':
-        await this.db.events.updateOne(
-          { _id: event._id },
-          {
-            $set: {
-              'push.state': 'sent',
-              'push.sentAt': now,
-              'push.leaseUntil': null,
-              'push.lastError': null,
-            },
-            $inc: { 'push.attempts': 1 },
+        ({ matchedCount: matched } = await this.db.events.updateOne(leased, {
+          $set: {
+            'push.state': 'sent',
+            'push.sentAt': now,
+            'push.leaseUntil': null,
+            'push.lastError': null,
           },
-        );
-        return;
+          $inc: { 'push.attempts': 1 },
+        }));
+        break;
       case 'skipped':
-        await this.db.events.updateOne(
-          { _id: event._id },
-          { $set: { 'push.state': 'skipped', 'push.skipReason': outcome.reason, 'push.leaseUntil': null } },
-        );
-        return;
+        ({ matchedCount: matched } = await this.db.events.updateOne(leased, {
+          $set: { 'push.state': 'skipped', 'push.skipReason': outcome.reason, 'push.leaseUntil': null },
+        }));
+        break;
       case 'failed':
-        await this.db.events.updateOne(
-          { _id: event._id },
-          {
-            $set: { 'push.state': 'failed', 'push.lastError': outcome.error, 'push.leaseUntil': null },
-            $inc: { 'push.attempts': 1 },
-          },
-        );
-        this.logger.warn({ eventId: event._id.toHexString(), type: event.type }, 'push permanently failed');
-        return;
+        ({ matchedCount: matched } = await this.db.events.updateOne(leased, {
+          $set: { 'push.state': 'failed', 'push.lastError': outcome.error, 'push.leaseUntil': null },
+          $inc: { 'push.attempts': 1 },
+        }));
+        if (matched === 1) {
+          this.logger.warn({ eventId: event._id.toHexString(), type: event.type }, 'push permanently failed');
+        }
+        break;
       case 'retry':
-        await this.db.events.updateOne(
-          { _id: event._id },
-          {
-            $set: {
-              'push.lastError': outcome.error,
-              'push.leaseUntil': new Date(now.getTime() + outcome.nextAttemptInMs),
-            },
-            $inc: { 'push.attempts': 1 },
+        ({ matchedCount: matched } = await this.db.events.updateOne(leased, {
+          $set: {
+            'push.lastError': outcome.error,
+            'push.leaseUntil': new Date(now.getTime() + outcome.nextAttemptInMs),
           },
-        );
-        return;
+          $inc: { 'push.attempts': 1 },
+        }));
+        break;
+    }
+    if (matched === 0) {
+      this.logger.info(
+        { eventId: event._id.toHexString(), type: event.type, outcome: outcome.state },
+        'push result dropped: the lease expired and the event was leased again',
+      );
     }
   }
 }

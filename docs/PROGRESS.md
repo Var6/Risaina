@@ -388,3 +388,77 @@ and on the pairing screen (an email to the developer). The terms review also fou
 code left the acceptor's own open code alive, so after an unlink the same partner could re-pair the couple with
 it. Accepting now revokes it (test in `invitations.test.ts`). Backend 344/344. Upload build `0.2.0+65b9116`,
 versionCode 75, replaces 72 in the production review.
+
+## Notifications: one per partner action (2026-10-29)
+Goal: one partner action gives one notification and one buzz on the partner's phone. The live data showed
+the server sends each push once (one device row per phone, no retries, no duplicate events), so the doubles
+were made on the phone (`dup-notifications.md`). Checked with unit tests only: not yet on the real phones.
+
+- ✅ **The lock-screen card never repeats a notification** (the likely double when the card is on). It
+  announces an unseen gift, then an unseen ping, only while the ping notification (4242) is not in the shade:
+  notifications off, the Touch Pings channel blocked, or the notification swiped away. Otherwise it shows a
+  calm line from "their widget" only: the board's note, else its mood, with the board's emoji in the title
+  and no time. It no longer quotes chat messages or pings, so a new message or ping leaves the card as it
+  was and it is not posted again. The home-screen widgets still show the newest note from chat. The
+  Widgets screen now says the card "never repeats a notification you already have".
+- ✅ **One chat notification** (MessagingStyle, id 4343) instead of one per message. It is rebuilt from Room
+  each time: the partner's unread, undeleted messages, the newest 6, with all of them counted on the badge.
+  Previews off reads "New message"; photo, view-once and voice keep their labels. A burst stays one
+  notification. It is rebuilt quietly or removed when messages are read (in the chat, or on the person's
+  other phone), each time the chat screen comes to the front, and when the partner deletes a message (its
+  line goes). Opening the app on Home leaves it, as before. Per-message notifications left by an older build
+  are removed on the first post or refresh.
+- ✅ **Quick alert, then the real text**: a message push adds a "Sent you a message" line at once; the sync
+  puts the real text in its place in the same notification. The detailed post updates the quick alert
+  without a second buzz while it is showing, posts nothing once it was swiped or tapped, and alerts only
+  when no quick alert came first. Each quick alert is remembered per item, until that item syncs (at most
+  24 hours), so a sync that comes minutes late does not buzz again and keeps the placeholder line.
+  Sign-out and unlink forget them.
+- ✅ **No sound when the chat is tidied**: a rebuild after a read never alerts. When it has to create the
+  notification (right after an upgrade removed the old ones), it is posted muted.
+- ✅ **Explicit groups, no setSilent**: chat, ping, game, widget, system (unlink, test) and safety ("is
+  sharing" and the missed / safe now / tap to respond / not sent SOS notices) each have their own group, so
+  Android 15+ and ColorOS do not bundle them. The ringing SOS alarm keeps its own group. "Tap to respond" is
+  muted with the group alert setting instead of setSilent.
+- ✅ Also: a push the phone already handled (last 64 event ids) gets no second quick alert; a panic share
+  linked to an SOS removes the "may be in trouble" notice; Android 11 and below no longer show "Catching
+  up" on each push; a second action on the same game within 30 s, while its notification shows, updates it
+  without a buzz; Delivery health shows how many phones are registered on the account and, when there are
+  several, warns and offers "Remove the others". Backend: dead duplicate device rows are pruned, devices
+  report `sdkInt`, and the outbox carries a lease id.
+- ❌ Not verified on real phones yet. Device checks: with the lock card on and Risaina closed, one text, one
+  ping, one gift and one widget update each give exactly one notification; on API 36/37 with a ping, a chat
+  burst and a game showing, `dumpsys notification` shows no "Aggregate" group for com.risaina.app; the chat
+  notification goes when the chat is opened or read on the other phone and loses a deleted message's line;
+  upgrading with old per-message notifications showing replaces them silently; two device rows for one user
+  show the warning.
+
+## Lists, calendar, wake together and chat actions (2026-10-29)
+Plan and design: `docs/specs/2026-10-29-next-round.md` (reports in `docs/specs/2026-10-29-reports/`). Built as a server
+foundation, an Android foundation (Room 6 with a real 5 → 6 migration), and three feature packages, each reviewed
+and fixed before merging.
+
+- **Lists.** Local first: what is typed is stored on the phone at once and sent when possible (ListSyncEngine,
+  drafts in Room, ListSaveWorker), so a failed or offline save loses nothing. Two people editing at once are
+  merged three ways (ListMerge.merge3). Editor rows with checkboxes, numbers or bullets, Enter splits, Backspace
+  joins, drag to reorder, undo on delete, "✓ Aanya · 3m" on ticked rows, notes that turn into checklists and back.
+  Overview: card grid with previews, Pinned / Others, filters and search. The cause of "I cannot see my saved
+  item": text typed into the old "Add item" field without pressing Enter was dropped on leaving.
+- **Calendar.** Shared entries (events and dated to-dos) on the new `calendarEntries` collection; the anniversary,
+  both birthdays, the next visit and milestones appear without being stored twice. Reminders are local on both
+  phones (one next-due alarm, re-armed on boot, time and zone changes); defaults: anniversary 7 days before and on
+  the day, partner's birthday 7 days, 1 day and on the day. Month and Upcoming views; Home "Calendar" tile and a
+  "Coming up" card; "Also add to my phone's calendar".
+- **Chat.** Long-press a text message: Add to calendar (date and time read from the text, relative to when it was
+  sent), Make it a to-do (dated: calendar; undated: the shared pinned "To-dos" list), Copy, Delete. A "+" in the
+  composer, and a suggestion chip when the draft holds a date ("📅 Fri 30 Oct, 8:00 pm · Add to calendar").
+- **Wake together.** One alarm on both phones at the same moment (anchored to the creator's time zone), with
+  per-person opt-out and skip, "I'm up" reported to the partner, a full-screen alarm screen and an insistent
+  alarm-channel notification via setAlarmClock (no foreground service), re-armed after a restart.
+
+Checks: backend 495/495, Android 688 unit tests, lint 0 errors, the Room 5 → 6 migration test on the emulator.
+Emulator against a local server running this code: calendar occasions and month view, the chat date chip and
+long-press sheet, Make it a to-do, an item typed without Enter kept, Wake together's test ring over a sleeping
+screen in silent mode, and two messages + a ping giving one chat and one ping notification.
+Next Play upload: update the full-screen-intent declaration (Wake together also uses full-screen alerts) and the
+Data safety answers for calendar entries and alarms.

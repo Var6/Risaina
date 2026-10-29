@@ -49,6 +49,8 @@ class EventSyncManager @Inject constructor(
     private val notifier: RisainaNotifier,
     private val diagnostics: DeliveryDiagnostics,
     private val deviceState: DeviceStateReader,
+    private val lists: dagger.Lazy<com.risaina.app.core.data.ListsRepository>,
+    private val listSync: dagger.Lazy<com.risaina.app.core.data.lists.ListSyncEngine>,
 ) {
     private val applyMutex = Mutex()
     private var socketJob: Job? = null
@@ -106,6 +108,18 @@ class EventSyncManager @Inject constructor(
                         live = true
                         widgetSnapshotUpdater.recompute(fetchMedia = false)
                         launchFollowUps()
+                        // Connected again (or the app came to the foreground): list edits kept on this
+                        // phone go now, and lists catch up on events that were never stored (at most
+                        // once a minute). Beside the socket, never inside the event collector.
+                        socketScope.launch {
+                            try {
+                                listSync.get().resumePending()
+                                lists.get().refreshIfStale()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Throwable) {
+                            }
+                        }
                     }
                     SocketMessage.Revoked -> coupleRepository.refreshMe()
                 }

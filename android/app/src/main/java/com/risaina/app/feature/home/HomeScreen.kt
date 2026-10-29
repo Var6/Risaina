@@ -65,6 +65,7 @@ import com.risaina.app.core.designsystem.theme.PillShape
 import com.risaina.app.core.designsystem.theme.Risaina
 import com.risaina.app.core.designsystem.theme.RisainaTextStyles
 import com.risaina.app.core.model.MessageType
+import com.risaina.app.core.model.unknownTypeText
 import com.risaina.app.core.model.PingType
 import com.risaina.app.feature.common.Format
 import com.risaina.app.feature.common.HistoryIcon
@@ -98,6 +99,9 @@ data class HomeNav(
     // safety stream
     val safety: () -> Unit = {},
     val partnerLocation: () -> Unit = {},
+    val calendar: () -> Unit = {},
+    val calendarEntry: (String) -> Unit = {},
+    val wake: () -> Unit = {},
 )
 
 @Composable
@@ -138,12 +142,14 @@ fun HomeScreen(nav: HomeNav, vm: HomeViewModel = hiltViewModel()) {
                     Text("So you can recover your account. Takes 10 seconds.", style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted)
                 }
             }
-            item { Hero(s, onOpenProfile = { showProfile = true }) }
+            item { Hero(s, onOpenProfile = { showProfile = true }, onOpenCalendar = nav.calendar.takeIf { s.calendarAvailable }) }
             if (s.askStartDate) item { StartDatePrompt(onPick = { pickStart = true }, onDismiss = vm::dismissStartDate) }
             item { PingArea(s, vm) }
             item { Shortcuts(s.selectedType, onPick = { vm.selectType(it); vm.tapPing() }, onMore = vm::openComposer) }
+            if (s.comingUp.isNotEmpty()) item { ComingUp(s, onOpen = nav.calendarEntry, onAll = nav.calendar, onToggle = vm::setDone) }
             if (s.latestMoment != null) item { LatestMoment(s, onOpen = nav.messages) }
-            item { QuickRow(nav.copy(gifts = vm::openGifts)) }
+            item { QuickRow(nav.copy(gifts = vm::openGifts), calendar = s.calendarAvailable) }
+            item { com.risaina.app.feature.wake.WakeHomeCard(onOpen = nav.wake) }
             if (s.favouriteMemory != null) item { FavouriteMemory(s, onOpen = { nav.memory(s.favouriteMemory!!.id) }) }
             item { VoiceShortcut(s, onOpen = nav.voice) }
             if (s.recent.isNotEmpty()) {
@@ -169,7 +175,7 @@ private fun TopRow(greeting: String, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun Hero(s: HomeUiState, onOpenProfile: () -> Unit) {
+private fun Hero(s: HomeUiState, onOpenProfile: () -> Unit, onOpenCalendar: (() -> Unit)?) {
     HeroPanel(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clickable(onClick = onOpenProfile)) {
         Column(Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -207,12 +213,17 @@ private fun Hero(s: HomeUiState, onOpenProfile: () -> Unit) {
                 s.anniversary?.let { a -> add(if (a.daysLeft == 0L) "Happy ${Occasions.ordinal(a.yearsAtNext)} anniversary!" else "${a.daysLeft} days to your ${Occasions.ordinal(a.yearsAtNext)} anniversary") }
                 s.partnerBirthday?.takeIf { it.daysLeft <= 60 }?.let { b -> add(if (b.daysLeft == 0L) "🎂 It's ${s.partner?.displayName}'s birthday!" else "🎂 ${s.partner?.displayName}'s birthday in ${b.daysLeft} days") }
                 s.myBirthday?.takeIf { it.daysLeft == 0L }?.let { add("🎉 Happy birthday to you") }
+                // Pinned calendar entries count down here too.
+                s.pinnedChips.forEach { add(it.text) }
             }
             if (chips.isNotEmpty()) {
                 Spacer(Modifier.height(14.dp))
                 chips.forEach { c ->
+                    // The dates live in the calendar now: a chip opens it.
                     Text(c, style = MaterialTheme.typography.labelMedium, color = Palette.WarmIvory,
-                        modifier = Modifier.padding(top = 6.dp).clip(PillShape).background(Color.White.copy(alpha = 0.09f)).padding(horizontal = 12.dp, vertical = 7.dp))
+                        modifier = Modifier.padding(top = 6.dp).clip(PillShape).background(Color.White.copy(alpha = 0.09f))
+                            .then(if (onOpenCalendar != null) Modifier.clickable(onClickLabel = "Open the calendar", onClick = onOpenCalendar) else Modifier)
+                            .padding(horizontal = 12.dp, vertical = 7.dp))
                 }
             }
             if (s.pingsToday > 0) {
@@ -337,7 +348,7 @@ private fun LatestMoment(s: HomeUiState, onOpen: () -> Unit) {
                 is Moment.FromMessage -> Column {
                     val msg = m.message
                     Text(
-                        when (msg.type) { MessageType.PHOTO -> "Sent a photo"; MessageType.VOICE -> "Sent a voice note"; else -> msg.text ?: "" },
+                        when (msg.type) { MessageType.PHOTO -> "Sent a photo"; MessageType.VOICE -> "Sent a voice note"; MessageType.UNKNOWN -> msg.unknownTypeText(); else -> msg.text ?: "" },
                         style = RisainaTextStyles.noteSerif, maxLines = 4, overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -352,18 +363,40 @@ private fun LatestMoment(s: HomeUiState, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun QuickRow(nav: HomeNav) {
+private fun QuickRow(nav: HomeNav, calendar: Boolean) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         QuickTile("Messages", com.risaina.app.feature.common.MailIcon, nav.messages, Modifier.weight(1f))
         QuickTile("Lists", com.risaina.app.feature.common.CheckIcon, nav.lists, Modifier.weight(1f))
         QuickTile("Memories", ImageIcon, nav.memories, Modifier.weight(1f))
-        QuickTile("Timeline", TimelineIcon, nav.timeline, Modifier.weight(1f))
+        // The Timeline lives on as "Our story" inside the calendar; an older server has no calendar yet.
+        if (calendar) QuickTile("Calendar", com.risaina.app.feature.common.CalendarIcon, nav.calendar, Modifier.weight(1f))
+        else QuickTile("Timeline", TimelineIcon, nav.timeline, Modifier.weight(1f))
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         QuickTile("Gifts", com.risaina.app.feature.common.HeartIcon, nav.gifts, Modifier.weight(1f))
         QuickTile("Widgets", WidgetsIcon, nav.widgets, Modifier.weight(1f))
         QuickTile("Their widget", WallpaperIcon, nav.theirWidget, Modifier.weight(1f))
-        QuickTile("Settings", com.risaina.app.feature.common.SettingsIcon, nav.settings, Modifier.weight(1f))
+        // Settings is the gear in the top row; this place is Wake together's.
+        QuickTile("Wake", com.risaina.app.feature.wake.AlarmIcon, nav.wake, Modifier.weight(1f))
+    }
+}
+
+/** Due to-dos and the next week's plans, with checkboxes; tapping one opens it. */
+@Composable
+private fun ComingUp(s: HomeUiState, onOpen: (String) -> Unit, onAll: () -> Unit, onToggle: (com.risaina.app.core.model.CalendarEntry, Boolean) -> Unit) {
+    val ctx = com.risaina.app.feature.calendar.RowContext(
+        s.today, java.time.ZoneId.systemDefault(), s.myId, s.partner,
+        s.partner?.timeZone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() },
+    )
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+        Spacer(Modifier.height(12.dp))
+        SectionHeader(overline = "Calendar", title = "Coming up", trailing = { com.risaina.app.core.designsystem.components.GhostButton("See all", onClick = onAll) })
+        Spacer(Modifier.height(10.dp))
+        RisainaCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
+            s.comingUp.forEach { item ->
+                com.risaina.app.feature.calendar.AgendaRow(item, ctx, onOpen = { onOpen(item.entry.id) }, onToggle = { done -> onToggle(item.entry, done) })
+            }
+        }
     }
 }
 

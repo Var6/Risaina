@@ -91,6 +91,13 @@ export const INDEXES: Record<string, IndexDescription[]> = {
       key: { coupleId: 1, deletedAt: 1, pinned: -1, updatedAt: -1 },
       name: 'coupleId_deletedAt_pinned_updatedAt',
     },
+    // POST /lists retry key: one list per key per couple (only lists created with one)
+    {
+      key: { coupleId: 1, clientKey: 1 },
+      unique: true,
+      name: 'coupleId_clientKey_unique',
+      partialFilterExpression: { clientKey: { $type: 'string' } },
+    },
   ],
   [COLLECTION_NAMES.widgetBoards]: [
     // one board per author per couple; GET /widget-board reads both of the couple
@@ -132,6 +139,24 @@ export const INDEXES: Record<string, IndexDescription[]> = {
     // TTL backstop: timed expiry, 12 h without a check-in, and the 10-minute tombstone
     { key: { purgeAt: 1 }, name: 'purgeAt_ttl', expireAfterSeconds: 0 },
   ],
+  [COLLECTION_NAMES.calendarEntries]: [
+    { key: { coupleId: 1, date: 1 }, name: 'coupleId_date' }, // GET /calendar, count, export, unlink purge
+    // POST /calendar retry key: one entry per key per couple (only entries created with one)
+    {
+      key: { coupleId: 1, clientKey: 1 },
+      unique: true,
+      name: 'coupleId_clientKey_unique',
+      partialFilterExpression: { clientKey: { $type: 'string' } },
+    },
+    // "is this message in the calendar" (entries made from a chat message)
+    {
+      key: { coupleId: 1, 'source.messageId': 1 },
+      name: 'coupleId_sourceMessageId',
+      partialFilterExpression: { 'source.messageId': { $type: 'objectId' } },
+    },
+  ],
+  // GET /alarms (oldest first), the 10-per-couple count, export, unlink purge
+  [COLLECTION_NAMES.alarms]: [{ key: { coupleId: 1, createdAt: 1 }, name: 'coupleId_createdAt' }],
   [COLLECTION_NAMES.events]: [
     { key: { coupleId: 1, seq: 1 }, unique: true, name: 'coupleId_seq_unique' }, // sync replay, GET /events
     { key: { 'push.state': 1, 'push.leaseUntil': 1 }, name: 'push_state_leaseUntil' }, // outbox worker lease
