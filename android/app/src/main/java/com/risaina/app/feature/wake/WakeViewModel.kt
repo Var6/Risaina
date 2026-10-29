@@ -112,6 +112,12 @@ class WakeViewModel @Inject constructor(
     /** The alarm being set or changed, null when the editor is closed. */
     val editor: StateFlow<WakeDraft?> = _editor.asStateFlow()
 
+    /**
+     * For an edit: the alarm the editor started from (or last caught up with) and the draft it gave.
+     * What this person changed is measured against it, and the PATCH goes at its version.
+     */
+    private var editorBase: Pair<WakeAlarm, WakeDraft>? = null
+
     val state: StateFlow<WakeUi> = combine(
         store.state, coupleRepository.partner, device, preferencesRepository.preferences.map { it.shareLocalTime },
         combine(busy, repository.available, clock) { b, a, now -> Triple(b, a, now) },
@@ -210,16 +216,24 @@ class WakeViewModel @Inject constructor(
         }
     }
 
-    fun openNew() { _editor.value = WakeDrafts.new(ZoneId.systemDefault(), Instant.now()) }
+    fun openNew() {
+        editorBase = null
+        _editor.value = WakeDrafts.new(ZoneId.systemDefault(), Instant.now())
+    }
 
     fun openEdit(alarm: WakeAlarm) {
         val me = store.current().me ?: return
-        _editor.value = WakeDrafts.of(alarm, me, Instant.now())
+        val d = WakeDrafts.of(alarm, me, Instant.now())
+        editorBase = alarm to d
+        _editor.value = d
     }
 
     fun edit(change: (WakeDraft) -> WakeDraft) = _editor.update { it?.let(change) }
 
-    fun closeEditor() { _editor.value = null }
+    fun closeEditor() {
+        _editor.value = null
+        editorBase = null
+    }
 
     fun save() {
         val d = _editor.value ?: return
@@ -229,37 +243,49 @@ class WakeViewModel @Inject constructor(
                 when (val r = repository.create(WakeDrafts.wireTime(d), d.zone, d.days.sorted(), WakeDrafts.onceAt(d), d.label, d.ringOnMyPhone, d.snoozeMinutes)) {
                     is AppResult.Success -> {
                         keep(r.value)
-                        _editor.value = null
+                        closeEditor()
                         say(if (d.ringOnMyPhone) "Set. It rings on both phones." else "Set. It rings on ${partnerName()}'s phone.")
                     }
                     is AppResult.Failure -> say(r.error.message ?: "That didn't save")
                 }
                 return@work
             }
-            val alarm = store.current().alarm(d.id) ?: run { _editor.value = null; say("This alarm was deleted"); return@work }
-            val patch = WakeDrafts.patch(alarm, d)
-            if (patch != null) {
-                when (val r = repository.update(d.id, patch)) {
-                    is AppResult.Success -> keep(r.value)
-                    is AppResult.Failure -> {
-                        val e = r.error
-                        if (e is AppError.VersionConflict) {
-                            e.alarm(json)?.let { store.upsert(it, System.currentTimeMillis()); controller.rearm() }
-                            store.current().alarm(d.id)?.let { newer -> _editor.value = WakeDrafts.of(newer, store.current().me ?: "", Instant.now()) }
-                            say("${partnerName()} changed this alarm meanwhile. Have a look and save again.")
-                        } else {
-                            say(e.message ?: "That didn't save")
-                        }
-                        return@work
-                    }
-                }
+            val me = store.current().me ?: ""
+            val current = store.current().alarm(d.id) ?: run { closeEditor(); say("This alarm was deleted"); return@work }
+            var (base, start) = editorBase ?: (current to WakeDrafts.of(current, me, Instant.now()))
+            var draft = d
+            // Catches the draft up with a newer copy. Only a member entry moved on (a readiness
+            // report, a skip, the partner's ring switch): true, send it again. A shared field
+            // changed: the draft keeps this person's changes, shows the partner's, and waits.
+            fun catchUp(newer: WakeAlarm): Boolean {
+                val rb = WakeDrafts.rebase(base, start, newer, draft, me, Instant.now())
+                base = newer; start = rb.start; draft = rb.draft
+                editorBase = base to start
+                _editor.value = draft
+                if (!rb.retry) say(WakeDrafts.conflictText(partnerName(), rb.changed, newer.enabled))
+                return rb.retry
+            }
+            // An event already brought a newer copy while the sheet was open.
+            if (current.version > base.version && !catchUp(current)) return@work
+            var tries = 0
+            while (true) {
+                val patch = WakeDrafts.patch(base, draft) ?: break
+                val r = repository.update(d.id, patch)
+                if (r is AppResult.Success) { keep(r.value); break }
+                val e = (r as AppResult.Failure).error
+                if (e !is AppError.VersionConflict) { say(e.message ?: "That didn't save"); return@work }
+                e.alarm(json)?.let { store.upsert(it, System.currentTimeMillis()); controller.rearm() }
+                val newer = store.current().alarm(d.id) ?: run { closeEditor(); say("This alarm was deleted"); return@work }
+                if (newer.version <= base.version || ++tries > MAX_SAVE_RETRIES) { say("That didn't save. Try again in a moment."); return@work }
+                if (!catchUp(newer)) return@work
             }
             // This person's own switch: applies here at once, and reaches the server when it can.
-            if (d.ringOnMyPhone != (store.current().me?.let(alarm::member)?.ring ?: true)) {
-                controller.setMyRing(d.id, d.ringOnMyPhone)
-                if (!d.ringOnMyPhone) say("It won't ring on your phone. ${partnerName()}'s still rings.")
+            val myRing = store.current().alarm(d.id)?.member(me)?.ring ?: true
+            if (draft.ringOnMyPhone != myRing) {
+                controller.setMyRing(d.id, draft.ringOnMyPhone)
+                if (!draft.ringOnMyPhone) say("It won't ring on your phone. ${partnerName()}'s still rings.")
             }
-            _editor.value = null
+            closeEditor()
         }
     }
 
@@ -293,7 +319,7 @@ class WakeViewModel @Inject constructor(
                 controller.alarmGone(alarm.id)
                 store.remove(alarm.id, System.currentTimeMillis())
                 controller.rearm()
-                _editor.value = null
+                closeEditor()
                 say("Deleted on both phones")
             }
             is AppResult.Failure -> say(r.error.message ?: "That didn't delete")
@@ -322,4 +348,9 @@ class WakeViewModel @Inject constructor(
     }
 
     private fun say(message: String) { effects.trySend(message) }
+
+    private companion object {
+        /** Saves sent again by themselves after a conflict that only moved a member entry on. */
+        const val MAX_SAVE_RETRIES = 2
+    }
 }

@@ -25,6 +25,22 @@ data class WakeDraft(
     val zone: String = ZoneId.systemDefault().id,
 )
 
+/** A field both partners share, in the words the editor uses when someone else changed it. */
+enum class SharedField(val words: String) {
+    TIME("the time"), DAYS("the days"), DAY("the day"), NAME("the name"), SNOOZE("the snooze"), ZONE("the time zone"), ON_OFF("whether it's on"),
+}
+
+/**
+ * The editor caught up with a newer copy of its alarm after a version conflict. [draft] keeps every
+ * field this person changed and takes the rest from the newer copy, at its version; [start] is the
+ * newer copy as a draft, what later changes are measured against. [changed]: the shared fields that
+ * moved on meanwhile. Empty when only a member entry did (a readiness report, a skip, a ring
+ * switch), and then the save goes again by itself.
+ */
+data class WakeRebase(val draft: WakeDraft, val start: WakeDraft, val changed: List<SharedField>) {
+    val retry: Boolean get() = changed.isEmpty()
+}
+
 /** The editor's rules, pure (WakeDraftTest). */
 object WakeDrafts {
     const val MAX_LABEL = 40
@@ -116,4 +132,51 @@ object WakeDrafts {
             snoozeMinutes = snooze, clear = clear,
         )
     }
+
+    /**
+     * A save met a newer copy ([newer]) of the alarm the editor started from ([base], which gave
+     * the draft [start]). Every field this person changed from [start] keeps their value; the
+     * others take [newer]'s, so the partner's change is never undone by a field nobody touched
+     * here. The draft moves to [newer]'s version.
+     */
+    fun rebase(base: WakeAlarm, start: WakeDraft, newer: WakeAlarm, d: WakeDraft, me: String, now: Instant): WakeRebase {
+        val theirs = of(newer, me, now)
+        fun <T> pick(mine: T, from: T, other: T): T = if (mine != from) mine else other
+        val draft = theirs.copy(
+            time = pick(d.time, start.time, theirs.time),
+            days = pick(d.days, start.days, theirs.days),
+            date = pick(d.date, start.date, theirs.date),
+            label = pick(d.label, start.label, theirs.label),
+            snoozeMinutes = pick(d.snoozeMinutes, start.snoozeMinutes, theirs.snoozeMinutes),
+            ringOnMyPhone = pick(d.ringOnMyPhone, start.ringOnMyPhone, theirs.ringOnMyPhone),
+        )
+        return WakeRebase(draft, theirs, sharedChanges(base, newer))
+    }
+
+    /** The shared fields that differ between two copies of one alarm (member entries aside). */
+    fun sharedChanges(base: WakeAlarm, newer: WakeAlarm): List<SharedField> = buildList {
+        if (base.time != newer.time) add(SharedField.TIME)
+        if (base.days != newer.days) add(SharedField.DAYS)
+        else if (base.onceAt != newer.onceAt && localDay(base) != localDay(newer)) add(SharedField.DAY)
+        if (base.label != newer.label) add(SharedField.NAME)
+        if (base.snoozeMinutes != newer.snoozeMinutes) add(SharedField.SNOOZE)
+        if (base.timeZone != newer.timeZone) add(SharedField.ZONE)
+        if (base.enabled != newer.enabled) add(SharedField.ON_OFF)
+    }
+
+    private fun localDay(a: WakeAlarm): LocalDate? = a.onceAt?.atZone(a.zone ?: ZoneId.systemDefault())?.toLocalDate()
+
+    /** "Raina changed the time and the name meanwhile. …" after a conflict that needs a look. */
+    fun conflictText(partnerName: String, changed: List<SharedField>, enabledNow: Boolean): String {
+        val words = changed.filter { it != SharedField.ON_OFF }.map { it.words }
+        val parts = listOfNotNull(
+            words.takeIf { it.isNotEmpty() }?.let { "changed ${joinWords(it)}" },
+            if (SharedField.ON_OFF in changed) (if (enabledNow) "turned it on" else "turned it off") else null,
+        )
+        val what = parts.joinToString(if (words.size > 1) ", and " else " and ").ifEmpty { "changed this alarm" }
+        return "$partnerName $what meanwhile. Your changes are still here. Have a look and save again."
+    }
+
+    private fun joinWords(words: List<String>): String =
+        if (words.size == 1) words[0] else words.dropLast(1).joinToString(", ") + " and " + words.last()
 }

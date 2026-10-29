@@ -4,8 +4,10 @@ import com.risaina.app.core.model.AlarmMember
 import com.risaina.app.core.model.WakeAlarm
 import com.risaina.app.core.model.WakeMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.LocalDate
@@ -97,6 +99,67 @@ class WakeDraftTest {
         val later = WakeDrafts.patch(once, WakeDrafts.of(once, "me", now).copy(time = LocalTime.of(7, 0)))!!
         assertEquals("07:00", later.time)
         assertEquals("2026-11-05T01:30:00Z", later.onceAt)
+    }
+
+    @Test fun `a conflict from a readiness report keeps my edit and sends it again at the new version`() {
+        // Opened at v4; the partner's phone then reported ready (v5): no shared field moved.
+        val base = alarm()
+        val start = WakeDrafts.of(base, "me", now)
+        val mine = start.copy(time = LocalTime.of(6, 15))
+        val newer = base.copy(version = 5, members = base.members.map { if (it.userId == "bea") it.copy(ready = false, reason = "exact_alarms_off") else it })
+        val rb = WakeDrafts.rebase(base, start, newer, mine, "me", now)
+        assertTrue(rb.retry)
+        assertEquals(emptyList<SharedField>(), rb.changed)
+        assertEquals(LocalTime.of(6, 15), rb.draft.time)
+        assertEquals(5, rb.draft.version)
+        val p = WakeDrafts.patch(newer, rb.draft)!!
+        assertEquals(5, p.expectedVersion)
+        assertEquals("06:15", p.time)
+    }
+
+    @Test fun `a conflict from the partner's edit keeps my fields, takes theirs, and asks again`() {
+        val base = alarm()
+        val start = WakeDrafts.of(base, "me", now)
+        val mine = start.copy(time = LocalTime.of(6, 15))
+        // Raina named it meanwhile: my time stays, their name is taken, not undone.
+        val named = base.copy(version = 5, label = "Gym")
+        val rb = WakeDrafts.rebase(base, start, named, mine, "me", now)
+        assertFalse(rb.retry)
+        assertEquals(listOf(SharedField.NAME), rb.changed)
+        assertEquals(LocalTime.of(6, 15), rb.draft.time)
+        assertEquals("Gym", rb.draft.label)
+        val p = WakeDrafts.patch(named, rb.draft)!!
+        assertEquals(5, p.expectedVersion)
+        assertEquals("06:15", p.time)
+        assertNull(p.label)
+        assertEquals(emptySet<String>(), p.clear)
+        // Both changed the time: mine is kept for me to look at; the next catch-up measures from theirs.
+        val moved = base.copy(version = 5, time = LocalTime.of(7, 0))
+        val both = WakeDrafts.rebase(base, start, moved, mine, "me", now)
+        assertEquals(listOf(SharedField.TIME), both.changed)
+        assertEquals(LocalTime.of(6, 15), both.draft.time)
+        assertEquals(LocalTime.of(7, 0), both.start.time)
+        // My own ring switch is never the partner's to change.
+        assertEquals(true, WakeDrafts.rebase(base, start, named, mine.copy(ringOnMyPhone = true), "me", now).draft.ringOnMyPhone)
+    }
+
+    @Test fun `what moved on is named the way the editor shows it`() {
+        val once = alarm(days = emptyList(), onceAt = Instant.parse("2026-11-05T01:00:00Z"))
+        // A one-off's later time moves onceAt on the same day: the time, not the day.
+        assertEquals(listOf(SharedField.TIME), WakeDrafts.sharedChanges(once, once.copy(time = LocalTime.of(7, 0), onceAt = Instant.parse("2026-11-05T01:30:00Z"))))
+        assertEquals(listOf(SharedField.DAY), WakeDrafts.sharedChanges(once, once.copy(onceAt = Instant.parse("2026-11-06T01:00:00Z"))))
+        assertEquals(listOf(SharedField.DAYS), WakeDrafts.sharedChanges(once, once.copy(days = listOf(6, 7), onceAt = null)))
+        val a = alarm()
+        assertEquals(emptyList<SharedField>(), WakeDrafts.sharedChanges(a, a.copy(version = 9, updatedBy = "bea")))
+        assertEquals(
+            "Raina changed the time and the name meanwhile. Your changes are still here. Have a look and save again.",
+            WakeDrafts.conflictText("Raina", listOf(SharedField.TIME, SharedField.NAME), enabledNow = true),
+        )
+        assertEquals(
+            "Raina changed the days, the snooze and the time zone, and turned it off meanwhile. Your changes are still here. Have a look and save again.",
+            WakeDrafts.conflictText("Raina", listOf(SharedField.DAYS, SharedField.SNOOZE, SharedField.ZONE, SharedField.ON_OFF), enabledNow = false),
+        )
+        assertTrue(WakeDrafts.conflictText("Raina", listOf(SharedField.ON_OFF), enabledNow = false).startsWith("Raina turned it off meanwhile."))
     }
 
     @Test fun `the editor's ring is the next of the chosen days`() {
