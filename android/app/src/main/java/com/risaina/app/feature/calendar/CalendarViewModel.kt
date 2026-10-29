@@ -15,6 +15,7 @@ import com.risaina.app.core.domain.Occasion
 import com.risaina.app.core.domain.OccasionKind
 import com.risaina.app.core.domain.OccasionReminders
 import com.risaina.app.core.domain.ReminderSettings
+import com.risaina.app.core.domain.TimeZones
 import com.risaina.app.core.model.CalendarEntry
 import com.risaina.app.core.model.Partner
 import com.risaina.app.core.reminders.ReminderScheduler
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -129,9 +131,14 @@ class ReminderSettingsViewModel @Inject constructor(
     private val scheduler: ReminderScheduler,
     private val probe: SosReadinessProbe,
     coupleRepository: CoupleRepository,
+    time: TimeProvider,
 ) : ViewModel() {
     val settings: StateFlow<ReminderSettings> = store.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReminderSettings())
     val partner: StateFlow<Partner?> = coupleRepository.partner.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /** "Also when it turns midnight for Bea": only when their clock tells another time at some point in the year. */
+    val offersPartnerMidnight: StateFlow<Boolean> = coupleRepository.partner
+        .map { p -> !TimeZones.sameClockAllYear(time.zone(), TimeZones.zoneOf(p?.timeZone), time.now()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private val _exact = MutableStateFlow(scheduler.exactAlarmsAllowed())
     /** Whether reminders arrive on time; read again each time the sheet is shown (the person may have just allowed it). */

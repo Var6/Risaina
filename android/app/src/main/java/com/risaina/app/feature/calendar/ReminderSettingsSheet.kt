@@ -49,6 +49,7 @@ fun ReminderSettingsSheet(onDismiss: () -> Unit, vm: ReminderSettingsViewModel =
     val s by vm.settings.collectAsStateWithLifecycle()
     val partner by vm.partner.collectAsStateWithLifecycle()
     val exact by vm.exactAllowed.collectAsStateWithLifecycle()
+    val offersMidnight by vm.offersPartnerMidnight.collectAsStateWithLifecycle()
     LifecycleResumeEffect(Unit) {
         vm.recheck()
         onPauseOrDispose { }
@@ -67,7 +68,8 @@ fun ReminderSettingsSheet(onDismiss: () -> Unit, vm: ReminderSettingsViewModel =
                 Text("Dates that remind by themselves", style = MaterialTheme.typography.titleMedium)
                 OccasionRow("Your anniversary", s.anniversary) { vm.setOccasion(OccasionKind.ANNIVERSARY, it) }
                 OccasionRow("$name's birthday", s.partnerBirthday) { vm.setOccasion(OccasionKind.PARTNER_BIRTHDAY, it) }
-                if (s.partnerBirthday.on && partner?.timeZone != null) {
+                // On one clock their midnight is yours: nothing to offer.
+                if (s.partnerBirthday.on && offersMidnight) {
                     SwitchRow("Also when it turns midnight for $name", "Where they are, so you can be first", s.partnerMidnight, vm::setPartnerMidnight)
                 }
                 OccasionRow("Your birthday", s.myBirthday) { vm.setOccasion(OccasionKind.MY_BIRTHDAY, it) }
