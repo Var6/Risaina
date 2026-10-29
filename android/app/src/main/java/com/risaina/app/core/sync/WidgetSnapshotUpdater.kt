@@ -212,6 +212,11 @@ class WidgetSnapshotUpdater @Inject constructor(
                 latestAtMillis = newest?.second,
                 latestUnseen = latestUnseen,
                 latestEmojiFromGift = emojiFromGift,
+                // "Their widget" alone, for the lock card (see WidgetSnapshot.boardLine): under the same
+                // privacy switches as the note and the emoji above.
+                boardLine = board?.note?.takeIf { prefs.widgetPrivacy.showNoteText && it.isNotBlank() } ?: board?.mood?.takeIf { it.isNotBlank() },
+                boardEmoji = board?.emoji?.takeIf { prefs.widgetPrivacy.showEmoji && it.isNotBlank() },
+                boardAtMillis = boardAt.takeIf { board != null && it > 0 },
             )
         }
         // Each on its own: a widget error must not stop the lock card, and neither may swallow a

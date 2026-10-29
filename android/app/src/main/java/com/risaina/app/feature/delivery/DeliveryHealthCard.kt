@@ -8,11 +8,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -64,6 +68,12 @@ data class DeliveryHealthUiState(
     val canConfirmOemSteps: Boolean = false,
     val sendingTest: Boolean = false,
     val testMessage: String? = null,
+    /** How many phones the server pushes to for this account (GET /devices/health `mine`); null until known. */
+    val myPhones: Int? = null,
+    /** The other phones "Remove the others" would remove (see [otherPhones]). */
+    val otherPhoneIds: List<String> = emptyList(),
+    val removingPhones: Boolean = false,
+    val phonesMessage: String? = null,
 )
 
 @HiltViewModel
@@ -93,13 +103,37 @@ class DeliveryHealthViewModel @Inject constructor(
             val health = reporter.health()
             if (health is AppResult.Success) {
                 val partner = health.value.partner
+                val mine = health.value.mine
+                val myId = reporter.deviceId()
                 _state.update {
                     it.copy(
                         partnerLastAckAt = partner.mapNotNull { d -> d.lastPushAckAt?.let(::parseMillis) }.maxOrNull(),
                         partnerFlags = partner.flatMap { d -> d.healthFlags }.distinct(),
+                        myPhones = mine.size,
+                        otherPhoneIds = otherPhones(mine.map { d -> d.deviceId }, myId),
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * "Remove the others": stops pushes to every other phone on this account. One the person still
+     * uses registers again the next time Risaina opens on it, so a mistake heals itself.
+     */
+    fun removeOtherPhones() {
+        val ids = _state.value.otherPhoneIds
+        if (ids.isEmpty() || _state.value.removingPhones) return
+        viewModelScope.launch {
+            _state.update { it.copy(removingPhones = true, phonesMessage = null) }
+            val failed = ids.count { reporter.removeDevice(it) is AppResult.Failure }
+            _state.update {
+                it.copy(
+                    removingPhones = false,
+                    phonesMessage = if (failed > 0) "Couldn't reach Risaina to remove every phone. Check your connection and try again." else null,
+                )
+            }
+            refresh()
         }
     }
 
@@ -176,6 +210,7 @@ fun DeliveryHealthCard(modifier: Modifier = Modifier, vm: DeliveryHealthViewMode
                 )
             }
             partnerLine(s)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted) }
+            s.myPhones?.let { PhonesRow(it, s, vm::removeOtherPhones) }
             Spacer(Modifier.height(6.dp))
             // For a helper looking at this screen: which build the phone runs and what the last push was.
             Text(
@@ -190,6 +225,53 @@ fun DeliveryHealthCard(modifier: Modifier = Modifier, vm: DeliveryHealthViewMode
             }
         }
     }
+}
+
+/**
+ * How many phones the server pushes to for this account. More than one (an old phone, or one set up
+ * again under a new id) means every alert also goes there: say so, and offer to remove the others.
+ */
+@Composable
+private fun PhonesRow(count: Int, s: DeliveryHealthUiState, onRemove: () -> Unit) {
+    var confirm by remember { mutableStateOf(false) }
+    Text(
+        phonesLine(count), style = MaterialTheme.typography.bodySmall,
+        color = if (count > 1) Risaina.colors.warning else Risaina.colors.textMuted,
+    )
+    if (count > 1) {
+        Text(
+            "Your partner's pings and messages go to every one of them. If the others are old phones, remove them. A phone you still use registers again when you open Risaina on it.",
+            style = MaterialTheme.typography.bodySmall, color = Risaina.colors.textMuted,
+        )
+        if (s.otherPhoneIds.isNotEmpty()) {
+            TextButton(onClick = { confirm = true }, enabled = !s.removingPhones) { Text(if (s.removingPhones) "Removing…" else "Remove the others") }
+        }
+    }
+    s.phonesMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Risaina.colors.warning) }
+    if (confirm) {
+        val others = s.otherPhoneIds.size
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text(if (others == 1) "Remove the other phone?" else "Remove the other $others phones?") },
+            text = { Text("They stop getting Risaina's alerts. This phone keeps them.") },
+            confirmButton = { TextButton(onClick = { confirm = false; onRemove() }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** "1 phone is registered on your account." / "2 phones are registered on your account." */
+internal fun phonesLine(count: Int): String =
+    if (count == 1) "1 phone is registered on your account." else "$count phones are registered on your account."
+
+/**
+ * The device ids "Remove the others" removes: every phone of this account but this one, and none at
+ * all when this phone is not in the list (not registered yet, or under an id the server no longer
+ * has), so the action can never leave the account with no phone. Pure (PhonesLineTest).
+ */
+internal fun otherPhones(mine: List<String?>, myDeviceId: String?): List<String> {
+    if (myDeviceId.isNullOrBlank() || myDeviceId !in mine) return emptyList()
+    return mine.filterNotNull().filter { it.isNotBlank() && it != myDeviceId }.distinct()
 }
 
 @Composable

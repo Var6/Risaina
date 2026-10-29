@@ -23,6 +23,18 @@ object GameNotificationText {
     /** Tic-tac-toe moves come in quick succession: update the notification without ringing again. */
     fun alertOnce(action: String): Boolean = action == "moved"
 
+    /** How soon after the last game notification another action on the same game counts as the same moment. */
+    const val SAME_GAME_WINDOW_MS = 30_000L
+
+    /**
+     * Every game notification shares one id, so each post used to buzz: a truth-or-dare "chosen"
+     * then "done" a few seconds apart rang twice for what felt like one thing. An action on the game
+     * whose notification is still [showing] and was posted (as [lastGameId]) under 30 s ago now
+     * updates it in place; another game, or a later action, alerts.
+     */
+    fun alertOnce(action: String, gameId: String, lastGameId: String?, lastPostedAt: Long, showing: Boolean, now: Long): Boolean =
+        alertOnce(action) || (showing && gameId == lastGameId && now - lastPostedAt in 0 until SAME_GAME_WINDOW_MS)
+
     /**
      * True when the game has closed since this event (cancelled, or completed without the viewer),
      * so a "your turn" text would be wrong. [currentStatus] is the newest copy the app has; a closed

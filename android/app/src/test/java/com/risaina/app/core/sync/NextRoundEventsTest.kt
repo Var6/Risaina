@@ -41,7 +41,7 @@ class NextRoundEventsTest {
     private val reducer = EventReducer(
         json, session, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
         mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), listDao,
-        mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao,
+        mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), calendarDao, mockk(relaxed = true),
     )
 
     private fun event(seq: Long, type: String, payload: Map<String, JsonElement>, actor: String = "bea") =

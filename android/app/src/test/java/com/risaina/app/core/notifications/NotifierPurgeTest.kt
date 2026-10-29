@@ -7,8 +7,13 @@ import org.junit.Test
 /** Sign-out, session expiry, account deletion and unlink take every partner notification away, never an SOS. */
 class NotifierPurgeTest {
     @Test fun unreadChatMessagesGoWithTheChat() {
-        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.messageNotificationId("m1"), NotificationChannels.MESSAGES))
-        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.messageNotificationId("m2"), NotificationChannels.MESSAGES_QUIET))
+        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.MESSAGES_ID, NotificationChannels.MESSAGES))
+        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.MESSAGES_ID, NotificationChannels.MESSAGES_QUIET))
+        // Known id: it goes even if the channel could not be read.
+        assertTrue(RisainaNotifier.clearedOnPurge(RisainaNotifier.MESSAGES_ID, null))
+        // One per message, from an older version (the message id's hash).
+        assertTrue(RisainaNotifier.clearedOnPurge("m1".hashCode(), NotificationChannels.MESSAGES))
+        assertTrue(RisainaNotifier.clearedOnPurge("m2".hashCode(), NotificationChannels.MESSAGES_QUIET))
     }
 
     @Test fun pingsGiftsGamesAndWidgetLinesGo() {

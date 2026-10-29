@@ -94,6 +94,12 @@ fun MessagesScreen(onBack: () -> Unit, openRecorder: Boolean = false, vm: Messag
     val s by vm.state.collectAsStateWithLifecycle()
     val snackbar = LocalSnackbar.current
     LaunchedEffect(Unit) { vm.snackbars.collect { snackbar.showSnackbar(it) } }
+    // On every resume, not just the first open: back from the background, the chat notification
+    // must not keep lines read on the other phone or deleted meanwhile.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        vm.onChatVisible()
+        onPauseOrDispose { }
+    }
     LaunchedEffect(openRecorder) { if (openRecorder) vm.openRecorder() }
     LaunchedEffect(s.playback.id, s.playback.playing) { while (s.playback.playing) { vm.tickPlayback(); delay(250) } }
 

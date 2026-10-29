@@ -72,6 +72,8 @@ class EventReducer @Inject constructor(
     private val safetyEvents: com.risaina.app.core.safety.SafetyEvents,
     private val gameRepository: com.risaina.app.core.data.GameRepository,
     private val calendarDao: CalendarDao,
+    /** Only for the chat notification after a read or a delete: local, no network (see refreshConversation). */
+    private val notifier: com.risaina.app.core.notifications.RisainaNotifier,
 ) {
     /** [replay]: the event is old history being re-applied (ReplayGuard); its receipts are not re-sent. */
     suspend fun apply(event: EventDto, replay: Boolean = false): List<Incoming> {
@@ -104,11 +106,20 @@ class EventReducer @Inject constructor(
                 messageDao.replaceLocal(msg.idempotencyKey, msg.toEntity(localMediaPath = local?.localMediaPath))
                 if (msg.senderId != me && local == null) out += Incoming.NewMessage(msg.toEntity().toDomain())
             }
-            "message.read" -> p.str("messageId")?.let { id -> p.instant("readAt")?.let { messageDao.markRead(id, it) } }
+            "message.read" -> p.str("messageId")?.let { id ->
+                p.instant("readAt")?.let { messageDao.markRead(id, it) }
+                // Read by this person, maybe on their other phone: its line leaves the chat
+                // notification here too. Only rebuilds or removes it, never alerts.
+                if (event.actorId == me) notifier.refreshConversation()
+            }
             "message.opened" -> p.str("messageId")?.let { id ->
                 messageDao.byId(id)?.let { e -> messageDao.upsert(e.copy(openedAt = p.instant("openedAt") ?: Instant.now().toEpochMilli())) }
             }
-            "message.deleted" -> p.str("messageId")?.let { id -> messageDao.markDeleted(id, p.instant("deletedAt") ?: Instant.now().toEpochMilli()) }
+            "message.deleted" -> p.str("messageId")?.let { id ->
+                messageDao.markDeleted(id, p.instant("deletedAt") ?: Instant.now().toEpochMilli())
+                // The partner took it back: its text must not stay in the shade.
+                if (event.actorId != me) notifier.refreshConversation()
+            }
             "media.ready" -> p.obj("media")?.let { mediaRepository.remember(json.decodeFromJsonElement(MediaDto.serializer(), it)) }
             "memory.updated" -> p.obj("memory")?.let { memoryDao.upsert(json.decodeFromJsonElement(MemoryDto.serializer(), it).toEntity()) }
             "memory.deleted" -> p.str("memoryId")?.let { memoryDao.markDeleted(it, p.instant("deletedAt") ?: Instant.now().toEpochMilli()) }
